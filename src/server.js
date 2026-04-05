@@ -10,9 +10,6 @@ const grader = require('./grader');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-
-const TA_USERNAME = process.env.TA_USERNAME || 'admin';
-const TA_PASSWORD = process.env.TA_PASSWORD || 'changeme';
 const SESSION_SECRET = process.env.SESSION_SECRET || 'ta-companion-secret-change-me';
 
 app.use(express.json({ limit: '50mb' }));
@@ -25,12 +22,27 @@ app.use(session({
   cookie: { httpOnly: true, maxAge: 8 * 60 * 60 * 1000 }, // 8 hours
 }));
 
+// ── Users ──────────────────────────────────────────────────────────────────────
+const USERS_FILE = path.join(__dirname, '../data/users.json');
+let USERS = [];
+try {
+  if (fs.existsSync(USERS_FILE)) {
+    USERS = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
+  }
+} catch { /* ignore */ }
+// Fallback to env var single user
+if (!USERS.length) {
+  USERS = [{ username: process.env.TA_USERNAME || 'admin', password: process.env.TA_PASSWORD || 'changeme', role: 'admin' }];
+}
+
 // ── Auth routes (public) ──────────────────────────────────────────────────────
 app.post('/auth/login', (req, res) => {
   const { username, password } = req.body;
-  if (username === TA_USERNAME && password === TA_PASSWORD) {
+  const user = USERS.find(u => u.username === username && u.password === password);
+  if (user) {
     req.session.authenticated = true;
     req.session.username = username;
+    req.session.role = user.role || 'admin';
     return res.json({ ok: true });
   }
   res.status(401).json({ error: 'Invalid credentials' });
@@ -41,7 +53,7 @@ app.post('/auth/logout', (req, res) => {
 });
 
 app.get('/auth/me', (req, res) => {
-  res.json({ authenticated: !!req.session.authenticated, username: req.session.username });
+  res.json({ authenticated: !!req.session.authenticated, username: req.session.username, role: req.session.role });
 });
 
 // ── Auth guard ────────────────────────────────────────────────────────────────
@@ -62,11 +74,15 @@ app.use(express.static(path.join(__dirname, '../public')));
 // ── Persistence ──────────────────────────────────────────────────────────────
 const DATA_FILE = path.join(__dirname, '../data/store.json');
 
-const store = { rubrics: {}, grades: {} };
+const store = { rubrics: {}, grades: {}, assignmentSettings: {}, quizBank: { questions: [] } };
 
 try {
   if (fs.existsSync(DATA_FILE)) {
-    Object.assign(store, JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')));
+    const saved = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+    Object.assign(store, saved);
+    // Ensure new keys exist
+    if (!store.assignmentSettings) store.assignmentSettings = {};
+    if (!store.quizBank) store.quizBank = { questions: [] };
   }
 } catch { /* start fresh */ }
 
@@ -88,6 +104,7 @@ const upload = multer({
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const gradesKey = (courseId, assignmentId) => `${courseId}__${assignmentId}`;
+const settingsKey = (courseId, assignmentId) => `${courseId}__${assignmentId}`;
 
 function ok(res, data) { res.json(data); }
 function fail(res, e, code = 500) { res.status(code).json({ error: e.message || e }); }
@@ -121,6 +138,48 @@ app.get('/api/courses/:cid/assignments/:aid/submissions', async (req, res) => {
   try {
     ok(res, await canvas.getSubmissions(req.params.cid, req.params.aid));
   } catch (e) { fail(res, e); }
+});
+
+// Course content: modules, pages, files (for video/content discovery)
+app.get('/api/courses/:cid/modules', async (req, res) => {
+  try {
+    const modules = await canvas.getModules(req.params.cid);
+    // Also fetch items for each module
+    const withItems = await Promise.all(
+      modules.map(async m => {
+        try {
+          const items = await canvas.getModuleItems(req.params.cid, m.id);
+          return { ...m, items };
+        } catch { return { ...m, items: [] }; }
+      })
+    );
+    ok(res, withItems);
+  } catch (e) { fail(res, e); }
+});
+
+app.get('/api/courses/:cid/pages', async (req, res) => {
+  try { ok(res, await canvas.getPages(req.params.cid)); } catch (e) { fail(res, e); }
+});
+
+app.get('/api/courses/:cid/pages/:pageUrl', async (req, res) => {
+  try { ok(res, await canvas.getPage(req.params.cid, req.params.pageUrl)); } catch (e) { fail(res, e); }
+});
+
+app.get('/api/courses/:cid/files', async (req, res) => {
+  try { ok(res, await canvas.getFiles(req.params.cid)); } catch (e) { fail(res, e); }
+});
+
+// ── Assignment Settings (AI instructions per assignment) ──────────────────────
+app.get('/api/assignment-settings/:cid/:aid', (req, res) => {
+  const key = settingsKey(req.params.cid, req.params.aid);
+  ok(res, store.assignmentSettings[key] || {});
+});
+
+app.put('/api/assignment-settings/:cid/:aid', (req, res) => {
+  const key = settingsKey(req.params.cid, req.params.aid);
+  store.assignmentSettings[key] = { ...req.body, updatedAt: new Date().toISOString() };
+  save();
+  ok(res, store.assignmentSettings[key]);
 });
 
 // ── Rubrics ───────────────────────────────────────────────────────────────────
@@ -179,9 +238,9 @@ app.delete('/api/grades/:cid/:aid', (req, res) => {
 // ── AI grading ────────────────────────────────────────────────────────────────
 app.post('/api/grade/single', async (req, res) => {
   try {
-    const { text, rubric, studentName, hasAiCitation } = req.body;
+    const { text, rubric, studentName, hasAiCitation, aiInstructions } = req.body;
     const [grade, detect] = await Promise.all([
-      grader.gradeSubmission(text, rubric, studentName),
+      grader.gradeSubmission(text, rubric, studentName, aiInstructions || ''),
       Promise.resolve(analyzeText(text)),
     ]);
     ok(res, { grade, aiDetection: detect, flagged: !hasAiCitation && detect.score >= 7 });
@@ -198,13 +257,13 @@ app.post('/api/grade/batch', async (req, res) => {
 
   const send = (obj) => res.write(`data: ${JSON.stringify(obj)}\n\n`);
 
-  const { submissions, rubric } = req.body;
+  const { submissions, rubric, aiInstructions } = req.body;
   let completed = 0;
 
   for (const sub of submissions) {
     try {
       const [grade, detect] = await Promise.all([
-        grader.gradeSubmission(sub.text || '', rubric, sub.studentName),
+        grader.gradeSubmission(sub.text || '', rubric, sub.studentName, aiInstructions || ''),
         Promise.resolve(analyzeText(sub.text || '')),
       ]);
       completed++;
@@ -228,11 +287,43 @@ app.post('/api/grade/batch', async (req, res) => {
   res.end();
 });
 
+// ── Quiz Question Bank ────────────────────────────────────────────────────────
+app.get('/api/quiz-bank', (_req, res) => {
+  ok(res, store.quizBank);
+});
+
+app.put('/api/quiz-bank', (req, res) => {
+  store.quizBank = req.body;
+  save();
+  ok(res, store.quizBank);
+});
+
+app.delete('/api/quiz-bank', (_req, res) => {
+  store.quizBank = { questions: [] };
+  save();
+  ok(res, { ok: true });
+});
+
+// Upload a test bank file (plain text, one question per line or structured)
+app.post('/api/quiz-bank/upload', upload.single('file'), (req, res) => {
+  if (!req.file) return fail(res, { message: 'No file uploaded' }, 400);
+  const text = req.file.buffer.toString('utf8', 0, Math.min(req.file.buffer.length, 200000));
+  // Return raw text for the frontend to parse/save
+  ok(res, { filename: req.file.originalname, text: stripHtml(text) });
+});
+
+// AI suggest quiz questions from bank based on topic/content
+app.post('/api/quiz-bank/suggest', async (req, res) => {
+  try {
+    const { topic, courseContent, count } = req.body;
+    const questions = store.quizBank?.questions || [];
+    ok(res, await grader.suggestQuizQuestions(questions, topic, courseContent, count || 5));
+  } catch (e) { fail(res, e); }
+});
+
 // ── File upload → text extraction ─────────────────────────────────────────────
 app.post('/api/upload/text', upload.single('file'), (req, res) => {
   if (!req.file) return fail(res, { message: 'No file uploaded' }, 400);
-  // For plain text files, return buffer as string
-  // PDF/DOCX parsing would need additional libraries — return raw for now
   const text = req.file.buffer.toString('utf8', 0, Math.min(req.file.buffer.length, 100000));
   ok(res, { filename: req.file.originalname, text: stripHtml(text) });
 });
@@ -247,8 +338,12 @@ app.get('/api/grades/:cid/:aid/export.csv', (req, res) => {
 
   const headers = [
     'Student Name', 'Student ID', 'Submitted', 'Late', 'AI Flagged', 'AI Confidence',
-    ...criteria.flatMap(c => [`${c.name} — AI (/${c.maxPoints})`, `${c.name} — Human (/${c.maxPoints})`]),
-    'Total AI', 'Total Human', 'Final Score', 'Status', 'AI Signals', 'Notes',
+    ...criteria.flatMap(c => [
+      `${c.name} — AI (/${c.maxPoints})`,
+      `${c.name} — TA Grade (/${c.maxPoints})`,
+      `${c.name} — Instructor Grade (/${c.maxPoints})`,
+    ]),
+    'Total AI', 'Total TA', 'Total Instructor', 'Final Score', 'Status', 'AI Signals', 'Notes',
   ];
 
   const rows = grades.map(g => [
@@ -261,9 +356,11 @@ app.get('/api/grades/:cid/:aid/export.csv', (req, res) => {
     ...criteria.flatMap(c => [
       g.criteria?.[c.id]?.aiScore ?? '',
       g.criteria?.[c.id]?.humanScore ?? '',
+      g.criteria?.[c.id]?.humanScore2 ?? '',
     ]),
     g.aiTotalScore ?? '',
     g.humanTotalScore ?? '',
+    g.humanTotalScore2 ?? '',
     g.finalScore ?? '',
     g.status || 'pending',
     (g.aiDetection?.details?.aiPhrases?.matched || []).slice(0, 3).join('; '),
@@ -288,5 +385,6 @@ app.get('*', (req, res) => {
 app.listen(PORT, () => {
   console.log(`\n  TA Companion  →  http://localhost:${PORT}\n`);
   console.log(`  Canvas:  ${process.env.CANVAS_API_TOKEN ? 'configured' : 'NOT SET'}`);
-  console.log(`  Claude:  ${process.env.ANTHROPIC_API_KEY ? 'configured' : 'NOT SET'}\n`);
+  console.log(`  Claude:  ${process.env.ANTHROPIC_API_KEY ? 'configured' : 'NOT SET'}`);
+  console.log(`  Users:   ${USERS.map(u => u.username).join(', ')}\n`);
 });

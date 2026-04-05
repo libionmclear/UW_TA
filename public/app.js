@@ -10,8 +10,9 @@ const S = {
   rubric: null,          // active rubric object
   rubrics: [],           // all saved rubrics
   grades: {},            // studentId → grade object
-  // manual entries
   manualStudents: [],
+  aiInstructions: '',    // per-assignment AI grading instructions
+  quizBank: { questions: [] },
 };
 
 /* ── API helpers ──────────────────────────────────────────────────────────── */
@@ -48,8 +49,9 @@ document.querySelectorAll('.nav-btn').forEach(btn => {
     document.getElementById(`tab-${tab}`)?.classList.add('active');
     if (tab === 'grades') renderGradesTable();
     if (tab === 'students') renderStudentsTable();
-    if (tab === 'rubric') renderSavedRubrics();
+    if (tab === 'rubric') { renderSavedRubrics(); renderAiInstructionsPanel(); }
     if (tab === 'overview') renderOverview();
+    if (tab === 'quiz') renderQuizBank();
   });
 });
 
@@ -61,8 +63,10 @@ async function init() {
   } catch { /* offline */ }
 
   await loadRubrics();
+  await loadQuizBank();
   renderSavedRubrics();
   renderRubricBuilder();
+  renderQuizBank();
 
   if (S.health?.canvas) {
     await loadCourses();
@@ -123,13 +127,15 @@ document.getElementById('sel-assignment').addEventListener('change', async funct
     { id, name: this.options[this.selectedIndex].text };
   await loadSubmissions();
   await loadGrades();
+  await loadAssignmentSettings();
   updateButtons();
   renderOverview();
+  renderAiInstructionsPanel();
 });
 
 function resetAssignment() {
-  S.students = []; S.submissions = []; S.grades = {};
-  updateButtons(); renderOverview();
+  S.students = []; S.submissions = []; S.grades = {}; S.aiInstructions = '';
+  updateButtons(); renderOverview(); renderAiInstructionsPanel();
 }
 
 /* ── Students & Submissions ───────────────────────────────────────────────── */
@@ -161,6 +167,39 @@ document.getElementById('btn-refresh-students').addEventListener('click', async 
   renderStudentsTable();
 });
 
+/* ── Assignment Settings (AI Instructions) ────────────────────────────────── */
+async function loadAssignmentSettings() {
+  if (!S.course || !S.assignment) { S.aiInstructions = ''; return; }
+  try {
+    const settings = await GET(`/api/assignment-settings/${S.course.id}/${S.assignment.id}`);
+    S.aiInstructions = settings.aiInstructions || '';
+  } catch { S.aiInstructions = ''; }
+}
+
+function renderAiInstructionsPanel() {
+  const ta = document.getElementById('ai-instructions-text');
+  const status = document.getElementById('ai-instructions-status');
+  if (ta) ta.value = S.aiInstructions || '';
+  if (status) status.textContent = S.assignment ? `Assignment: ${S.assignment.name}` : 'No assignment selected';
+}
+
+document.getElementById('btn-save-ai-instructions').addEventListener('click', async () => {
+  if (!S.course || !S.assignment) { toast('Select an assignment first.', 'warn'); return; }
+  const text = document.getElementById('ai-instructions-text').value.trim();
+  S.aiInstructions = text;
+  try {
+    await PUT(`/api/assignment-settings/${S.course.id}/${S.assignment.id}`, { aiInstructions: text });
+    document.getElementById('ai-instructions-status').textContent = 'Saved!';
+    toast('AI instructions saved.', 'success');
+    setTimeout(() => {
+      const el = document.getElementById('ai-instructions-status');
+      if (el) el.textContent = `Assignment: ${S.assignment.name}`;
+    }, 2000);
+  } catch (e) {
+    toast('Save failed: ' + e.message, 'error');
+  }
+});
+
 /* ── Merge students + manual ──────────────────────────────────────────────── */
 function allStudents() {
   const canvas = S.students.map(e => ({
@@ -169,7 +208,6 @@ function allStudents() {
     source: 'canvas',
   }));
   const manual = S.manualStudents.map(s => ({ ...s, source: 'manual' }));
-  // deduplicate by id
   const seen = new Set();
   return [...canvas, ...manual].filter(s => {
     if (seen.has(s.id)) return false;
@@ -245,7 +283,11 @@ function renderGradesTable() {
   const criteria = S.rubric.criteria;
 
   const headerCols = criteria.map(c =>
-    `<th title="${esc(c.description)}">${esc(c.name)}<br><small style="opacity:.7">/ ${c.maxPoints}</small></th>`
+    `<th colspan="3" title="${esc(c.description)}" style="text-align:center">${esc(c.name)}<br><small style="opacity:.7">/ ${c.maxPoints}</small></th>`
+  ).join('');
+
+  const subHeaderCols = criteria.map(() =>
+    `<th class="sub-th sub-th-ai">AI</th><th class="sub-th sub-th-h1">TA</th><th class="sub-th sub-th-h2">Instr.</th>`
   ).join('');
 
   const rows = students.map(st => {
@@ -271,29 +313,33 @@ function renderGradesTable() {
           ? `<span class="status-badge status--${g.status === 'reviewed' ? 'reviewed' : 'graded'}">${g.status === 'reviewed' ? 'Reviewed' : 'Graded'}</span>`
           : '<span class="status-badge status--submitted">Submitted</span>';
 
-    const flagBadge = flagged
-      ? '<span class="ai-badge ai-badge--flagged">⚑ AI</span>'
-      : '';
+    const flagBadge = flagged ? '<span class="ai-badge ai-badge--flagged">⚑ AI</span>' : '';
 
     const scoreCols = criteria.map(c => {
       const cd = g?.criteria?.[c.id];
       const aiS = cd?.aiScore != null ? cd.aiScore : '—';
-      const humanVal = cd?.humanScore != null ? cd.humanScore : '';
-      return `<td>
-        <div class="score-cell">
-          <span class="score-ai" title="AI score">${aiS}</span>
-          <span class="score-divider">──</span>
-          <input class="score-human-input ${humanVal !== '' ? 'changed' : ''}"
+      const h1Val = cd?.humanScore != null ? cd.humanScore : '';
+      const h2Val = cd?.humanScore2 != null ? cd.humanScore2 : '';
+      return `<td class="score-td score-td-ai"><span class="score-ai">${aiS}</span></td>
+        <td class="score-td score-td-h1">
+          <input class="score-human-input ${h1Val !== '' ? 'changed' : ''}"
             type="number" min="0" max="${c.maxPoints}" placeholder="—"
-            value="${humanVal}"
-            data-student="${esc(st.id)}" data-criterion="${esc(c.id)}" data-max="${c.maxPoints}"
+            value="${h1Val}"
+            data-student="${esc(st.id)}" data-criterion="${esc(c.id)}" data-max="${c.maxPoints}" data-grade="1"
             onchange="onHumanScoreChange(this)" />
-        </div>
-      </td>`;
+        </td>
+        <td class="score-td score-td-h2">
+          <input class="score-human-input score-h2-input ${h2Val !== '' ? 'changed' : ''}"
+            type="number" min="0" max="${c.maxPoints}" placeholder="—"
+            value="${h2Val}"
+            data-student="${esc(st.id)}" data-criterion="${esc(c.id)}" data-max="${c.maxPoints}" data-grade="2"
+            onchange="onHumanScoreChange(this)" />
+        </td>`;
     }).join('');
 
-    const aiTotal = g?.aiTotalScore != null ? g.aiTotalScore : '—';
-    const humanTotal = g?.humanTotalScore != null ? g.humanTotalScore : '—';
+    const aiTotal   = g?.aiTotalScore != null ? g.aiTotalScore : '—';
+    const h1Total   = g?.humanTotalScore != null ? g.humanTotalScore : '—';
+    const h2Total   = g?.humanTotalScore2 != null ? g.humanTotalScore2 : '—';
     const finalScore = g?.finalScore != null ? `<strong>${g.finalScore}</strong>` : '—';
 
     return `<tr class="${rowClass}" id="row-${esc(st.id)}">
@@ -303,22 +349,27 @@ function renderGradesTable() {
       <td>${statusBadge} ${flagBadge}</td>
       <td>${aiConf}</td>
       ${scoreCols}
-      <td style="text-align:center">${aiTotal}</td>
-      <td style="text-align:center">${humanTotal}</td>
+      <td class="score-td score-td-ai" style="text-align:center">${aiTotal}</td>
+      <td class="score-td score-td-h1" style="text-align:center">${h1Total}</td>
+      <td class="score-td score-td-h2" style="text-align:center">${h2Total}</td>
       <td style="text-align:center">${finalScore}</td>
     </tr>`;
   }).join('');
 
   wrap.innerHTML = `<table>
-    <thead><tr>
-      <th>Student</th>
-      <th>Status</th>
-      <th>AI Conf.</th>
-      ${headerCols}
-      <th>AI Total</th>
-      <th>Human Total</th>
-      <th>Final</th>
-    </tr></thead>
+    <thead>
+      <tr>
+        <th rowspan="2">Student</th>
+        <th rowspan="2">Status</th>
+        <th rowspan="2">AI Conf.</th>
+        ${headerCols}
+        <th rowspan="2" class="sub-th-ai">AI Total</th>
+        <th rowspan="2" class="sub-th-h1">TA Total</th>
+        <th rowspan="2" class="sub-th-h2">Instr. Total</th>
+        <th rowspan="2">Final</th>
+      </tr>
+      <tr>${subHeaderCols}</tr>
+    </thead>
     <tbody>${rows}</tbody>
   </table>`;
 }
@@ -327,14 +378,19 @@ async function onHumanScoreChange(input) {
   const studentId = input.dataset.student;
   const criterionId = input.dataset.criterion;
   const max = Number(input.dataset.max);
+  const gradeNum = input.dataset.grade; // '1' or '2'
   let val = input.value.trim() === '' ? null : Number(input.value);
   if (val !== null) val = Math.max(0, Math.min(max, val));
 
-  // Update local grade
   if (!S.grades[studentId]) S.grades[studentId] = buildEmptyGrade(studentId);
   if (!S.grades[studentId].criteria) S.grades[studentId].criteria = {};
   if (!S.grades[studentId].criteria[criterionId]) S.grades[studentId].criteria[criterionId] = {};
-  S.grades[studentId].criteria[criterionId].humanScore = val;
+
+  if (gradeNum === '2') {
+    S.grades[studentId].criteria[criterionId].humanScore2 = val;
+  } else {
+    S.grades[studentId].criteria[criterionId].humanScore = val;
+  }
 
   recalcTotals(studentId);
   S.grades[studentId].status = 'reviewed';
@@ -360,16 +416,23 @@ function buildEmptyGrade(studentId) {
 function recalcTotals(studentId) {
   const g = S.grades[studentId];
   if (!g || !S.rubric) return;
-  let aiTotal = 0, humanTotal = 0, hasHuman = false;
+  let aiTotal = 0, h1Total = 0, h2Total = 0, hasH1 = false, hasH2 = false;
   S.rubric.criteria.forEach(c => {
     const cd = g.criteria?.[c.id] || {};
     if (cd.aiScore != null) aiTotal += cd.aiScore;
-    if (cd.humanScore != null) { humanTotal += cd.humanScore; hasHuman = true; }
-    else if (cd.aiScore != null) humanTotal += cd.aiScore;
+    if (cd.humanScore != null) { h1Total += cd.humanScore; hasH1 = true; }
+    else if (cd.aiScore != null) h1Total += cd.aiScore;
+    if (cd.humanScore2 != null) { h2Total += cd.humanScore2; hasH2 = true; }
+    else if (cd.humanScore != null) h2Total += cd.humanScore;
+    else if (cd.aiScore != null) h2Total += cd.aiScore;
   });
   g.aiTotalScore = aiTotal;
-  g.humanTotalScore = hasHuman ? humanTotal : null;
-  g.finalScore = g.humanTotalScore != null ? g.humanTotalScore : g.aiTotalScore;
+  g.humanTotalScore = hasH1 ? h1Total : null;
+  g.humanTotalScore2 = hasH2 ? h2Total : null;
+  // Final = Instructor grade → TA grade → AI grade (in priority order)
+  g.finalScore = g.humanTotalScore2 != null ? g.humanTotalScore2
+               : g.humanTotalScore != null ? g.humanTotalScore
+               : g.aiTotalScore;
 }
 
 async function saveGrade(studentId) {
@@ -415,7 +478,7 @@ async function gradeAll() {
     const resp = await fetch('/api/grade/batch', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ submissions, rubric: S.rubric }),
+      body: JSON.stringify({ submissions, rubric: S.rubric, aiInstructions: S.aiInstructions }),
     });
 
     const reader = resp.body.getReader();
@@ -432,7 +495,6 @@ async function gradeAll() {
           const pct = Math.round((msg.completed / msg.total) * 100);
           progressFill.style.width = pct + '%';
           progressLabel.textContent = `Grading ${msg.completed} / ${msg.total}…`;
-
           if (msg.type === 'progress') {
             applyAiGrade(msg.studentId, msg.grade, msg.aiDetection, msg.flagged);
           }
@@ -448,7 +510,6 @@ async function gradeAll() {
     renderStudentsTable();
     renderOverview();
 
-    // Persist all grades
     if (S.course && S.assignment) {
       await Promise.all(
         allStudents().map(st => S.grades[st.id] ? saveGrade(st.id) : Promise.resolve())
@@ -467,7 +528,6 @@ function applyAiGrade(studentId, grade, aiDetection, flagged) {
   const st = allStudents().find(s => s.id === studentId);
   if (!st || !S.rubric) return;
 
-  const sub = submissionFor(studentId);
   if (!S.grades[studentId]) S.grades[studentId] = buildEmptyGrade(studentId);
   const g = S.grades[studentId];
 
@@ -506,12 +566,10 @@ function openStudent(studentId) {
   if (g?.status) meta.push(g.status.replace('_', ' ').toUpperCase());
   document.getElementById('modal-student-meta').textContent = meta.join(' · ');
 
-  // Submission text
   const text = submissionText(sub);
   document.getElementById('modal-submission-text').textContent =
     text || '(No submission text available)';
 
-  // AI flag banner
   const flagBanner = document.getElementById('modal-ai-flag');
   if (g?.flagged && g.aiDetection) {
     flagBanner.style.display = 'block';
@@ -522,21 +580,19 @@ function openStudent(studentId) {
     flagBanner.style.display = 'none';
   }
 
-  // Criteria scores
   renderModalCriteria(studentId);
 
-  // Totals
   document.getElementById('modal-ai-total').textContent =
     g?.aiTotalScore != null ? g.aiTotalScore : '—';
   document.getElementById('modal-human-total').textContent =
     g?.humanTotalScore != null ? g.humanTotalScore : '—';
+  document.getElementById('modal-human-total2').textContent =
+    g?.humanTotalScore2 != null ? g.humanTotalScore2 : '—';
   document.getElementById('modal-final').textContent =
     g?.finalScore != null ? g.finalScore : '—';
 
-  // Notes
   document.getElementById('modal-notes').value = g?.notes || '';
 
-  // AI feedback
   const fbBox = document.getElementById('modal-ai-feedback');
   const fbText = document.getElementById('modal-ai-feedback-text');
   if (g?.aiOverallFeedback) {
@@ -561,24 +617,32 @@ function renderModalCriteria(studentId) {
   wrap.innerHTML = S.rubric.criteria.map(c => {
     const cd = g?.criteria?.[c.id] || {};
     const aiS = cd.aiScore != null ? cd.aiScore : '—';
-    const humanVal = cd.humanScore != null ? cd.humanScore : '';
+    const h1Val = cd.humanScore != null ? cd.humanScore : '';
+    const h2Val = cd.humanScore2 != null ? cd.humanScore2 : '';
     const justif = cd.aiJustification ? `<div class="crit-score-sub">${esc(cd.aiJustification)}</div>` : '';
 
     return `<div class="criterion-score-row">
-      <div>
+      <div style="flex:1">
         <div class="crit-score-name">${esc(c.name)}</div>
         <div class="crit-score-sub">/ ${c.maxPoints} pts</div>
         ${justif}
       </div>
       <div class="crit-score-col">
-        <div class="crit-score-lbl">AI</div>
+        <div class="crit-score-lbl score-lbl-ai">AI</div>
         <div class="crit-score-val">${aiS}</div>
       </div>
       <div class="crit-score-col">
-        <div class="crit-score-lbl">Human</div>
+        <div class="crit-score-lbl score-lbl-h1">TA</div>
         <input class="crit-score-input" type="number" min="0" max="${c.maxPoints}"
-          placeholder="${aiS}" value="${humanVal}"
-          data-criterion="${esc(c.id)}" data-max="${c.maxPoints}"
+          placeholder="${aiS}" value="${h1Val}"
+          data-criterion="${esc(c.id)}" data-max="${c.maxPoints}" data-grade="1"
+          onchange="onModalScoreChange(this)" />
+      </div>
+      <div class="crit-score-col">
+        <div class="crit-score-lbl score-lbl-h2">Instr.</div>
+        <input class="crit-score-input crit-score-instr" type="number" min="0" max="${c.maxPoints}"
+          placeholder="${h1Val || aiS}" value="${h2Val}"
+          data-criterion="${esc(c.id)}" data-max="${c.maxPoints}" data-grade="2"
           onchange="onModalScoreChange(this)" />
       </div>
     </div>`;
@@ -589,17 +653,24 @@ function onModalScoreChange(input) {
   if (!modalStudentId) return;
   const criterionId = input.dataset.criterion;
   const max = Number(input.dataset.max);
+  const gradeNum = input.dataset.grade;
   let val = input.value.trim() === '' ? null : Number(input.value);
   if (val !== null) val = Math.max(0, Math.min(max, val));
 
   if (!S.grades[modalStudentId]) S.grades[modalStudentId] = buildEmptyGrade(modalStudentId);
   if (!S.grades[modalStudentId].criteria) S.grades[modalStudentId].criteria = {};
   if (!S.grades[modalStudentId].criteria[criterionId]) S.grades[modalStudentId].criteria[criterionId] = {};
-  S.grades[modalStudentId].criteria[criterionId].humanScore = val;
+
+  if (gradeNum === '2') {
+    S.grades[modalStudentId].criteria[criterionId].humanScore2 = val;
+  } else {
+    S.grades[modalStudentId].criteria[criterionId].humanScore = val;
+  }
 
   recalcTotals(modalStudentId);
   const g = S.grades[modalStudentId];
   document.getElementById('modal-human-total').textContent = g.humanTotalScore != null ? g.humanTotalScore : '—';
+  document.getElementById('modal-human-total2').textContent = g.humanTotalScore2 != null ? g.humanTotalScore2 : '—';
   document.getElementById('modal-final').textContent = g.finalScore != null ? g.finalScore : '—';
 }
 
@@ -632,6 +703,7 @@ document.getElementById('modal-grade-ai').addEventListener('click', async () => 
       rubric: S.rubric,
       studentName: st?.name || modalStudentId,
       hasAiCitation: sub?._hasAiCitation || false,
+      aiInstructions: S.aiInstructions,
     });
     applyAiGrade(modalStudentId, res.grade, res.aiDetection, res.flagged);
     renderModalCriteria(modalStudentId);
@@ -669,10 +741,10 @@ function defaultRubric() {
     description: '',
     criteria: [
       { id: 'c1', name: 'Submission', maxPoints: 5, description: 'Student submitted any work.', autoGrant: true },
-      { id: 'c2', name: 'Core Analysis', maxPoints: 3, description: 'Student demonstrates understanding of key concepts.', autoGrant: false },
-      { id: 'c3', name: 'Evidence & Support', maxPoints: 3, description: 'Claims are backed with specific evidence.', autoGrant: false },
-      { id: 'c4', name: 'Audience / Persona Use', maxPoints: 3, description: 'Student identifies and applies target audience effectively.', autoGrant: false },
-      { id: 'c5', name: "Customer Journey", maxPoints: 1, description: 'Describes how the customer discovers and chooses the product.', autoGrant: false },
+      { id: 'c2', name: 'Executive Summary & Recommendations', maxPoints: 3, description: 'Student provides a clear executive summary with specific, actionable recommendations upfront.', autoGrant: false },
+      { id: 'c3', name: 'Supporting Points & Evidence', maxPoints: 3, description: 'Claims and recommendations are backed with specific evidence, data, or analysis.', autoGrant: false },
+      { id: 'c4', name: 'Conclusion / Alternatives', maxPoints: 3, description: 'Student includes a thoughtful conclusion, discusses alternatives, or provides additional insights.', autoGrant: false },
+      { id: 'c5', name: 'Writing Quality & Clarity', maxPoints: 1, description: 'Submission is well-organized, clearly written, and professional.', autoGrant: false },
     ],
   };
 }
@@ -733,15 +805,9 @@ document.getElementById('btn-add-criterion').addEventListener('click', () => {
   renderRubricBuilder();
 });
 
-document.getElementById('rubric-name').addEventListener('input', function () {
-  S.rubric.name = this.value;
-});
-document.getElementById('rubric-total').addEventListener('input', function () {
-  S.rubric.totalPoints = Number(this.value);
-});
-document.getElementById('rubric-description').addEventListener('input', function () {
-  S.rubric.description = this.value;
-});
+document.getElementById('rubric-name').addEventListener('input', function () { S.rubric.name = this.value; });
+document.getElementById('rubric-total').addEventListener('input', function () { S.rubric.totalPoints = Number(this.value); });
+document.getElementById('rubric-description').addEventListener('input', function () { S.rubric.description = this.value; });
 
 document.getElementById('btn-save-rubric').addEventListener('click', async () => {
   S.rubric.name = document.getElementById('rubric-name').value;
@@ -774,7 +840,6 @@ document.getElementById('btn-generate-rubric').addEventListener('click', async (
     S.rubric = { ...generated, id: S.rubric?.id };
     renderRubricBuilder();
 
-    // Show clarifying questions
     if (generated.clarifyingQuestions?.length) {
       const section = document.getElementById('rubric-clarifying');
       const list = document.getElementById('clarifying-list');
@@ -814,7 +879,7 @@ function renderSavedRubrics() {
 function loadRubric(id) {
   const r = S.rubrics.find(x => x.id === id);
   if (!r) return;
-  S.rubric = JSON.parse(JSON.stringify(r)); // deep copy
+  S.rubric = JSON.parse(JSON.stringify(r));
   renderRubricBuilder();
   toast(`Loaded: ${r.name}`, 'success');
   updateButtons();
@@ -826,6 +891,213 @@ async function deleteRubric(id) {
   await loadRubrics();
   renderSavedRubrics();
   toast('Rubric deleted.');
+}
+
+/* ── Quiz Bank ────────────────────────────────────────────────────────────── */
+async function loadQuizBank() {
+  try { S.quizBank = await GET('/api/quiz-bank'); } catch { S.quizBank = { questions: [] }; }
+}
+
+function renderQuizBank() {
+  const list = document.getElementById('quiz-bank-list');
+  const countEl = document.getElementById('quiz-bank-count');
+  const qs = S.quizBank?.questions || [];
+  if (countEl) countEl.textContent = `${qs.length} question${qs.length !== 1 ? 's' : ''}`;
+  if (!list) return;
+  if (!qs.length) {
+    list.innerHTML = '<p class="muted">No questions in the bank. Upload a test bank file to get started.</p>';
+    return;
+  }
+  list.innerHTML = `<div class="quiz-list">` +
+    qs.map((q, i) => {
+      const text = typeof q === 'string' ? q : q.question || JSON.stringify(q);
+      return `<div class="quiz-q-item">
+        <span class="quiz-q-num">${i + 1}.</span>
+        <span class="quiz-q-text">${esc(text)}</span>
+        <button class="btn btn-surf-sec" style="font-size:11px;padding:3px 8px;margin-left:auto;flex-shrink:0"
+          onclick="deleteQuestion(${i})">Remove</button>
+      </div>`;
+    }).join('') + `</div>`;
+}
+
+async function deleteQuestion(index) {
+  S.quizBank.questions.splice(index, 1);
+  await PUT('/api/quiz-bank', S.quizBank);
+  renderQuizBank();
+}
+
+// Upload test bank file
+document.getElementById('btn-quiz-upload').addEventListener('click', () => {
+  document.getElementById('quiz-file-input').click();
+});
+
+document.getElementById('quiz-file-input').addEventListener('change', async function () {
+  const file = this.files[0];
+  if (!file) return;
+  const formData = new FormData();
+  formData.append('file', file);
+
+  try {
+    const resp = await fetch('/api/quiz-bank/upload', { method: 'POST', body: formData });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error);
+
+    // Parse questions: one per line, skip blanks
+    const lines = data.text.split('\n')
+      .map(l => l.trim())
+      .filter(l => l.length > 5); // skip very short lines
+
+    S.quizBank.questions = [...(S.quizBank.questions || []), ...lines];
+    await PUT('/api/quiz-bank', S.quizBank);
+    renderQuizBank();
+    toast(`Imported ${lines.length} questions from ${data.filename}.`, 'success');
+  } catch (e) {
+    toast('Upload failed: ' + e.message, 'error');
+  }
+  this.value = '';
+});
+
+document.getElementById('btn-quiz-clear').addEventListener('click', async () => {
+  if (!confirm('Clear the entire question bank?')) return;
+  await DEL('/api/quiz-bank');
+  S.quizBank = { questions: [] };
+  renderQuizBank();
+  toast('Question bank cleared.');
+});
+
+document.getElementById('btn-quiz-suggest').addEventListener('click', async () => {
+  if (!S.health?.claude) { toast('Claude not configured.', 'error'); return; }
+  const topic = document.getElementById('quiz-topic').value.trim();
+  const count = Number(document.getElementById('quiz-count').value) || 5;
+  const courseContent = document.getElementById('quiz-context').value.trim();
+
+  const btn = document.getElementById('btn-quiz-suggest');
+  btn.disabled = true; btn.textContent = '⏳ Thinking…';
+
+  try {
+    const result = await POST('/api/quiz-bank/suggest', {
+      topic,
+      courseContent,
+      count,
+    });
+
+    const wrap = document.getElementById('quiz-suggestions-wrap');
+    const inner = document.getElementById('quiz-suggestions');
+    wrap.style.display = 'block';
+
+    if (result.notes) {
+      inner.innerHTML = `<p class="muted" style="margin-bottom:12px;font-style:italic">${esc(result.notes)}</p>`;
+    } else {
+      inner.innerHTML = '';
+    }
+
+    inner.innerHTML += (result.selectedQuestions || []).map((q, i) =>
+      `<div class="quiz-suggestion-item">
+        <div class="quiz-q-header">
+          <span class="quiz-source-badge ${q.source === 'suggested' ? 'badge-suggested' : 'badge-bank'}">
+            ${q.source === 'suggested' ? '✦ AI Suggested' : `Bank #${(q.originalIndex || 0) + 1}`}
+          </span>
+        </div>
+        <div class="quiz-q-body">${esc(q.question)}</div>
+        <div class="quiz-q-rationale muted">${esc(q.rationale || '')}</div>
+        ${q.source === 'suggested' ? `<button class="btn btn-surf-sec" style="font-size:11px;padding:3px 8px;margin-top:6px"
+          onclick="addSuggestedQuestion('${esc(q.question.replace(/'/g, "\\'"))}')">+ Add to Bank</button>` : ''}
+      </div>`
+    ).join('');
+
+    toast('Questions suggested!', 'success');
+  } catch (e) {
+    toast('Suggestion failed: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false; btn.textContent = '✦ Suggest Questions';
+  }
+});
+
+async function addSuggestedQuestion(questionText) {
+  S.quizBank.questions.push(questionText);
+  await PUT('/api/quiz-bank', S.quizBank);
+  renderQuizBank();
+  toast('Question added to bank.', 'success');
+}
+
+/* ── Course Content & Videos ──────────────────────────────────────────────── */
+document.getElementById('btn-load-content').addEventListener('click', loadCourseContent);
+
+async function loadCourseContent() {
+  if (!S.course) { toast('Select a course first.', 'warn'); return; }
+  const btn = document.getElementById('btn-load-content');
+  btn.disabled = true; btn.textContent = '⏳ Loading…';
+
+  try {
+    const [modules, pages] = await Promise.all([
+      GET(`/api/courses/${S.course.id}/modules`).catch(() => []),
+      GET(`/api/courses/${S.course.id}/pages`).catch(() => []),
+    ]);
+
+    renderModules(modules);
+    renderPages(pages);
+    toast('Content loaded.', 'success');
+  } catch (e) {
+    toast('Load error: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false; btn.textContent = '⟳ Load from Canvas';
+  }
+}
+
+function renderModules(modules) {
+  const wrap = document.getElementById('content-modules');
+  if (!modules.length) {
+    wrap.innerHTML = '<p class="muted">No modules found.</p>';
+    return;
+  }
+  wrap.innerHTML = modules.map(m => {
+    const items = (m.items || []).map(item => {
+      const icon = item.type === 'ExternalUrl' ? '🔗'
+        : item.type === 'File' ? '📄'
+        : item.type === 'Page' ? '📝'
+        : item.type === 'Quiz' ? '❓'
+        : item.type === 'Assignment' ? '✏'
+        : '▸';
+      const link = item.url || item.html_url || item.external_url || '#';
+      return `<li class="module-item">
+        <span>${icon}</span>
+        <a href="${esc(link)}" target="_blank" rel="noopener">${esc(item.title)}</a>
+        <span class="muted" style="font-size:10px">${esc(item.type || '')}</span>
+      </li>`;
+    }).join('');
+    return `<div class="module-block">
+      <div class="module-title">${esc(m.name)} <span class="muted" style="font-size:11px">(${(m.items || []).length} items)</span></div>
+      ${items ? `<ul class="module-items">${items}</ul>` : ''}
+    </div>`;
+  }).join('');
+}
+
+function renderPages(pages) {
+  const wrap = document.getElementById('content-pages');
+  if (!pages.length) {
+    wrap.innerHTML = '<p class="muted">No pages found.</p>';
+    return;
+  }
+  wrap.innerHTML = `<ul class="page-list">` +
+    pages.map(p =>
+      `<li><button class="link-btn" onclick="viewPage('${esc(p.url)}')">${esc(p.title)}</button>
+       <span class="muted" style="font-size:10px;margin-left:6px">${p.updated_at ? new Date(p.updated_at).toLocaleDateString() : ''}</span>
+       </li>`
+    ).join('') + `</ul>`;
+}
+
+async function viewPage(pageUrl) {
+  if (!S.course) return;
+  const wrap = document.getElementById('content-viewer');
+  wrap.innerHTML = '<p class="muted">Loading…</p>';
+  try {
+    const page = await GET(`/api/courses/${S.course.id}/pages/${encodeURIComponent(pageUrl)}`);
+    const body = page.body || '(No content)';
+    wrap.innerHTML = `<div class="page-title-sm">${esc(page.title)}</div>
+      <div class="page-content">${body}</div>`;
+  } catch (e) {
+    wrap.innerHTML = `<p class="muted">Failed to load page: ${esc(e.message)}</p>`;
+  }
 }
 
 /* ── Overview ─────────────────────────────────────────────────────────────── */
@@ -849,19 +1121,19 @@ function renderOverview() {
   document.getElementById('stat-flagged').textContent = flagged.length || '—';
   document.getElementById('stat-avg').textContent = avg;
 
-  // Assignment info
   const aWrap = document.getElementById('overview-assignment');
   if (S.assignment) {
     const due = S.assignment.due_at ? new Date(S.assignment.due_at).toLocaleDateString() : 'No due date';
+    const instrNote = S.aiInstructions ? `<p style="font-size:12px;color:var(--success);margin-top:4px">✓ AI instructions set</p>` : '';
     aWrap.innerHTML = `
       <p><strong>${esc(S.assignment.name)}</strong></p>
       <p class="muted">Due: ${due} · ${S.assignment.points_possible || '?'} pts</p>
-      <p class="muted">Course: ${esc(S.course?.name || '—')}</p>`;
+      <p class="muted">Course: ${esc(S.course?.name || '—')}</p>
+      ${instrNote}`;
   } else {
     aWrap.innerHTML = '<p class="muted">No assignment selected.</p>';
   }
 
-  // Rubric summary
   const rWrap = document.getElementById('overview-rubric');
   if (S.rubric?.criteria?.length) {
     rWrap.innerHTML = `<p><strong>${esc(S.rubric.name || 'Untitled Rubric')}</strong> · ${S.rubric.totalPoints} pts</p>
@@ -874,7 +1146,6 @@ function renderOverview() {
     rWrap.innerHTML = '<p class="muted">No rubric set.</p>';
   }
 
-  // Flags
   const fWrap = document.getElementById('overview-flags');
   if (flagged.length) {
     fWrap.innerHTML = `<ul style="padding-left:18px">
@@ -899,10 +1170,8 @@ async function addManualStudent(gradeNow) {
 
   if (!name) { toast('Enter a student name.', 'warn'); return; }
 
-  // Add to manual students
   S.manualStudents.push({ id, name });
 
-  // Fake submission object
   S.submissions.push({
     user_id: id,
     workflow_state: text ? 'submitted' : 'unsubmitted',
@@ -912,7 +1181,6 @@ async function addManualStudent(gradeNow) {
     _hasAiCitation: hasAiCitation,
   });
 
-  // Clear form
   document.getElementById('manual-name').value = '';
   document.getElementById('manual-id').value = '';
   document.getElementById('manual-text').value = '';
@@ -923,7 +1191,10 @@ async function addManualStudent(gradeNow) {
 
   if (gradeNow && S.rubric && text && S.health?.claude) {
     try {
-      const res = await POST('/api/grade/single', { text, rubric: S.rubric, studentName: name, hasAiCitation });
+      const res = await POST('/api/grade/single', {
+        text, rubric: S.rubric, studentName: name, hasAiCitation,
+        aiInstructions: S.aiInstructions,
+      });
       applyAiGrade(id, res.grade, res.aiDetection, res.flagged);
       await saveGrade(id);
       toast(`${name} graded!`, 'success');

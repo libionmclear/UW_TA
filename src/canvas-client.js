@@ -57,6 +57,18 @@ async function getModuleItems(courseId, moduleId) {
   return canvasGet(`/courses/${courseId}/modules/${moduleId}/items?per_page=50`);
 }
 
+async function getPages(courseId) {
+  return canvasGet(`/courses/${courseId}/pages?per_page=50&sort=updated_at&order=desc`);
+}
+
+async function getPage(courseId, pageUrl) {
+  return canvasGet(`/courses/${courseId}/pages/${pageUrl}`);
+}
+
+async function getFiles(courseId) {
+  return canvasGet(`/courses/${courseId}/files?per_page=50&sort=updated_at&order=desc`);
+}
+
 module.exports = {
   testConnection,
   getCourses,
@@ -68,4 +80,7 @@ module.exports = {
   getAnnouncements,
   getModules,
   getModuleItems,
+  getPages,
+  getPage,
+  getFiles,
 };
