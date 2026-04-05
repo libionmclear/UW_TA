@@ -25,12 +25,17 @@ app.use(session({
 // ── Users ──────────────────────────────────────────────────────────────────────
 const USERS_FILE = path.join(__dirname, '../data/users.json');
 let USERS = [];
+// 1. Try data/users.json (local dev)
 try {
   if (fs.existsSync(USERS_FILE)) {
     USERS = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
   }
 } catch { /* ignore */ }
-// Fallback to env var single user
+// 2. Try USERS_JSON env var (cloud platforms: set as JSON array string)
+if (!USERS.length && process.env.USERS_JSON) {
+  try { USERS = JSON.parse(process.env.USERS_JSON); } catch { /* ignore */ }
+}
+// 3. Fallback to single TA_USERNAME / TA_PASSWORD env vars
 if (!USERS.length) {
   USERS = [{ username: process.env.TA_USERNAME || 'admin', password: process.env.TA_PASSWORD || 'changeme', role: 'admin' }];
 }
