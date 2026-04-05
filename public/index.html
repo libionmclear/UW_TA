@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TA Companion — UW</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<!-- ── Top Header ──────────────────────────────────────────────────────────── -->
+<header id="header">
+  <div class="header-left">
+    <div class="logo">
+      <span class="logo-w">W</span>
+      <span class="logo-text">TA Companion</span>
+    </div>
+    <div id="status-badges" class="status-badges"></div>
+  </div>
+  <div class="header-center">
+    <select id="sel-course" class="hdr-select">
+      <option value="">— Select Course —</option>
+    </select>
+    <select id="sel-assignment" class="hdr-select" disabled>
+      <option value="">— Select Assignment —</option>
+    </select>
+  </div>
+  <div class="header-right">
+    <button id="btn-export" class="btn btn-ghost" disabled>⬇ Export CSV</button>
+    <button id="btn-grade-all" class="btn btn-primary" disabled>▶ Grade All with AI</button>
+  </div>
+</header>
+
+<!-- ── Layout ──────────────────────────────────────────────────────────────── -->
+<div class="layout">
+
+  <!-- Sidebar -->
+  <nav class="sidebar">
+    <button class="nav-btn active" data-tab="overview">
+      <span class="nav-icon">◈</span> Overview
+    </button>
+    <button class="nav-btn" data-tab="rubric">
+      <span class="nav-icon">✦</span> Rubric
+    </button>
+    <button class="nav-btn" data-tab="students">
+      <span class="nav-icon">◉</span> Students
+    </button>
+    <button class="nav-btn" data-tab="grades">
+      <span class="nav-icon">▦</span> Grading Matrix
+    </button>
+    <hr class="nav-divider" />
+    <button class="nav-btn" data-tab="manual">
+      <span class="nav-icon">+</span> Add Manual
+    </button>
+  </nav>
+
+  <!-- Main Content -->
+  <main class="main">
+
+    <!-- ── Overview ──────────────────────────────────────────────────────── -->
+    <section id="tab-overview" class="tab-content active">
+      <div class="page-title">Overview</div>
+      <div id="overview-cards" class="stat-cards">
+        <div class="stat-card">
+          <div class="stat-value" id="stat-students">—</div>
+          <div class="stat-label">Students</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="stat-submitted">—</div>
+          <div class="stat-label">Submitted</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="stat-graded">—</div>
+          <div class="stat-label">AI Graded</div>
+        </div>
+        <div class="stat-card stat-card--warn">
+          <div class="stat-value" id="stat-flagged">—</div>
+          <div class="stat-label">AI Flagged</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="stat-avg">—</div>
+          <div class="stat-label">Avg Score</div>
+        </div>
+      </div>
+
+      <div class="overview-grid">
+        <div class="card">
+          <div class="card-title">Assignment Info</div>
+          <div id="overview-assignment">
+            <p class="muted">Select a course and assignment to begin.</p>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">Active Rubric</div>
+          <div id="overview-rubric">
+            <p class="muted">No rubric set. Go to the Rubric tab to create one.</p>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">Recent AI Flags</div>
+          <div id="overview-flags">
+            <p class="muted">No flags yet.</p>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">Quick Start</div>
+          <ol class="quickstart-list">
+            <li>Select a course &amp; assignment above</li>
+            <li>Build or generate a rubric in the <strong>Rubric</strong> tab</li>
+            <li>Load students &amp; submissions in <strong>Students</strong></li>
+            <li>Click <strong>Grade All with AI</strong> in the header</li>
+            <li>Review &amp; override scores in <strong>Grading Matrix</strong></li>
+            <li>Export CSV when done</li>
+          </ol>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Rubric Builder ─────────────────────────────────────────────────── -->
+    <section id="tab-rubric" class="tab-content">
+      <div class="page-title">
+        Rubric Builder
+        <div class="page-actions">
+          <button id="btn-generate-rubric" class="btn btn-secondary">✦ Generate with AI</button>
+          <button id="btn-save-rubric" class="btn btn-primary">Save Rubric</button>
+        </div>
+      </div>
+
+      <div class="card rubric-meta-card">
+        <div class="rubric-meta-row">
+          <div class="field-group">
+            <label>Rubric Name</label>
+            <input id="rubric-name" type="text" class="input" placeholder="e.g. Coffee Mug Design — Week 4" />
+          </div>
+          <div class="field-group field-group--sm">
+            <label>Total Points</label>
+            <input id="rubric-total" type="number" class="input" value="15" min="1" />
+          </div>
+          <div class="field-group">
+            <label>Assignment Description (for AI generation)</label>
+            <textarea id="rubric-description" class="input" rows="2" placeholder="Describe the assignment..."></textarea>
+          </div>
+        </div>
+      </div>
+
+      <div id="rubric-criteria-list" class="rubric-criteria-list"></div>
+
+      <button id="btn-add-criterion" class="btn btn-ghost btn-add-row">+ Add Criterion</button>
+
+      <div id="rubric-clarifying" class="card" style="display:none">
+        <div class="card-title">Clarifying Questions from AI</div>
+        <ul id="clarifying-list"></ul>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Saved Rubrics</div>
+        <div id="saved-rubrics-list">
+          <p class="muted">No saved rubrics yet.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Students ───────────────────────────────────────────────────────── -->
+    <section id="tab-students" class="tab-content">
+      <div class="page-title">
+        Students &amp; Submissions
+        <div class="page-actions">
+          <button id="btn-refresh-students" class="btn btn-secondary">⟳ Refresh from Canvas</button>
+        </div>
+      </div>
+
+      <div id="students-table-wrap">
+        <p class="muted padded">Select a course and assignment to load students.</p>
+      </div>
+    </section>
+
+    <!-- ── Grading Matrix ─────────────────────────────────────────────────── -->
+    <section id="tab-grades" class="tab-content">
+      <div class="page-title">
+        Grading Matrix
+        <div class="page-actions">
+          <button id="btn-clear-grades" class="btn btn-ghost btn-danger">Clear All</button>
+        </div>
+      </div>
+
+      <div id="grades-progress" style="display:none" class="progress-bar-wrap">
+        <div class="progress-label" id="progress-label">Grading 0 / 0…</div>
+        <div class="progress-track"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
+      </div>
+
+      <div id="grades-table-wrap" class="table-wrap">
+        <p class="muted padded">Grade all with AI or manually fill in scores.</p>
+      </div>
+    </section>
+
+    <!-- ── Manual Entry ───────────────────────────────────────────────────── -->
+    <section id="tab-manual" class="tab-content">
+      <div class="page-title">Add Student Manually</div>
+      <div class="card" style="max-width:600px">
+        <div class="field-group">
+          <label>Student Name</label>
+          <input id="manual-name" type="text" class="input" placeholder="First Last" />
+        </div>
+        <div class="field-group">
+          <label>Student ID (optional)</label>
+          <input id="manual-id" type="text" class="input" placeholder="e.g. 2034567" />
+        </div>
+        <div class="field-group">
+          <label>Paste Submission Text</label>
+          <textarea id="manual-text" class="input" rows="10" placeholder="Paste the student's submission here…"></textarea>
+        </div>
+        <div class="field-row">
+          <label class="checkbox-label">
+            <input id="manual-late" type="checkbox" /> Late submission
+          </label>
+          <label class="checkbox-label">
+            <input id="manual-ai-cite" type="checkbox" /> Student disclosed AI use
+          </label>
+        </div>
+        <div class="card-actions">
+          <button id="btn-manual-add" class="btn btn-primary">Add &amp; Grade with AI</button>
+          <button id="btn-manual-add-only" class="btn btn-secondary">Add Without Grading</button>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<!-- ── Student Detail Modal ───────────────────────────────────────────────── -->
+<div id="modal-backdrop" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+  <div class="modal">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title" id="modal-student-name">Student Name</div>
+        <div class="modal-subtitle" id="modal-student-meta"></div>
+      </div>
+      <button class="modal-close" id="modal-close">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-cols">
+        <!-- Left: Submission -->
+        <div class="modal-col">
+          <div class="col-title">Submission</div>
+          <div id="modal-submission-text" class="submission-text"></div>
+        </div>
+        <!-- Right: Scoring -->
+        <div class="modal-col">
+          <div class="col-title">Scores</div>
+          <div id="modal-ai-flag" class="ai-flag-banner" style="display:none"></div>
+          <div id="modal-criteria-scores" class="criteria-scores"></div>
+          <div class="score-totals">
+            <div>AI Total: <strong id="modal-ai-total">—</strong></div>
+            <div>Human Total: <strong id="modal-human-total">—</strong></div>
+            <div class="final-score">Final: <strong id="modal-final">—</strong></div>
+          </div>
+          <div class="field-group mt-1">
+            <label>Notes / Feedback</label>
+            <textarea id="modal-notes" class="input" rows="3" placeholder="Add notes for this student…"></textarea>
+          </div>
+          <div id="modal-ai-feedback" class="ai-feedback-box" style="display:none">
+            <div class="col-title">AI Overall Feedback</div>
+            <p id="modal-ai-feedback-text"></p>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button id="modal-grade-ai" class="btn btn-secondary">⟳ Re-grade with AI</button>
+      <button id="modal-save" class="btn btn-primary">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Toast ──────────────────────────────────────────────────────────────── -->
+<div id="toast" class="toast hidden"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
