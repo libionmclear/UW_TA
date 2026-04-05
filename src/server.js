@@ -1,5 +1,6 @@
 require('dotenv').config();
 const express = require('express');
+const session = require('express-session');
 const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
@@ -10,7 +11,52 @@ const grader = require('./grader');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+const TA_USERNAME = process.env.TA_USERNAME || 'admin';
+const TA_PASSWORD = process.env.TA_PASSWORD || 'changeme';
+const SESSION_SECRET = process.env.SESSION_SECRET || 'ta-companion-secret-change-me';
+
 app.use(express.json({ limit: '50mb' }));
+
+// ── Sessions ──────────────────────────────────────────────────────────────────
+app.use(session({
+  secret: SESSION_SECRET,
+  resave: false,
+  saveUninitialized: false,
+  cookie: { httpOnly: true, maxAge: 8 * 60 * 60 * 1000 }, // 8 hours
+}));
+
+// ── Auth routes (public) ──────────────────────────────────────────────────────
+app.post('/auth/login', (req, res) => {
+  const { username, password } = req.body;
+  if (username === TA_USERNAME && password === TA_PASSWORD) {
+    req.session.authenticated = true;
+    req.session.username = username;
+    return res.json({ ok: true });
+  }
+  res.status(401).json({ error: 'Invalid credentials' });
+});
+
+app.post('/auth/logout', (req, res) => {
+  req.session.destroy(() => res.json({ ok: true }));
+});
+
+app.get('/auth/me', (req, res) => {
+  res.json({ authenticated: !!req.session.authenticated, username: req.session.username });
+});
+
+// ── Auth guard ────────────────────────────────────────────────────────────────
+function requireAuth(req, res, next) {
+  if (req.session.authenticated) return next();
+  if (req.path.startsWith('/api/')) return res.status(401).json({ error: 'Not authenticated' });
+  res.redirect('/login.html');
+}
+
+// Serve static files (login.html is public, everything else protected)
+app.use((req, res, next) => {
+  if (req.path === '/login.html' || req.path.startsWith('/auth/')) return next();
+  requireAuth(req, res, next);
+});
+
 app.use(express.static(path.join(__dirname, '../public')));
 
 // ── Persistence ──────────────────────────────────────────────────────────────
@@ -234,7 +280,10 @@ app.get('/api/grades/:cid/:aid/export.csv', (req, res) => {
 });
 
 // ── SPA fallback ──────────────────────────────────────────────────────────────
-app.get('*', (_req, res) => res.sendFile(path.join(__dirname, '../public/index.html')));
+app.get('*', (req, res) => {
+  if (!req.session.authenticated) return res.redirect('/login.html');
+  res.sendFile(path.join(__dirname, '../public/index.html'));
+});
 
 app.listen(PORT, () => {
   console.log(`\n  TA Companion  →  http://localhost:${PORT}\n`);

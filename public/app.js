@@ -977,5 +977,19 @@ function esc(str) {
     .replace(/'/g, '&#39;');
 }
 
+/* ── Auth ─────────────────────────────────────────────────────────────────── */
+document.getElementById('btn-logout').addEventListener('click', async () => {
+  await fetch('/auth/logout', { method: 'POST' });
+  window.location.href = '/login.html';
+});
+
+async function loadCurrentUser() {
+  try {
+    const me = await GET('/auth/me');
+    if (!me.authenticated) { window.location.href = '/login.html'; return; }
+    document.getElementById('hdr-username').textContent = me.username;
+  } catch { window.location.href = '/login.html'; }
+}
+
 /* ── Boot ─────────────────────────────────────────────────────────────────── */
-init().catch(console.error);
+loadCurrentUser().then(() => init()).catch(console.error);
