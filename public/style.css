@@ -525,6 +525,28 @@ tbody td { padding: 7px 10px; vertical-align: middle; }
 .syl-inst         { white-space:nowrap; color:var(--text-muted); }
 .syl-due          { color:var(--warn); font-weight:600; white-space:nowrap; }
 
+/* ── Grade Ledger ────────────────────────────────────────────────────────────── */
+.ldg-wrap         { overflow-x:auto; max-height:calc(100vh - 130px); border:1px solid var(--border); border-radius:var(--radius-lg); background:var(--surface); }
+.ldg-table        { border-collapse:collapse; font-size:12px; white-space:nowrap; }
+.ldg-table thead  { position:sticky; top:0; z-index:3; }
+.ldg-table thead tr:first-child th { background:var(--uw-purple); color:#fff; font-size:11px; text-align:center; padding:5px 8px; border:1px solid rgba(255,255,255,.2); }
+.ldg-table thead tr:nth-child(2) th { background:var(--surface); color:var(--text-muted); font-size:10px; text-align:center; padding:4px 6px; border:1px solid var(--border); max-width:90px; overflow:hidden; text-overflow:ellipsis; }
+.ldg-pts          { font-weight:400; font-size:10px; color:var(--text-muted); }
+.ldg-name-hdr,.ldg-total-hdr,.ldg-letter-hdr { position:sticky; left:0; background:var(--uw-purple); z-index:4; min-width:140px; text-align:left; padding:5px 8px; border:1px solid rgba(255,255,255,.2); }
+.ldg-total-hdr    { left:140px; min-width:80px; }
+.ldg-letter-hdr   { left:220px; min-width:60px; }
+.ldg-group-hdr    { text-align:center; }
+.ldg-table tbody tr:hover { background:var(--bg); }
+.ldg-name         { position:sticky; left:0; z-index:2; background:var(--surface); font-weight:500; padding:5px 8px; border:1px solid var(--border); min-width:140px; }
+.ldg-total        { position:sticky; left:140px; z-index:2; background:var(--surface); padding:5px 8px; border:1px solid var(--border); text-align:center; min-width:80px; font-size:11px; color:var(--text-muted); }
+.ldg-letter       { position:sticky; left:220px; z-index:2; background:var(--surface); padding:5px 8px; border:1px solid var(--border); text-align:center; min-width:60px; font-weight:700; }
+.ldg-cell         { padding:4px 6px; border:1px solid var(--border); text-align:center; min-width:56px; }
+.ldg-empty        { color:var(--text-muted); }
+.ldg-cell-a       { background:#dcfce7; color:#166534; font-weight:600; }
+.ldg-cell-b       { background:#fef9c3; color:#854d0e; font-weight:600; }
+.ldg-cell-c       { background:#ffedd5; color:#9a3412; }
+.ldg-cell-f       { background:#fee2e2; color:#991b1b; }
+
 /* ── Misc ────────────────────────────────────────────────────────────────────── */
 .muted   { color: var(--text-muted); font-size: 13px; }
 .padded  { padding: 12px 0; }

@@ -20,6 +20,7 @@ const S = {
   rubric: null,              // active rubric for current assignment
   rubrics: [],
   aiInstructions: '',
+  assignmentText: '',
   manualStudents: [],
   quizBank: { questions: [] },
   syllabus: [],
@@ -144,7 +145,16 @@ async function loadCourseData() {
 /* ── Assignment grouping ─────────────────────────────────────────────────────── */
 // Maps Canvas assignment name patterns → display group (matches syllabus exactly)
 const GROUP_RULES = [
-  // QUIZZES — "Quiz – Chapters X–Y" style (must be first so quiz names don't fall to other groups)
+  // RECORDED LECTURES — must come before Quizzes so "Week 9 Quiz" / chapter videos aren't misclassified
+  { key: 'Recorded Lectures', patterns: [
+    /recorded lecture/i,
+    /week \d.*chapter/i,
+    /chapter.*week \d/i,
+    /lecture.*week/i,
+    /week \d.*lecture/i,
+    /week 9/i,
+  ]},
+  // QUIZZES — "Quiz – Chapters X–Y" style
   { key: 'Quizzes', patterns: [
     /quiz/i,
     /chapter \d{1,2}[-–]\d{1,2}/i,
@@ -165,6 +175,8 @@ const GROUP_RULES = [
     /ai.*tool/i,
     /ai.*video/i,
     /video.*ai/i,
+    /template.*example/i,
+    /example.*template/i,
   ]},
   // CASE DISCUSSIONS — HBS cases, case write-ups, in-class discussions, essays
   { key: 'Case Discussions', patterns: [
@@ -223,14 +235,6 @@ const GROUP_RULES = [
     /final exam/i,
     /comprehensive.*exam/i,
     /exam.*final/i,
-  ]},
-  // RECORDED LECTURES — weekly chapter videos (1 pt each)
-  { key: 'Recorded Lectures', patterns: [
-    /recorded lecture/i,
-    /week \d.*chapter/i,
-    /chapter.*week \d/i,
-    /lecture.*week/i,
-    /week \d.*lecture/i,
   ]},
 ];
 
@@ -352,6 +356,7 @@ async function selectAssignment(assignmentId) {
   S.grades = {};
   S.rubric = null;
   S.aiInstructions = '';
+  S.assignmentText = '';
 
   // Deactivate all sidebar items, activate this one
   document.querySelectorAll('.sidebar-item').forEach(b => b.classList.remove('active'));
@@ -389,6 +394,7 @@ async function loadAssignmentData(assignmentId) {
     S.submissions = subs;
     S.grades = grades;
     S.aiInstructions = settings.aiInstructions || '';
+    S.assignmentText = settings.assignmentText || '';
     if (savedRubric) S.rubric = savedRubric;
     else S.rubric = defaultRubricForAssignment(S.currentAssignment);
 
@@ -478,6 +484,7 @@ function showView(name) {
     case 'overview':    stopChatPoll(); renderOverview(root); break;
     case 'assignment':  renderAssignmentView(root); break;
     case 'gradebook':   renderGradeBook(root); break;
+    case 'ledger':      renderLedgerView(root); break;
     case 'quiz':        renderQuizView(root); break;
     case 'content':     renderContentView(root); loadCourseContent(); break;
     case 'syllabus':    renderSyllabusView(root); break;
@@ -872,6 +879,120 @@ function buildStudentCard(studentId) {
     <div class="sc-categories">${categoryBlocks}</div>`;
 }
 
+/* ── LEDGER VIEW (Canvas-style grade spreadsheet) ────────────────────────────── */
+async function renderLedgerView(root) {
+  root = root || document.getElementById('view-root');
+  if (!S.course) { root.innerHTML = '<p class="muted padded">Select a course first.</p>'; return; }
+
+  root.innerHTML = `<div class="page-title">Grade Ledger — ${esc(S.course?.name || '')}
+    <div class="page-actions">
+      <button class="btn btn-primary" id="ledger-sync-btn" onclick="syncLedgerFromCanvas()">⟳ Sync from Canvas</button>
+    </div>
+  </div><div class="padded muted">Loading…</div>`;
+
+  // Ensure students loaded
+  if (!S.allStudentsList.length) {
+    try { S.allStudentsList = await GET(`/api/courses/${S.course.id}/students`); }
+    catch (e) { root.innerHTML = `<p class="muted padded">Error loading students: ${esc(e.message)}</p>`; return; }
+  }
+
+  _renderLedgerHtml(root);
+}
+
+function _renderLedgerHtml(root, canvasScores) {
+  root = root || document.getElementById('view-root');
+  const students   = S.allStudentsList;
+  const assignments = [...S.assignments].sort((a, b) => new Date(a.due_at||0) - new Date(b.due_at||0));
+  if (!students.length || !assignments.length) {
+    root.innerHTML = '<p class="muted padded">No students or assignments loaded. Select a course first.</p>';
+    return;
+  }
+
+  // Build header columns (group by category, show category label spanning)
+  const grouped = {};
+  assignments.forEach(a => {
+    const g = classifyAssignment(a);
+    if (!grouped[g]) grouped[g] = [];
+    grouped[g].push(a);
+  });
+  const orderedGroups = [...GROUP_ORDER.filter(g => grouped[g]), ...Object.keys(grouped).filter(g => !GROUP_ORDER.includes(g))];
+
+  // Group header row
+  const groupHeaderCells = orderedGroups.map(g =>
+    `<th class="ldg-group-hdr" colspan="${grouped[g].length}">${esc(g)}</th>`
+  ).join('');
+
+  // Assignment header row
+  const asgHeaderCells = orderedGroups.flatMap(g => grouped[g].map(a =>
+    `<th class="ldg-asg-hdr" title="${esc(a.name)}">${esc(a.name.length > 18 ? a.name.slice(0,16)+'…' : a.name)}<div class="ldg-pts">${a.points_possible || '?'}pt</div></th>`
+  )).join('');
+
+  // Student rows
+  const rows = students.map(st => {
+    let earned = 0, possible = 0;
+    const cells = orderedGroups.flatMap(g => grouped[g].map(a => {
+      const localGrade = (S.allGrades[String(a.id)] || {})[st.id];
+      const cvScore    = canvasScores?.[String(a.id)]?.[st.id];
+      const score = localGrade?.finalScore ?? localGrade?.canvasScore ?? cvScore ?? null;
+      if (score != null && a.points_possible) { earned += score; possible += a.points_possible; }
+      const pct  = (score != null && a.points_possible) ? score / a.points_possible : null;
+      const bg   = pct == null ? '' : pct >= 0.9 ? 'ldg-cell-a' : pct >= 0.8 ? 'ldg-cell-b' : pct >= 0.7 ? 'ldg-cell-c' : 'ldg-cell-f';
+      const src  = localGrade?.finalScore != null ? '' : localGrade?.canvasScore != null ? ' title="Canvas"' : cvScore != null ? ' title="Canvas sync"' : '';
+      return `<td class="ldg-cell ${bg}"${src}>${score != null ? score : '<span class="ldg-empty">—</span>'}</td>`;
+    }));
+    const pct = possible ? Math.round(earned / possible * 100) : null;
+    const letter = pct == null ? '—' : pct>=93?'A':pct>=90?'A-':pct>=87?'B+':pct>=83?'B':pct>=80?'B-':pct>=77?'C+':pct>=73?'C':pct>=70?'C-':pct>=67?'D+':pct>=60?'D':'F';
+    return `<tr>
+      <td class="ldg-name">${esc(st.name)}</td>
+      <td class="ldg-total">${possible ? `${earned}/${possible}` : '—'}</td>
+      <td class="ldg-letter ${pct != null && pct < 70 ? 'grade-low' : ''}">${letter}</td>
+      ${cells.join('')}
+    </tr>`;
+  }).join('');
+
+  root.innerHTML = `
+    <div class="page-title">Grade Ledger — ${esc(S.course?.name || '')}
+      <div class="page-actions">
+        <button class="btn btn-primary" onclick="syncLedgerFromCanvas()">⟳ Sync from Canvas</button>
+      </div>
+    </div>
+    <div class="ldg-wrap">
+      <table class="ldg-table">
+        <thead>
+          <tr>
+            <th class="ldg-name-hdr" rowspan="2">Student</th>
+            <th class="ldg-total-hdr" rowspan="2">Total</th>
+            <th class="ldg-letter-hdr" rowspan="2">Grade</th>
+            ${groupHeaderCells}
+          </tr>
+          <tr>${asgHeaderCells}</tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+}
+
+async function syncLedgerFromCanvas() {
+  if (!S.course) return;
+  toast('Syncing grades from Canvas…');
+  try {
+    const canvasScores = await GET(`/api/canvas/course-submissions/${S.course.id}`);
+    // Merge canvasScore into allGrades
+    Object.entries(canvasScores).forEach(([aid, students]) => {
+      if (!S.allGrades[aid]) S.allGrades[aid] = {};
+      Object.entries(students).forEach(([uid, score]) => {
+        if (score != null) {
+          if (!S.allGrades[aid][uid]) S.allGrades[aid][uid] = {};
+          S.allGrades[aid][uid].canvasScore = score;
+          if (S.allGrades[aid][uid].finalScore == null) S.allGrades[aid][uid].finalScore = score;
+        }
+      });
+    });
+    toast('Canvas grades synced!', 'success');
+    _renderLedgerHtml(document.getElementById('view-root'), canvasScores);
+  } catch (e) { toast('Sync failed: ' + e.message, 'error'); }
+}
+
 async function saveStudentTeam(studentId, teamNum) {
   if (!S.course) return;
   const num = parseInt(teamNum) || null;
@@ -1135,26 +1256,41 @@ function renderInstructionsTab() {
   return `
     <div class="two-col-grid">
 
-      <!-- AI Grading Instructions -->
-      <div class="card">
-        <div class="card-title">AI Grading Instructions
-          <span class="card-title-hint">Injected into every AI grading prompt for this assignment</span>
+      <!-- Assignment Description + AI Grading Instructions (stacked left column) -->
+      <div style="display:flex;flex-direction:column;gap:16px">
+
+        <!-- Assignment Description -->
+        <div class="card">
+          <div class="card-title">Assignment Description
+            <span class="card-title-hint">The actual assignment text / prompt given to students</span>
+          </div>
+          <textarea id="assignment-text-input" class="input" rows="6"
+            placeholder="Paste the full assignment description here…"
+          >${esc(S.assignmentText)}</textarea>
         </div>
-        <textarea id="ai-instructions-text" class="input" rows="5"
-          placeholder="Enter specific grading instructions for the AI…
+
+        <!-- AI Grading Instructions -->
+        <div class="card">
+          <div class="card-title">AI Grading Instructions
+            <span class="card-title-hint">Injected into every AI grading prompt for this assignment</span>
+          </div>
+          <textarea id="ai-instructions-text" class="input" rows="5"
+            placeholder="Enter specific grading instructions for the AI…
 
 Example: 'This is a case write-up. Students MUST have an executive summary with recommendations, supporting points, and a conclusion with alternatives. Penalize missing sections heavily.'"
-        >${esc(S.aiInstructions)}</textarea>
-        <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
-          <button class="btn btn-surf" onclick="saveAiInstructions()">Save Instructions</button>
-          <span id="ai-instr-status" class="muted" style="font-size:12px"></span>
+          >${esc(S.aiInstructions)}</textarea>
+          <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
+            <button class="btn btn-surf" onclick="saveAiInstructions()">Save</button>
+            <span id="ai-instr-status" class="muted" style="font-size:12px"></span>
+          </div>
+          <div class="case-reminder">
+            <strong>Case Write-up Format:</strong>
+            ① Executive Summary + Recommendations &nbsp;·&nbsp;
+            ② Supporting Points &amp; Evidence &nbsp;·&nbsp;
+            ③ Conclusion / Alternatives / Other Thoughts
+          </div>
         </div>
-        <div class="case-reminder">
-          <strong>Case Write-up Format:</strong>
-          ① Executive Summary + Recommendations &nbsp;·&nbsp;
-          ② Supporting Points &amp; Evidence &nbsp;·&nbsp;
-          ③ Conclusion / Alternatives / Other Thoughts
-        </div>
+
       </div>
 
       <!-- Rubric -->
@@ -1213,8 +1349,12 @@ function refreshInstructionsTab() {
 async function saveAiInstructions() {
   if (!S.course || !S.currentAssignment) { toast('No assignment selected.', 'warn'); return; }
   S.aiInstructions = document.getElementById('ai-instructions-text')?.value?.trim() || '';
+  S.assignmentText = document.getElementById('assignment-text-input')?.value?.trim() || '';
   try {
-    await PUT(`/api/assignment-settings/${S.course.id}/${S.currentAssignment.id}`, { aiInstructions: S.aiInstructions });
+    await PUT(`/api/assignment-settings/${S.course.id}/${S.currentAssignment.id}`, {
+      aiInstructions: S.aiInstructions,
+      assignmentText: S.assignmentText,
+    });
     const el = document.getElementById('ai-instr-status');
     if (el) { el.textContent = 'Saved!'; setTimeout(() => { el.textContent = ''; }, 2000); }
     toast('Instructions saved.', 'success');
@@ -1752,7 +1892,6 @@ function renderQuizView(root) {
           <input id="upload-chapter" type="text" class="input" placeholder="Chapter 1" />
         </div>
         <label class="upload-drop-area" id="quiz-drop-zone"
-          onclick="document.getElementById('quiz-file-input').click()"
           ondragover="event.preventDefault();this.classList.add('drag-over')"
           ondragleave="this.classList.remove('drag-over')"
           ondrop="event.preventDefault();this.classList.remove('drag-over');handleQuizDrop(event)">

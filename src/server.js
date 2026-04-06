@@ -121,7 +121,16 @@ app.get('/api/courses/:cid', async (req, res) => {
 });
 
 app.get('/api/courses/:cid/students', async (req, res) => {
-  try { ok(res, await canvas.getStudents(req.params.cid)); } catch (e) { fail(res, e); }
+  try {
+    const enrollments = await canvas.getStudents(req.params.cid);
+    const students = enrollments.map(e => ({
+      id:    String(e.user_id || e.id),
+      name:  e.user?.name || e.user?.short_name || `User ${e.user_id}`,
+      email: e.user?.email || e.user?.login_id || '',
+      sortableName: e.user?.sortable_name || e.user?.name || '',
+    })).sort((a, b) => a.sortableName.localeCompare(b.sortableName));
+    ok(res, students);
+  } catch (e) { fail(res, e); }
 });
 
 app.get('/api/courses/:cid/assignments', async (req, res) => {
@@ -204,6 +213,22 @@ app.delete('/api/rubrics/:id', (req, res) => {
 app.post('/api/rubrics/generate', async (req, res) => {
   try { ok(res, await grader.generateRubric(req.body.description, req.body.totalPoints)); }
   catch (e) { fail(res, e); }
+});
+
+// ── Canvas bulk submissions (for Ledger) ─────────────────────────────────────
+app.get('/api/canvas/course-submissions/:cid', async (req, res) => {
+  try {
+    const subs = await canvas.getAllSubmissions(req.params.cid);
+    // Return as { assignmentId: { userId: score } }
+    const result = {};
+    subs.forEach(s => {
+      const aid = String(s.assignment_id);
+      const uid = String(s.user_id);
+      if (!result[aid]) result[aid] = {};
+      result[aid][uid] = s.score;
+    });
+    ok(res, result);
+  } catch (e) { fail(res, e); }
 });
 
 // ── Grades ────────────────────────────────────────────────────────────────────

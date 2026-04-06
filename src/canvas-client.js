@@ -69,6 +69,11 @@ async function getFiles(courseId) {
   return canvasGet(`/courses/${courseId}/files?per_page=50&sort=updated_at&order=desc`);
 }
 
+// Fetch all submissions for all students across all assignments in a course
+async function getAllSubmissions(courseId) {
+  return canvasGet(`/courses/${courseId}/students/submissions?student_ids[]=all&per_page=100`);
+}
+
 // Push a grade back to Canvas for a single student
 async function pushGrade(courseId, assignmentId, userId, grade) {
   const url = `${API_URL}/courses/${courseId}/assignments/${assignmentId}/submissions/${userId}`;
@@ -155,4 +160,5 @@ module.exports = {
   createQuiz,
   addQuizQuestion,
   publishQuiz,
+  getAllSubmissions,
 };
