@@ -106,22 +106,23 @@ a { color: var(--uw-purple); }
 /* nav-btn inside a papyrus box */
 .sidebar-box-body .nav-btn {
   color: #3d2b1a; background: transparent;
-  font-size: 12px; padding: 6px 10px;
+  font-size: 12px; padding: 7px 10px; gap: 6px;
 }
 .sidebar-box-body .nav-btn:hover  { background: rgba(75,46,131,.1); color: var(--uw-purple); }
 .sidebar-box-body .nav-btn.active { background: var(--uw-purple); color: #fff; font-weight: 700; }
-.nav-icon { font-size: 13px; }
+.nav-icon { font-size: 12px; width: 18px; text-align: center; display: inline-block; flex-shrink: 0; color: var(--uw-gold); }
 .nav-divider { border: none; border-top: 1px solid rgba(0,0,0,.08); margin: 3px 0; }
 
 /* Sidebar accordion groups (assignment grading section) */
 .sidebar-group { margin-bottom: 1px; }
 .sidebar-group-header {
-  display: flex; align-items: center; gap: 7px; width: 100%;
+  display: flex; align-items: center; gap: 6px; width: 100%;
   background: transparent; border: none; color: #3d2b1a;
-  padding: 6px 10px; border-radius: var(--radius); font-size: 11px; font-weight: 700;
+  padding: 7px 10px; border-radius: var(--radius); font-size: 11px; font-weight: 700;
   text-transform: uppercase; letter-spacing: .4px; cursor: pointer; transition: background .12s;
 }
 .sidebar-group-header:hover { background: rgba(75,46,131,.1); color: var(--uw-purple); }
+.sidebar-group-header .nav-icon { color: var(--uw-purple); opacity: .7; }
 .sidebar-group-name { flex: 1; text-align: left; }
 .sidebar-chevron    { font-size: 11px; opacity: .6; flex-shrink: 0; }
 .sidebar-badge      { background: var(--uw-purple); color: #fff; font-size: 10px; font-weight: 800; padding: 1px 5px; border-radius: 10px; }
@@ -790,6 +791,15 @@ tbody td { padding: 7px 10px; vertical-align: middle; }
   display: grid; place-items: center; box-shadow: 0 1px 3px rgba(0,0,0,.2);
 }
 .sc-photo-upload-btn:hover { filter: brightness(1.1); }
+
+/* ── Syncing Badge ──────────────────────────────────────────────────────────── */
+.syncing-badge {
+  display: inline-flex; align-items: center; gap: 2px;
+  font-size: 11px; font-weight: 600; color: var(--info);
+  background: #dbeafe; padding: 2px 8px; border-radius: 10px;
+  margin-left: 6px; text-transform: none; letter-spacing: 0;
+}
+.syncing-hint { margin-bottom: 6px; }
 
 /* ── Loading Indicators ─────────────────────────────────────────────────────── */
 .loading-splash {

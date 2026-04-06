@@ -29,6 +29,7 @@ const S = {
   dismissed: new Set(), // assignment IDs dismissed from "Needs Grading"
   allStudentsList: [], // all students for course (for grade book)
   me: null,           // current logged-in user { username, role }
+  _syncing: false,    // true while Canvas sync is running
 };
 
 const DEFAULT_COURSE_NAME = 'B BUS 464';
@@ -209,12 +210,17 @@ const GROUP_RULES = [
     /week \d.*lecture/i,
     /week 9/i,
   ]},
-  // QUIZZES — "Quiz – Chapters X–Y" style
+  // QUIZZES — "Quiz – Chapters X–Y" style, chapter-numbered point assignments
   { key: 'Quizzes', patterns: [
     /quiz/i,
     /chapter \d{1,2}[-–]\d{1,2}/i,
-    /chapters? 15/i,
-    /chapters? 16/i,
+    /chapters? \d{1,2}/i,
+  ]},
+  // COURSE EVALUATION — standalone
+  { key: 'Course Evaluation', patterns: [
+    /course eval/i,
+    /submit.*eval/i,
+    /evaluation/i,
   ]},
   // AI ASSIGNMENTS — in-class AI exercises and demos (before Activities to avoid overlap)
   { key: 'AI Assignments', patterns: [
@@ -319,19 +325,20 @@ function groupAssignments() {
 
 /* ── Sidebar ─────────────────────────────────────────────────────────────────── */
 const GROUP_ICONS = {
-  'Quizzes':            '?',
-  'AI Assignments':     '✦',
-  'Case Discussions':   '📋',
-  'Activities':         '✏',
-  'Group Project':      '◈',
-  'Participation':      '✦',
-  'Final Exam':         '★',
   'Recorded Lectures':  '▶',
-  'Other Assignments':  '◉',
+  'Quizzes':            '✎',
+  'AI Assignments':     '✦',
+  'Case Discussions':   '◆',
+  'Activities':         '▣',
+  'Group Project':      '◈',
+  'Participation':      '●',
+  'Final Exam':         '★',
+  'Course Evaluation':  '✓',
+  'Other Assignments':  '○',
 };
 
-// Sidebar display order matches syllabus
-const GROUP_ORDER = ['Quizzes', 'AI Assignments', 'Case Discussions', 'Activities', 'Group Project', 'Participation', 'Final Exam', 'Recorded Lectures', 'Other Assignments'];
+// Sidebar display order
+const GROUP_ORDER = ['Recorded Lectures', 'Quizzes', 'AI Assignments', 'Case Discussions', 'Activities', 'Group Project', 'Participation', 'Final Exam', 'Course Evaluation', 'Other Assignments'];
 
 // All groups start CLOSED — click to expand
 const expandedGroups = new Set();
@@ -724,7 +731,8 @@ function renderOverview(root) {
 
     <!-- Needs grading -->
     <div class="card card-full" style="margin-bottom:12px">
-      <div class="card-title">🔴 Needs Grading (${needsGrading.length})</div>
+      <div class="card-title">🔴 Needs Grading ${S._syncing ? '<span class="syncing-badge">Syncing Canvas<span class="loading-dots"></span></span>' : `(${needsGrading.length})`}</div>
+      ${S._syncing ? '<div class="syncing-hint"><div class="loading-bar-top" style="margin-bottom:0"><div class="loading-bar-fill"></div></div><p class="muted" style="padding:8px 0;text-align:center">Grabbing latest data from Canvas...</p></div>' : ''}
       ${needsGrading.length ? `<table class="overview-table">
         <thead><tr><th>Assignment</th><th>Type</th><th>Due</th><th>Points</th><th>Pending</th><th></th></tr></thead>
         <tbody>${needsGrading.map(a => {
@@ -3209,7 +3217,10 @@ document.getElementById('btn-sync-canvas').addEventListener('click', () => syncC
 
 async function syncCanvasGrades(silent = false) {
   if (!S.course) return;
+  S._syncing = true;
   if (!silent) toast('Syncing grades from Canvas…');
+  // Update overview if visible
+  if (currentView === 'overview') renderOverview();
   try {
     const canvasScores = await GET(`/api/canvas/course-submissions/${S.course.id}`);
     const cid = S.course.id;
@@ -3245,6 +3256,7 @@ async function syncCanvasGrades(silent = false) {
     await Promise.all(savePromises);
 
     const count = Object.values(canvasScores).reduce((n, s) => n + Object.keys(s).length, 0);
+    S._syncing = false;
     if (!silent) toast(`Canvas sync complete — ${count} scores imported.`, 'success');
     // Refresh current view
     const v = currentView;
@@ -3253,6 +3265,7 @@ async function syncCanvasGrades(silent = false) {
     else if (v === 'teams')   renderTeamsView();
     else if (v === 'overview') renderOverview(document.getElementById('view-root'));
   } catch (e) {
+    S._syncing = false;
     if (!silent) toast('Sync failed: ' + e.message, 'error');
     else console.warn('Canvas auto-sync failed:', e.message);
   }
