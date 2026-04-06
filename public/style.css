@@ -378,6 +378,56 @@ tbody td { padding: 7px 10px; vertical-align: middle; }
 .quiz-result-error    { background: #fee2e2; border: 1px solid #fca5a5; color: #991b1b; }
 .quiz-result-link     { color: #166534; font-weight: 700; }
 
+/* ── Nav section labels ──────────────────────────────────────────────────────── */
+.nav-section-label { font-size:9px; font-weight:800; letter-spacing:1px; text-transform:uppercase; color:rgba(255,255,255,.45); padding:14px 14px 3px; }
+
+/* ── Grade Book layout ───────────────────────────────────────────────────────── */
+.gb-layout         { display:grid; grid-template-columns:300px 1fr; gap:12px; height:calc(100vh - 130px); }
+.gb-list-panel     { display:flex; flex-direction:column; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-lg); overflow:hidden; }
+.gb-list-header    { padding:10px 12px; border-bottom:1px solid var(--border); display:flex; flex-direction:column; gap:4px; background:var(--bg); }
+.gb-list-scroll    { flex:1; overflow-y:auto; }
+.gb-card-panel     { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-lg); overflow-y:auto; padding:16px; }
+.gb-card-empty     { display:flex; flex-direction:column; align-items:center; justify-content:center; height:300px; color:var(--text-muted); font-size:14px; text-align:center; }
+.gb-table          { width:100%; border-collapse:collapse; }
+.gb-student-row    { cursor:pointer; border-bottom:1px solid var(--border); }
+.gb-student-row:hover { background:var(--ai-col); }
+.gb-selected       { background:#ede9fe !important; }
+.gb-name           { padding:8px 10px; font-size:12px; display:flex; align-items:center; gap:7px; }
+.gb-avatar         { width:24px; height:24px; border-radius:50%; background:var(--uw-purple); color:#fff; font-size:11px; font-weight:700; display:grid; place-items:center; flex-shrink:0; }
+.gb-score          { padding:8px 6px; font-size:11px; color:var(--text-muted); white-space:nowrap; }
+.gb-pct            { padding:8px 6px; min-width:80px; }
+.gb-bar-wrap       { height:5px; background:var(--border); border-radius:3px; margin-bottom:2px; overflow:hidden; }
+.gb-bar            { height:100%; border-radius:3px; transition:width .3s; }
+.gb-pct-val        { font-size:10px; color:var(--text-muted); }
+.gb-letter         { padding:8px 8px; font-size:13px; font-weight:700; color:var(--success); text-align:center; }
+.grade-low         { color:var(--danger) !important; }
+
+/* ── Student Card ────────────────────────────────────────────────────────────── */
+.sc-header         { display:flex; align-items:center; gap:14px; margin-bottom:14px; padding-bottom:14px; border-bottom:1px solid var(--border); }
+.sc-avatar-lg      { width:52px; height:52px; border-radius:50%; background:var(--uw-purple); color:#fff; font-size:22px; font-weight:700; display:grid; place-items:center; flex-shrink:0; }
+.sc-student-name   { font-size:17px; font-weight:700; }
+.sc-grade-bubble   { margin-left:auto; width:56px; height:56px; border-radius:50%; background:var(--success); color:#fff; font-size:18px; font-weight:800; display:grid; place-items:center; text-align:center; flex-shrink:0; }
+.sc-grade-bubble.grade-low { background:var(--danger); }
+.sc-team-row       { display:flex; align-items:center; gap:8px; margin-bottom:12px; font-size:12px; }
+.sc-team-input     { width:52px; padding:3px 6px; border:1px solid var(--border); border-radius:var(--radius); font-size:12px; text-align:center; }
+.sc-summary        { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:14px; }
+.sc-sum-item       { background:var(--bg); border-radius:var(--radius); padding:10px; text-align:center; }
+.sc-sum-val        { font-size:20px; font-weight:800; color:var(--uw-purple); }
+.sc-sum-lbl        { font-size:10px; color:var(--text-muted); margin-top:2px; }
+.sc-assessment     { background:#f0fdf4; border:1px solid #86efac; border-radius:var(--radius); padding:10px 14px; font-size:12px; color:#166534; margin-bottom:14px; }
+.sc-categories     { display:flex; flex-direction:column; gap:10px; }
+.sc-category       { border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; }
+.sc-cat-header     { display:flex; justify-content:space-between; align-items:center; padding:7px 12px; background:var(--bg); font-size:12px; font-weight:700; }
+.sc-cat-score      { font-size:11px; font-weight:400; }
+.sc-table          { width:100%; border-collapse:collapse; font-size:11px; }
+.sc-table td       { padding:5px 10px; border-bottom:1px solid var(--border); }
+.sc-aname          { max-width:220px; }
+.sc-due            { color:var(--text-muted); white-space:nowrap; }
+.sc-score          { text-align:right; white-space:nowrap; }
+
+/* ── Drag-over highlight ─────────────────────────────────────────────────────── */
+.drag-over         { border-color:var(--uw-purple) !important; background:var(--ai-col) !important; color:var(--uw-purple) !important; }
+
 /* ── Canvas score status badge ──────────────────────────────────────────────── */
 .status--canvas { background:#ede9fe; color:#5b21b6; }
 

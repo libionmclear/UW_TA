@@ -74,7 +74,7 @@ app.use(express.static(path.join(__dirname, '../public')));
 
 // ── Persistence ──────────────────────────────────────────────────────────────
 const DATA_FILE = path.join(__dirname, '../data/store.json');
-const store = { rubrics: {}, grades: {}, assignmentSettings: {}, assignmentRubrics: {}, quizBank: { questions: [] }, syllabus: null };
+const store = { rubrics: {}, grades: {}, assignmentSettings: {}, assignmentRubrics: {}, quizBank: { questions: [] }, syllabus: null, teams: {} };
 
 try {
   if (fs.existsSync(DATA_FILE)) {
@@ -444,6 +444,14 @@ app.get('/api/grades/:cid/:aid/export.csv', (req, res) => {
   res.setHeader('Content-Type', 'text/csv');
   res.setHeader('Content-Disposition', `attachment; filename="grades_${req.params.aid}.csv"`);
   res.send(csv);
+});
+
+// ── Teams ──────────────────────────────────────────────────────────────────────
+app.get('/api/teams/:cid', (req, res) => ok(res, store.teams[req.params.cid] || {}));
+app.put('/api/teams/:cid', (req, res) => {
+  store.teams[req.params.cid] = req.body;
+  save();
+  ok(res, store.teams[req.params.cid]);
 });
 
 // ── Syllabus ──────────────────────────────────────────────────────────────────

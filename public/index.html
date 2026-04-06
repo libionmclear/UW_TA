@@ -36,17 +36,16 @@
 
   <!-- ── Sidebar ─────────────────────────────────────────────────────────── -->
   <nav class="sidebar" id="sidebar">
-    <!-- Overview always on top -->
     <button class="nav-btn active" data-view="overview">
       <span class="nav-icon">◈</span> Overview
     </button>
 
-    <!-- Assignment groups rendered by JS -->
-    <div id="sidebar-assignments"></div>
-
-    <hr class="nav-divider" />
+    <div class="nav-section-label">Instructor Tools</div>
+    <button class="nav-btn" data-view="gradebook">
+      <span class="nav-icon">📊</span> Grade Book
+    </button>
     <button class="nav-btn" data-view="quiz">
-      <span class="nav-icon">?</span> Quiz Bank
+      <span class="nav-icon">?</span> Quiz &amp; Test Bank
     </button>
     <button class="nav-btn" data-view="content">
       <span class="nav-icon">▶</span> Course Content
@@ -54,7 +53,10 @@
     <button class="nav-btn" data-view="syllabus">
       <span class="nav-icon">📅</span> Instructor Syllabus
     </button>
-    <hr class="nav-divider" />
+
+    <div class="nav-section-label">Assignment Grading</div>
+    <!-- Assignment groups rendered by JS -->
+    <div id="sidebar-assignments"></div>
     <button class="nav-btn" data-view="manual">
       <span class="nav-icon">+</span> Add Manual
     </button>

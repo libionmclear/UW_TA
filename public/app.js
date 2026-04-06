@@ -23,6 +23,8 @@ const S = {
   manualStudents: [],
   quizBank: { questions: [] },
   syllabus: [],
+  teams: {},          // studentId → { team: number }
+  allStudentsList: [], // all students for course (for grade book)
 };
 
 const DEFAULT_COURSE_NAME = 'B BUS 464';
@@ -68,6 +70,9 @@ async function init() {
   // Load quiz bank + syllabus
   try { S.quizBank = await GET('/api/quiz-bank'); } catch { S.quizBank = { questions: [] }; }
   try { S.syllabus = await GET('/api/syllabus'); } catch { S.syllabus = []; }
+  if (S.health?.canvas) {
+    try { S.teams = await GET(`/api/teams/global`); } catch { S.teams = {}; }
+  }
 
   // Load courses then auto-select B BUS 464
   if (S.health?.canvas) {
@@ -118,12 +123,15 @@ async function loadCourseData() {
   if (!S.course) return;
   toast('Loading course data…');
   try {
-    const [assignments, allGradesRaw] = await Promise.all([
+    const [assignments, allGradesRaw, teamsRaw] = await Promise.all([
       GET(`/api/courses/${S.course.id}/assignments`),
       GET(`/api/grades/${S.course.id}/all`).catch(() => ({})),
+      GET(`/api/teams/${S.course.id}`).catch(() => ({})),
     ]);
     S.assignments = assignments;
     S.allGrades = allGradesRaw;
+    S.teams = teamsRaw;
+    S.allStudentsList = [];   // reset so grade book reloads fresh students
     groupAssignments();
     renderSidebar();
     showView('overview');
@@ -134,10 +142,27 @@ async function loadCourseData() {
 /* ── Assignment grouping ─────────────────────────────────────────────────────── */
 // Maps Canvas assignment name patterns → display group (matches syllabus exactly)
 const GROUP_RULES = [
-  // QUIZZES — "Quiz – Chapters X–Y" style
+  // QUIZZES — "Quiz – Chapters X–Y" style (must be first so quiz names don't fall to other groups)
   { key: 'Quizzes', patterns: [
     /quiz/i,
     /chapter \d{1,2}[-–]\d{1,2}/i,
+    /chapters? 15/i,
+    /chapters? 16/i,
+  ]},
+  // AI ASSIGNMENTS — in-class AI exercises and demos (before Activities to avoid overlap)
+  { key: 'AI Assignments', patterns: [
+    /ai.*slide/i,
+    /slide creation/i,
+    /ai.*blog/i,
+    /blog.*ai/i,
+    /blog writing/i,
+    /ai.*exercise/i,
+    /ai.*agent/i,
+    /ai.*demo/i,
+    /copilot.*exercise/i,
+    /ai.*tool/i,
+    /ai.*video/i,
+    /video.*ai/i,
   ]},
   // CASE DISCUSSIONS — HBS cases, case write-ups, in-class discussions, essays
   { key: 'Case Discussions', patterns: [
@@ -154,9 +179,10 @@ const GROUP_RULES = [
     /gillette/i,
     /tesla.*marketing/i,
     /chipotle/i,
-    /crossing the chasm.*essay/i,
+    /crossing the chasm/i,   // essay OR discussion
+    /chasm/i,
   ]},
-  // ACTIVITIES — simulations, AI exercises, workshops, presentations
+  // ACTIVITIES — simulations, workshops, presentations
   { key: 'Activities', patterns: [
     /simulation/i,
     /workshop/i,
@@ -164,14 +190,11 @@ const GROUP_RULES = [
     /food truck/i,
     /persona/i,
     /positioning.*(map|sim)/i,
-    /blog writing/i,
-    /slide creation/i,
     /product of the week/i,
     /atar/i,
     /launch management/i,
     /minimum viable/i,
     /jobs to be done/i,
-    /ai.*demo/i,
     /copilot/i,
   ]},
   // GROUP PROJECT — milestones and final deliverables
@@ -236,6 +259,7 @@ function groupAssignments() {
 /* ── Sidebar ─────────────────────────────────────────────────────────────────── */
 const GROUP_ICONS = {
   'Quizzes':            '?',
+  'AI Assignments':     '✦',
   'Case Discussions':   '📋',
   'Activities':         '✏',
   'Group Project':      '◈',
@@ -246,7 +270,7 @@ const GROUP_ICONS = {
 };
 
 // Sidebar display order matches syllabus
-const GROUP_ORDER = ['Quizzes', 'Case Discussions', 'Activities', 'Group Project', 'Participation', 'Final Exam', 'Recorded Lectures', 'Other Assignments'];
+const GROUP_ORDER = ['Quizzes', 'AI Assignments', 'Case Discussions', 'Activities', 'Group Project', 'Participation', 'Final Exam', 'Recorded Lectures', 'Other Assignments'];
 
 // All groups start CLOSED — click to expand
 const expandedGroups = new Set();
@@ -359,6 +383,7 @@ async function loadAssignmentData(assignmentId) {
       GET('/api/rubrics').then(r => { S.rubrics = r; }).catch(() => {}),
     ]);
     S.students = enrollments;
+    if (enrollments.length > S.allStudentsList.length) S.allStudentsList = enrollments;
     S.submissions = subs;
     S.grades = grades;
     S.aiInstructions = settings.aiInstructions || '';
@@ -450,6 +475,7 @@ function showView(name) {
   switch (name) {
     case 'overview':    renderOverview(root); break;
     case 'assignment':  renderAssignmentView(root); break;
+    case 'gradebook':   renderGradeBook(root); break;
     case 'quiz':        renderQuizView(root); break;
     case 'content':     renderContentView(root); loadCourseContent(); break;
     case 'syllabus':    renderSyllabusView(root); break;
@@ -639,6 +665,220 @@ function renderOverview(root) {
       </div>
 
     </div>`;
+}
+
+/* ── GRADE BOOK VIEW ─────────────────────────────────────────────────────────── */
+async function renderGradeBook(root) {
+  root = root || document.getElementById('view-root');
+  if (!S.course) { root.innerHTML = '<p class="muted padded">Select a course first.</p>'; return; }
+
+  // Ensure we have student list
+  if (!S.allStudentsList.length) {
+    root.innerHTML = '<p class="muted padded">Loading students…</p>';
+    try { S.allStudentsList = await GET(`/api/courses/${S.course.id}/students`); }
+    catch (e) { root.innerHTML = `<p class="muted padded">Error: ${esc(e.message)}</p>`; return; }
+  }
+
+  _renderGradeBookHtml(root);
+}
+
+function _renderGradeBookHtml(root, selectedStudentId) {
+  root = root || document.getElementById('view-root');
+  const students = S.allStudentsList;
+  const assignments = S.assignments.sort((a, b) => new Date(a.due_at||0) - new Date(b.due_at||0));
+
+  // Per-student totals
+  function studentTotals(sid) {
+    let earned = 0, possible = 0;
+    assignments.forEach(a => {
+      const g = (S.allGrades[String(a.id)] || {})[sid];
+      if (g?.finalScore != null && a.points_possible) {
+        earned   += g.finalScore;
+        possible += a.points_possible;
+      }
+    });
+    return { earned, possible, pct: possible ? Math.round(earned / possible * 100) : null };
+  }
+
+  function letterGrade(pct) {
+    if (pct == null) return '—';
+    if (pct >= 93) return 'A';  if (pct >= 90) return 'A-';
+    if (pct >= 87) return 'B+'; if (pct >= 83) return 'B'; if (pct >= 80) return 'B-';
+    if (pct >= 77) return 'C+'; if (pct >= 73) return 'C'; if (pct >= 70) return 'C-';
+    if (pct >= 67) return 'D+'; if (pct >= 60) return 'D';
+    return 'F';
+  }
+
+  // Student list panel
+  const listRows = students.map(st => {
+    const { earned, possible, pct } = studentTotals(st.id);
+    const letter = letterGrade(pct);
+    const isSelected = st.id === selectedStudentId;
+    const barW = pct != null ? Math.min(pct, 100) : 0;
+    const barColor = pct == null ? '#ddd' : pct >= 80 ? 'var(--success)' : pct >= 70 ? 'var(--warn)' : 'var(--danger)';
+    return `<tr class="gb-student-row ${isSelected ? 'gb-selected' : ''}" onclick="showStudentCard('${esc(st.id)}')">
+      <td class="gb-name"><span class="gb-avatar">${esc((st.name||'?')[0].toUpperCase())}</span>${esc(st.name)}</td>
+      <td class="gb-score">${possible ? `${earned}/${possible}` : '—'}</td>
+      <td class="gb-pct">
+        ${pct != null ? `<div class="gb-bar-wrap"><div class="gb-bar" style="width:${barW}%;background:${barColor}"></div></div>
+        <span class="gb-pct-val">${pct}%</span>` : '<span class="muted">—</span>'}
+      </td>
+      <td class="gb-letter ${pct != null && pct < 70 ? 'grade-low' : ''}">${letter}</td>
+    </tr>`;
+  }).join('');
+
+  // Student card panel
+  const cardHtml = selectedStudentId ? buildStudentCard(selectedStudentId) : `
+    <div class="gb-card-empty">
+      <div style="font-size:40px;margin-bottom:12px">👤</div>
+      <div>Click a student to view their grade card</div>
+    </div>`;
+
+  root.innerHTML = `
+    <div class="page-title">Grade Book — ${esc(S.course?.name || '')}
+      <div class="page-actions">
+        <button class="btn btn-ghost" onclick="renderGradeBook()">⟳ Refresh</button>
+      </div>
+    </div>
+    <div class="gb-layout">
+      <div class="gb-list-panel">
+        <div class="gb-list-header">
+          <input class="input" id="gb-search" type="text" placeholder="Search student…" oninput="filterGbStudents(this.value)" style="font-size:12px;padding:5px 8px" />
+          <span class="muted" style="font-size:11px;margin-top:4px">${students.length} students</span>
+        </div>
+        <div class="gb-list-scroll">
+          <table class="gb-table"><tbody id="gb-student-rows">${listRows}</tbody></table>
+        </div>
+      </div>
+      <div class="gb-card-panel" id="gb-card-panel">${cardHtml}</div>
+    </div>`;
+}
+
+function filterGbStudents(q) {
+  const rows = document.querySelectorAll('.gb-student-row');
+  const lq = q.toLowerCase();
+  rows.forEach(r => { r.style.display = r.textContent.toLowerCase().includes(lq) ? '' : 'none'; });
+}
+
+function showStudentCard(studentId) {
+  _renderGradeBookHtml(null, studentId);
+}
+
+function buildStudentCard(studentId) {
+  const st = S.allStudentsList.find(s => s.id === studentId) || S.students.find(s => s.id === studentId);
+  if (!st) return '<p class="muted">Student not found.</p>';
+
+  const teamData = S.teams[studentId] || {};
+  const teamNum  = teamData.team || null;
+  const teammates = teamNum
+    ? S.allStudentsList.filter(s => s.id !== studentId && (S.teams[s.id]?.team) === teamNum).map(s => s.name)
+    : [];
+
+  const assignments = S.assignments.sort((a, b) => new Date(a.due_at||0) - new Date(b.due_at||0));
+
+  // Group assignments, compute per-category totals
+  let totalEarned = 0, totalPossible = 0;
+  const byGroup = {};
+  assignments.forEach(a => {
+    const g = classifyAssignment(a);
+    if (!byGroup[g]) byGroup[g] = [];
+    const grade = (S.allGrades[String(a.id)] || {})[studentId];
+    const sub = S.submissions.find(s => String(s.user_id) === String(studentId));
+    const score = grade?.finalScore;
+    if (score != null && a.points_possible) { totalEarned += score; totalPossible += a.points_possible; }
+    byGroup[g].push({ a, grade, score });
+  });
+
+  const pct = totalPossible ? Math.round(totalEarned / totalPossible * 100) : null;
+  function letterGrade(p) {
+    if (p == null) return '—';
+    if (p >= 93) return 'A'; if (p >= 90) return 'A-'; if (p >= 87) return 'B+'; if (p >= 83) return 'B';
+    if (p >= 80) return 'B-'; if (p >= 77) return 'C+'; if (p >= 73) return 'C'; if (p >= 70) return 'C-';
+    if (p >= 67) return 'D+'; if (p >= 60) return 'D'; return 'F';
+  }
+  const letter = letterGrade(pct);
+
+  const categoryBlocks = GROUP_ORDER.filter(g => byGroup[g]?.length).map(g => {
+    const items = byGroup[g];
+    let catEarned = 0, catPossible = 0;
+    items.forEach(({ a, score }) => { if (score != null && a.points_possible) { catEarned += score; catPossible += a.points_possible; } });
+    const catPct = catPossible ? Math.round(catEarned / catPossible * 100) : null;
+
+    const rows = items.map(({ a, grade, score }) => {
+      const sub = S.submissions.find(s => String(s.user_id) === String(studentId));
+      // Check allGrades for submission evidence
+      const hasGrade = grade != null;
+      const isSubmitted = hasGrade || (grade?.status !== 'pending');
+      const canvasScore = grade?.canvasScore;
+      const statusText = !hasGrade ? '—'
+        : grade.status === 'canvas' ? '<span class="status-badge status--canvas">Canvas</span>'
+        : grade.status === 'reviewed' ? '<span class="status-badge status--reviewed">Reviewed</span>'
+        : '<span class="status-badge status--graded">Graded</span>';
+      return `<tr>
+        <td class="sc-aname"><button class="link-btn" onclick="selectAssignment('${a.id}')">${esc(a.name)}</button></td>
+        <td class="sc-due">${a.due_at ? new Date(a.due_at).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '—'}</td>
+        <td>${statusText}</td>
+        <td class="sc-score">${score != null ? `<strong>${score}</strong>` : '—'} ${a.points_possible ? `/ ${a.points_possible}` : ''}</td>
+        ${canvasScore != null ? `<td class="muted" style="font-size:11px">Canvas: ${canvasScore}</td>` : '<td></td>'}
+      </tr>`;
+    }).join('');
+
+    return `<div class="sc-category">
+      <div class="sc-cat-header">
+        <span>${esc(g)}</span>
+        <span class="sc-cat-score">${catPossible ? `${catEarned}/${catPossible}` : '—'} ${catPct != null ? `<span class="muted">(${catPct}%)</span>` : ''}</span>
+      </div>
+      <table class="sc-table"><tbody>${rows}</tbody></table>
+    </div>`;
+  }).join('');
+
+  const assessment = pct == null ? 'No grades recorded yet.'
+    : pct >= 90 ? 'Excellent performance. Keep it up!'
+    : pct >= 80 ? 'Good standing. A few areas to strengthen.'
+    : pct >= 70 ? 'Satisfactory. Some assignments need attention.'
+    : pct >= 60 ? 'Below expectations. Recommend reaching out to student.'
+    : 'Struggling. Immediate attention recommended.';
+
+  return `
+    <div class="sc-header">
+      <div class="sc-avatar-lg">${esc((st.name||'?')[0].toUpperCase())}</div>
+      <div>
+        <div class="sc-student-name">${esc(st.name)}</div>
+        <div class="muted" style="font-size:12px">${esc(st.email || '')}</div>
+      </div>
+      <div class="sc-grade-bubble ${pct != null && pct < 70 ? 'grade-low' : ''}">${letter}<div style="font-size:11px;font-weight:400">${pct != null ? pct+'%' : '—'}</div></div>
+    </div>
+
+    <div class="sc-team-row">
+      <span>Team:</span>
+      <input class="sc-team-input" type="number" min="1" max="99" placeholder="—"
+        value="${teamNum || ''}"
+        onchange="saveStudentTeam('${esc(studentId)}', this.value)"
+        title="Set team number" />
+      ${teammates.length ? `<span class="muted" style="font-size:11px">with ${teammates.slice(0,4).map(n => n.split(' ')[0]).join(', ')}</span>` : ''}
+    </div>
+
+    <div class="sc-summary">
+      <div class="sc-sum-item"><div class="sc-sum-val">${totalEarned}</div><div class="sc-sum-lbl">Earned</div></div>
+      <div class="sc-sum-item"><div class="sc-sum-val">${totalPossible}</div><div class="sc-sum-lbl">Possible</div></div>
+      <div class="sc-sum-item"><div class="sc-sum-val">${pct != null ? pct+'%' : '—'}</div><div class="sc-sum-lbl">Percentage</div></div>
+      <div class="sc-sum-item"><div class="sc-sum-val ${pct != null && pct < 70 ? 'grade-low' : ''}">${letter}</div><div class="sc-sum-lbl">Letter</div></div>
+    </div>
+
+    <div class="sc-assessment">${esc(assessment)}</div>
+
+    <div class="sc-categories">${categoryBlocks}</div>`;
+}
+
+async function saveStudentTeam(studentId, teamNum) {
+  if (!S.course) return;
+  const num = parseInt(teamNum) || null;
+  if (num) S.teams[studentId] = { team: num };
+  else delete S.teams[studentId];
+  await PUT(`/api/teams/${S.course.id}`, S.teams);
+  // Refresh card without reloading full list
+  const panel = document.getElementById('gb-card-panel');
+  if (panel) panel.innerHTML = buildStudentCard(studentId);
 }
 
 /* ── Syllabus helpers ───────────────────────────────────────────────────────── */
@@ -1455,9 +1695,13 @@ function renderQuizView(root) {
           <label>Chapter / Label <span class="muted">(e.g. "Chapter 3" or "Midterm")</span></label>
           <input id="upload-chapter" type="text" class="input" placeholder="Chapter 1" />
         </div>
-        <label class="upload-drop-area" onclick="document.getElementById('quiz-file-input').click()">
+        <label class="upload-drop-area" id="quiz-drop-zone"
+          onclick="document.getElementById('quiz-file-input').click()"
+          ondragover="event.preventDefault();this.classList.add('drag-over')"
+          ondragleave="this.classList.remove('drag-over')"
+          ondrop="event.preventDefault();this.classList.remove('drag-over');handleQuizDrop(event)">
           <div class="upload-drop-icon">📂</div>
-          <div>Click to select files</div>
+          <div>Click or drag &amp; drop files here</div>
           <div class="muted" style="font-size:11px;margin-top:4px">.docx · .doc · .txt · .csv · .json · .md — multiple files OK</div>
           <input id="quiz-file-input" type="file" accept=".txt,.csv,.json,.md,.doc,.docx" multiple style="display:none" onchange="uploadQuizFile(this)" />
         </label>
@@ -1681,6 +1925,11 @@ async function uploadQuizFile(input) {
   else toast(`Imported ${totalImported} questions (${totalWithAnswers} with answers) tagged as "${chapter}".`, 'success');
   showView('quiz');
   input.value = '';
+}
+
+async function handleQuizDrop(event) {
+  const fakeInput = { files: event.dataTransfer.files, value: '' };
+  await uploadQuizFile(fakeInput);
 }
 
 async function clearQuizBank() {
