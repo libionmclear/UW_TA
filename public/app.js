@@ -439,36 +439,59 @@ function showView(name) {
     case 'overview':    renderOverview(root); break;
     case 'assignment':  renderAssignmentView(root); break;
     case 'quiz':        renderQuizView(root); break;
-    case 'content':     renderContentView(root); break;
+    case 'content':     renderContentView(root); loadCourseContent(); break;
     case 'manual':      renderManualView(root); break;
     default:            renderOverview(root);
   }
 }
 
 /* ── OVERVIEW VIEW ───────────────────────────────────────────────────────────── */
+
+// Returns the next Monday and Wednesday on or after `from`
+function nextClassDates(from) {
+  const d = new Date(from); d.setHours(0,0,0,0);
+  const results = [];
+  for (let i = 0; i <= 13 && results.length < 2; i++) {
+    const t = new Date(d); t.setDate(d.getDate() + i);
+    if (t.getDay() === 1 || t.getDay() === 3) results.push(t); // Mon=1, Wed=3
+  }
+  return results;  // [next class, class after that]
+}
+
 function renderOverview(root) {
   root = root || document.getElementById('view-root');
-
-  // Compute stats across all assignments
   const now = new Date();
-  const upcoming = S.assignments
-    .filter(a => a.due_at && new Date(a.due_at) > now)
-    .sort((a, b) => new Date(a.due_at) - new Date(b.due_at))
-    .slice(0, 8);
+
+  // Next two class days
+  const [nextClass, classAfter] = nextClassDates(now);
+  const nextClassLabel = nextClass ? nextClass.toLocaleDateString('en-US', { weekday:'long', month:'short', day:'numeric' }) : '—';
+  const classAfterLabel = classAfter ? classAfter.toLocaleDateString('en-US', { weekday:'long', month:'short', day:'numeric' }) : '—';
+
+  // Assignments due on or before next class
+  const dueNextClass = S.assignments.filter(a => {
+    if (!a.due_at) return false;
+    const d = new Date(a.due_at); d.setHours(23,59,59,0);
+    return d >= now && nextClass && d <= new Date(nextClass.getTime() + 86399999);
+  }).sort((a,b) => new Date(a.due_at) - new Date(b.due_at));
+
+  // Assignments due between next class and the one after
+  const dueWeek = S.assignments.filter(a => {
+    if (!a.due_at || !nextClass || !classAfter) return false;
+    const d = new Date(a.due_at);
+    return d > new Date(nextClass.getTime() + 86399999) && d <= new Date(classAfter.getTime() + 86399999);
+  }).sort((a,b) => new Date(a.due_at) - new Date(b.due_at));
 
   const needsGrading = S.assignments.filter(a => {
     const g = S.allGrades[String(a.id)] || {};
     return Object.values(g).some(gr => gr.status !== 'reviewed');
   });
 
-  // Recent graded — last assignment with all reviewed
   const recentlyGraded = S.assignments.filter(a => {
     const g = S.allGrades[String(a.id)] || {};
     const vals = Object.values(g);
     return vals.length > 0 && vals.every(gr => gr.status === 'reviewed');
-  }).slice(-3);
+  }).slice(-4);
 
-  // AI flags across all assignments
   const allFlags = [];
   Object.entries(S.allGrades).forEach(([aid, students]) => {
     const a = S.assignments.find(x => String(x.id) === aid);
@@ -477,7 +500,6 @@ function renderOverview(root) {
     });
   });
 
-  // Avg score of most recent reviewed assignment
   let avgHtml = '—';
   if (recentlyGraded.length) {
     const last = recentlyGraded[recentlyGraded.length - 1];
@@ -485,14 +507,26 @@ function renderOverview(root) {
     const scores = grades.map(g => g.finalScore).filter(s => s != null);
     if (scores.length) {
       const avg = (scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1);
-      avgHtml = `${avg} / ${last.points_possible || '?'} <span class="muted" style="font-size:12px">(${esc(last.name)})</span>`;
+      avgHtml = `${avg} / ${last.points_possible || '?'} <span class="muted" style="font-size:11px">${esc(last.name)}</span>`;
     }
+  }
+
+  function upcomingRows(list) {
+    if (!list.length) return '<p class="muted" style="padding:6px 0">Nothing due.</p>';
+    return `<table class="overview-table">
+      <thead><tr><th>Assignment</th><th>Type</th><th>Points</th><th></th></tr></thead>
+      <tbody>${list.map(a => `<tr>
+        <td><button class="link-btn" onclick="selectAssignment('${a.id}')">${esc(a.name)}</button></td>
+        <td><span class="type-badge">${esc(classifyAssignment(a))}</span></td>
+        <td>${a.points_possible || '—'}</td>
+        <td><button class="btn btn-surf" style="font-size:11px;padding:3px 8px" onclick="selectAssignment('${a.id}')">Open</button></td>
+      </tr>`).join('')}</tbody>
+    </table>`;
   }
 
   root.innerHTML = `
     <div class="page-title">Overview — ${esc(S.course?.name || 'No course selected')}</div>
 
-    <!-- Stat strip -->
     <div class="stat-cards">
       <div class="stat-card">
         <div class="stat-value">${S.assignments.length || '—'}</div>
@@ -507,47 +541,52 @@ function renderOverview(root) {
         <div class="stat-label">AI Flags</div>
       </div>
       <div class="stat-card">
-        <div class="stat-value" style="font-size:18px">${avgHtml}</div>
+        <div class="stat-value" style="font-size:16px">${avgHtml}</div>
         <div class="stat-label">Last Avg Score</div>
       </div>
     </div>
 
+    <!-- Upcoming by class day -->
     <div class="overview-grid">
 
-      <!-- Needs Grading -->
-      <div class="card card-full">
-        <div class="card-title">🔴 Needs Grading (${needsGrading.length})</div>
-        ${needsGrading.length ? `<table class="overview-table">
-          <thead><tr><th>Assignment</th><th>Type</th><th>Due</th><th>Points</th><th>Pending</th><th></th></tr></thead>
-          <tbody>${needsGrading.map(a => {
-            const g = S.allGrades[String(a.id)] || {};
-            const pending = Object.values(g).filter(gr => gr.status !== 'reviewed').length;
-            const due = a.due_at ? new Date(a.due_at).toLocaleDateString() : '—';
-            return `<tr>
-              <td><button class="link-btn" onclick="selectAssignment('${a.id}')">${esc(a.name)}</button></td>
-              <td><span class="type-badge">${esc(classifyAssignment(a))}</span></td>
-              <td>${due}</td>
-              <td>${a.points_possible || '—'}</td>
-              <td><span class="status-badge status--warn">${pending} pending</span></td>
-              <td><button class="btn btn-surf" style="font-size:11px;padding:4px 10px" onclick="selectAssignment('${a.id}')">Open</button></td>
-            </tr>`;
-          }).join('')}</tbody>
-        </table>` : '<p class="muted">All assignments reviewed! 🎉</p>'}
+      <div class="card">
+        <div class="card-title">📅 Next Class — ${esc(nextClassLabel)}
+          <span class="card-title-hint">${dueNextClass.length} due</span>
+        </div>
+        ${upcomingRows(dueNextClass)}
       </div>
 
-      <!-- Upcoming Due -->
       <div class="card">
-        <div class="card-title">📅 Upcoming Due Dates</div>
-        ${upcoming.length ? `<ul class="overview-list">${upcoming.map(a => {
-          const due = new Date(a.due_at);
-          const diff = Math.ceil((due - now) / (1000 * 60 * 60 * 24));
-          const urgency = diff <= 2 ? 'color:var(--danger);font-weight:700' : diff <= 7 ? 'color:var(--warn)' : '';
-          return `<li>
-            <button class="link-btn" onclick="selectAssignment('${a.id}')">${esc(a.name)}</button>
-            <span style="${urgency}">${due.toLocaleDateString()} (${diff}d)</span>
-          </li>`;
-        }).join('')}</ul>` : '<p class="muted">No upcoming due dates.</p>'}
+        <div class="card-title">📅 Class After — ${esc(classAfterLabel)}
+          <span class="card-title-hint">${dueWeek.length} due</span>
+        </div>
+        ${upcomingRows(dueWeek)}
       </div>
+
+    </div>
+
+    <!-- Needs grading -->
+    <div class="card card-full" style="margin-bottom:12px">
+      <div class="card-title">🔴 Needs Grading (${needsGrading.length})</div>
+      ${needsGrading.length ? `<table class="overview-table">
+        <thead><tr><th>Assignment</th><th>Type</th><th>Due</th><th>Points</th><th>Pending</th><th></th></tr></thead>
+        <tbody>${needsGrading.map(a => {
+          const g = S.allGrades[String(a.id)] || {};
+          const pending = Object.values(g).filter(gr => gr.status !== 'reviewed').length;
+          const due = a.due_at ? new Date(a.due_at).toLocaleDateString() : '—';
+          return `<tr>
+            <td><button class="link-btn" onclick="selectAssignment('${a.id}')">${esc(a.name)}</button></td>
+            <td><span class="type-badge">${esc(classifyAssignment(a))}</span></td>
+            <td>${due}</td>
+            <td>${a.points_possible || '—'}</td>
+            <td><span class="status-badge status--warn">${pending} pending</span></td>
+            <td><button class="btn btn-surf" style="font-size:11px;padding:4px 10px" onclick="selectAssignment('${a.id}')">Open</button></td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table>` : '<p class="muted">All assignments reviewed! 🎉</p>'}
+    </div>
+
+    <div class="overview-grid">
 
       <!-- AI Flags -->
       <div class="card">
@@ -992,7 +1031,7 @@ async function gradeAll() {
     const resp = await fetch('/api/grade/batch', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ submissions, rubric: S.rubric, aiInstructions: S.aiInstructions }),
+      body: JSON.stringify({ submissions, rubric: S.rubric, aiInstructions: S.aiInstructions, isCaseWriteup: classifyAssignment(S.currentAssignment) === 'Case Discussions' }),
     });
 
     const reader = resp.body.getReader();
@@ -1176,6 +1215,7 @@ document.getElementById('modal-grade-ai').addEventListener('click', async () => 
       studentName: st?.name || modalStudentId,
       hasAiCitation: sub?._hasAiCitation || false,
       aiInstructions: S.aiInstructions,
+      isCaseWriteup: classifyAssignment(S.currentAssignment) === 'Case Discussions',
     });
     applyAiGrade(modalStudentId, res.grade, res.aiDetection, res.flagged);
     renderModalCriteria(modalStudentId);
@@ -1217,128 +1257,169 @@ function renderQuizView(root) {
   root = root || document.getElementById('view-root');
   const qs = S.quizBank?.questions || [];
 
-  const bankHtml = qs.length ? qs.map((q, i) => {
-    const text    = qText(q);
-    const answer  = qAnswer(q);
-    const choices = qChoices(q);
-    return `<div class="quiz-q-item">
-      <span class="quiz-q-num">${i + 1}.</span>
-      <div style="flex:1">
-        <div class="quiz-q-text">${esc(text)}</div>
-        ${choices.length ? `<div class="quiz-choices">${choices.map(c => `<div class="quiz-choice">${esc(c)}</div>`).join('')}</div>` : ''}
-        ${answer ? `
-          <button class="btn btn-surf-sec" style="font-size:11px;padding:2px 8px;margin-top:4px" onclick="toggleAnswer(${i})">Show / Hide Answer</button>
-          <div id="q-answer-${i}" class="quiz-answer" style="display:none"><strong>Answer:</strong> ${esc(answer)}</div>
-        ` : ''}
-      </div>
-      <button class="btn btn-surf-sec" style="font-size:11px;padding:3px 8px;flex-shrink:0" onclick="deleteQuestion(${i})">✕</button>
-    </div>`;
-  }).join('') : '<p class="muted">No questions yet. Upload a test bank to get started.</p>';
+  // Get all chapters in the bank
+  const chapters = [...new Set(qs.map(q => (typeof q === 'object' && q.chapter) ? q.chapter : 'Uncategorized'))].sort();
+
+  // Render bank grouped by chapter
+  const bankByChapter = {};
+  qs.forEach((q, i) => {
+    const ch = (typeof q === 'object' && q.chapter) ? q.chapter : 'Uncategorized';
+    if (!bankByChapter[ch]) bankByChapter[ch] = [];
+    bankByChapter[ch].push({ q, i });
+  });
+
+  const bankHtml = qs.length ? Object.entries(bankByChapter).map(([ch, items]) => `
+    <div class="chapter-block">
+      <div class="chapter-heading">${esc(ch)} <span class="muted">(${items.length})</span></div>
+      ${items.map(({ q, i }) => {
+        const text = qText(q); const answer = qAnswer(q); const choices = qChoices(q);
+        return `<div class="quiz-q-item">
+          <span class="quiz-q-num">${i + 1}.</span>
+          <div style="flex:1">
+            <div class="quiz-q-text">${esc(text)}</div>
+            ${choices.length ? `<div class="quiz-choices">${choices.map(c => `<div class="quiz-choice">${esc(c)}</div>`).join('')}</div>` : ''}
+            ${answer ? `
+              <button class="btn btn-surf-sec" style="font-size:11px;padding:2px 8px;margin-top:4px" onclick="toggleAnswer(${i})">Show / Hide Answer</button>
+              <div id="q-answer-${i}" class="quiz-answer" style="display:none"><strong>Answer:</strong> ${esc(answer)}</div>` : ''}
+          </div>
+          <button class="btn btn-surf-sec" style="font-size:11px;padding:3px 8px;flex-shrink:0" onclick="deleteQuestion(${i})">✕</button>
+        </div>`;
+      }).join('')}
+    </div>`).join('')
+  : '<p class="muted">No questions yet. Upload a test bank file to get started.</p>';
+
+  const chapterOptions = chapters.map(c => `<option value="${esc(c)}">${esc(c)} (${bankByChapter[c]?.length || 0} questions)</option>`).join('');
 
   root.innerHTML = `
     <div class="page-title">Quiz Question Bank
       <div class="page-actions">
-        <button class="btn btn-secondary" onclick="document.getElementById('quiz-file-input').click()">⬆ Upload Test Bank</button>
-        <input id="quiz-file-input" type="file" accept=".txt,.csv,.json,.md" multiple style="display:none" onchange="uploadQuizFile(this)" />
         <button class="btn btn-ghost btn-danger" onclick="clearQuizBank()">Clear Bank</button>
       </div>
     </div>
 
-    <!-- Upload format hint -->
-    <div class="card" style="padding:12px 18px;margin-bottom:12px;background:#f8f9ff">
-      <div class="card-title" style="margin-bottom:6px">Accepted file formats</div>
-      <div style="font-size:12px;color:var(--text-muted);line-height:1.8">
-        <strong>Plain text (.txt)</strong> — one question per line. Add answer on next line starting with <code>ANSWER:</code><br>
-        <strong>JSON (.json)</strong> — array of <code>[{"question":"...","answer":"...","choices":["A) ...","B) ..."]}]</code><br>
-        <strong>Q&amp;A format</strong> — lines starting with <code>Q:</code> are questions, <code>A:</code> are answers, <code>a)</code>–<code>d)</code> are choices
-      </div>
-    </div>
+    <div class="two-col-grid" style="align-items:start">
 
-    <!-- Create Quiz on Canvas -->
-    <div class="card create-quiz-card">
-      <div class="card-title">
-        🎓 Create Quiz on Canvas
-        <span class="card-title-hint">Builds a real Canvas quiz from selected questions in your bank</span>
-      </div>
-      <div class="create-quiz-grid">
+      <!-- ── Upload Panel ── -->
+      <div class="card">
+        <div class="card-title">⬆ Upload Test Bank</div>
         <div class="field-group">
-          <label>Quiz Title</label>
-          <input id="cq-title" type="text" class="input" placeholder="e.g. Quiz – Chapters 2–3" />
+          <label>Chapter / Label <span class="muted">(e.g. "Chapter 3" or "Midterm")</span></label>
+          <input id="upload-chapter" type="text" class="input" placeholder="Chapter 1" />
         </div>
-        <div class="field-group">
-          <label>Time Limit (min, blank = none)</label>
-          <input id="cq-time" type="number" class="input" min="1" placeholder="20" />
-        </div>
-        <div class="field-group">
-          <label>Allowed Attempts</label>
-          <input id="cq-attempts" type="number" class="input" value="1" min="1" />
-        </div>
-        <div class="field-group">
-          <label>Points per question</label>
-          <input id="cq-pts" type="number" class="input" value="1" min="1" />
-        </div>
-      </div>
-      <div class="field-group">
-        <label>Description (optional)</label>
-        <textarea id="cq-desc" class="input" rows="2" placeholder="Instructions for students…"></textarea>
-      </div>
-
-      <!-- Question selector -->
-      <div class="field-group">
-        <label>Select questions to include
-          <button class="btn btn-surf-sec" style="font-size:11px;padding:2px 8px;margin-left:8px" onclick="selectAllQuizQs(true)">All</button>
-          <button class="btn btn-surf-sec" style="font-size:11px;padding:2px 8px" onclick="selectAllQuizQs(false)">None</button>
+        <label class="upload-drop-area" onclick="document.getElementById('quiz-file-input').click()">
+          <div class="upload-drop-icon">📂</div>
+          <div>Click to select files</div>
+          <div class="muted" style="font-size:11px;margin-top:4px">.txt · .csv · .json · .md — multiple files OK</div>
+          <input id="quiz-file-input" type="file" accept=".txt,.csv,.json,.md" multiple style="display:none" onchange="uploadQuizFile(this)" />
         </label>
-        <div id="cq-selector" class="cq-selector">
-          ${qs.length
-            ? qs.map((q, i) => `<label class="cq-q-label">
-                <input type="checkbox" class="cq-q-check" data-idx="${i}" checked />
-                <span class="cq-q-preview">${esc(qText(q).substring(0, 80))}${qText(q).length > 80 ? '…' : ''}</span>
-              </label>`).join('')
-            : '<p class="muted" style="padding:8px">No questions in bank yet.</p>'}
+        <div style="font-size:11px;color:var(--text-muted);margin-top:10px;line-height:1.7">
+          <strong>Formats:</strong> Plain text (one Q per line, <code>ANSWER:</code> on next line),
+          Q:/A: pairs, numbered lists with a)–d) choices, or JSON array.
+        </div>
+        <div style="margin-top:12px;font-size:12px;color:var(--text-muted)">
+          Bank: <strong>${qs.length}</strong> question${qs.length !== 1 ? 's' : ''}
+          across <strong>${chapters.length}</strong> chapter${chapters.length !== 1 ? 's' : ''}
         </div>
       </div>
 
-      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px">
-        <button class="btn btn-surf" onclick="createCanvasQuiz(false)">Create as Draft</button>
-        <button class="btn btn-primary" onclick="createCanvasQuiz(true)">Create &amp; Publish</button>
-        <span id="cq-status" class="muted" style="font-size:12px"></span>
+      <!-- ── Create Quiz on Canvas ── -->
+      <div class="card create-quiz-card">
+        <div class="card-title">🎓 Create Quiz on Canvas</div>
+        <div class="create-quiz-grid">
+          <div class="field-group">
+            <label>Quiz Title</label>
+            <input id="cq-title" type="text" class="input" placeholder="Quiz – Chapters 2–3" />
+          </div>
+          <div class="field-group">
+            <label>Time Limit (min)</label>
+            <input id="cq-time" type="number" class="input" min="1" placeholder="none" />
+          </div>
+          <div class="field-group">
+            <label>Attempts</label>
+            <input id="cq-attempts" type="number" class="input" value="1" min="1" />
+          </div>
+          <div class="field-group">
+            <label>Pts per question</label>
+            <input id="cq-pts" type="number" class="input" value="1" min="1" />
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+          <div class="field-group">
+            <label>Chapter(s) to pull from</label>
+            <select id="cq-chapter" class="input" onchange="updateCqCount()">
+              <option value="__all__">All chapters</option>
+              ${chapterOptions}
+            </select>
+          </div>
+          <div class="field-group">
+            <label>Number of questions <span id="cq-avail" class="muted"></span></label>
+            <input id="cq-count" type="number" class="input" value="5" min="1" oninput="updateCqCount()" />
+          </div>
+        </div>
+
+        <div class="field-group">
+          <label>Description (optional)</label>
+          <textarea id="cq-desc" class="input" rows="2" placeholder="Instructions for students…"></textarea>
+        </div>
+
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px">
+          <button class="btn btn-surf" onclick="createCanvasQuiz(false)">Create as Draft</button>
+          <button class="btn btn-primary" onclick="createCanvasQuiz(true)">Create &amp; Publish</button>
+          <span id="cq-status" class="muted" style="font-size:12px"></span>
+        </div>
+        <div id="cq-result" style="display:none;margin-top:12px" class="quiz-result-banner"></div>
       </div>
-      <div id="cq-result" style="display:none;margin-top:12px" class="quiz-result-banner"></div>
     </div>
 
-    <div class="two-col-grid">
-      <div class="card">
-        <div class="card-title">Suggest Questions with AI</div>
-        <div class="field-group">
+    <!-- ── AI Suggest ── -->
+    <div class="card" style="margin-bottom:12px">
+      <div class="card-title">✦ AI Question Suggestions</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr auto auto;gap:12px;align-items:end">
+        <div class="field-group" style="margin:0">
           <label>Topic / Focus</label>
-          <input id="quiz-topic" type="text" class="input" placeholder="e.g. Customer segmentation and targeting" />
+          <input id="quiz-topic" type="text" class="input" placeholder="e.g. Customer segmentation" />
         </div>
-        <div class="field-group">
-          <label># of questions</label>
-          <input id="quiz-count" type="number" class="input" value="5" min="1" max="20" style="max-width:80px" />
+        <div class="field-group" style="margin:0">
+          <label>Context (optional — paste notes)</label>
+          <input id="quiz-context" type="text" class="input" placeholder="Paste key topics from lecture…" />
         </div>
-        <div class="field-group">
-          <label>Course content context (optional)</label>
-          <textarea id="quiz-context" class="input" rows="3" placeholder="Paste lecture notes, slides summary, or video topics…"></textarea>
+        <div class="field-group" style="margin:0">
+          <label># Questions</label>
+          <input id="quiz-count" type="number" class="input" value="5" min="1" max="20" style="max-width:70px" />
         </div>
-        <button class="btn btn-surf" onclick="suggestQuizQuestions()">✦ Suggest Questions</button>
-      </div>
-
-      <div class="card">
-        <div class="card-title">Bank <span class="card-title-hint">${qs.length} question${qs.length !== 1 ? 's' : ''}</span></div>
-        <div id="quiz-bank-list" style="max-height:420px;overflow-y:auto">${bankHtml}</div>
+        <button class="btn btn-surf" style="white-space:nowrap" onclick="suggestQuizQuestions()">Suggest</button>
       </div>
     </div>
 
-    <div id="quiz-suggestions-wrap" style="display:none" class="card">
+    <div id="quiz-suggestions-wrap" style="display:none" class="card" style="margin-bottom:12px">
       <div class="card-title">AI Suggested Questions</div>
       <div id="quiz-suggestions"></div>
+    </div>
+
+    <!-- ── Bank Browser ── -->
+    <div class="card">
+      <div class="card-title">
+        Bank — ${qs.length} question${qs.length !== 1 ? 's' : ''}
+        <span class="card-title-hint">${chapters.length} chapter${chapters.length !== 1 ? 's' : ''}</span>
+      </div>
+      <div style="max-height:520px;overflow-y:auto">${bankHtml}</div>
     </div>`;
+
+  // Set initial available count
+  updateCqCount();
 }
 
-function selectAllQuizQs(checked) {
-  document.querySelectorAll('.cq-q-check').forEach(cb => cb.checked = checked);
+function updateCqCount() {
+  const qs = S.quizBank?.questions || [];
+  const chapter = document.getElementById('cq-chapter')?.value;
+  const filtered = chapter === '__all__' || !chapter
+    ? qs
+    : qs.filter(q => (typeof q === 'object' && q.chapter) ? q.chapter === chapter : chapter === 'Uncategorized');
+  const avail = document.getElementById('cq-avail');
+  if (avail) avail.textContent = `(${filtered.length} available)`;
+  const countInput = document.getElementById('cq-count');
+  if (countInput) countInput.max = filtered.length;
 }
 
 async function createCanvasQuiz(publish) {
@@ -1349,25 +1430,26 @@ async function createCanvasQuiz(publish) {
   const timeLimit = Number(document.getElementById('cq-time')?.value) || null;
   const attempts  = Number(document.getElementById('cq-attempts')?.value) || 1;
   const ptsEach   = Number(document.getElementById('cq-pts')?.value) || 1;
+  const chapter   = document.getElementById('cq-chapter')?.value;
+  const count     = Number(document.getElementById('cq-count')?.value) || 5;
 
   if (!title) { toast('Enter a quiz title.', 'warn'); return; }
 
-  // Collect selected questions
-  const checked = [...document.querySelectorAll('.cq-q-check:checked')];
-  if (!checked.length) { toast('Select at least one question.', 'warn'); return; }
-  const selected = checked.map(cb => {
-    const q = S.quizBank.questions[Number(cb.dataset.idx)];
-    return typeof q === 'string' ? { question: q, answer: '', choices: [], points: ptsEach }
-                                 : { ...q, points: ptsEach };
-  });
+  const qs = S.quizBank?.questions || [];
+  const pool = (chapter === '__all__' || !chapter)
+    ? qs
+    : qs.filter(q => (typeof q === 'object' && q.chapter) ? q.chapter === chapter : chapter === 'Uncategorized');
 
-  const statusEl  = document.getElementById('cq-status');
-  const resultEl  = document.getElementById('cq-result');
-  const btn1 = document.querySelector('[onclick="createCanvasQuiz(false)"]');
-  const btn2 = document.querySelector('[onclick="createCanvasQuiz(true)"]');
+  if (!pool.length) { toast('No questions in selected chapter.', 'warn'); return; }
+
+  // Randomly pick `count` questions from pool
+  const shuffled = [...pool].sort(() => Math.random() - 0.5);
+  const selected = shuffled.slice(0, Math.min(count, shuffled.length))
+    .map(q => typeof q === 'string' ? { question: q, answer: '', choices: [], points: ptsEach } : { ...q, points: ptsEach });
+
+  const statusEl = document.getElementById('cq-status');
+  const resultEl = document.getElementById('cq-result');
   if (statusEl) statusEl.textContent = `Creating quiz with ${selected.length} questions…`;
-  if (btn1) btn1.disabled = true;
-  if (btn2) btn2.disabled = true;
 
   try {
     const res = await POST(`/api/canvas/create-quiz/${S.course.id}`, {
@@ -1375,29 +1457,17 @@ async function createCanvasQuiz(publish) {
       pointsPossible: selected.length * ptsEach,
       questions: selected, publish,
     });
-
     if (resultEl) {
       resultEl.style.display = 'block';
       resultEl.className = 'quiz-result-banner quiz-result-success';
-      resultEl.innerHTML = `
-        ✓ Quiz created on Canvas with ${res.questionsAdded} questions.
-        ${publish ? ' <strong>Published!</strong>' : ' Saved as draft.'}<br>
-        <a href="${esc(res.quizUrl)}" target="_blank" class="quiz-result-link">
-          Open in Canvas ↗
-        </a>`;
+      resultEl.innerHTML = `✓ Quiz created with ${res.questionsAdded} questions. ${publish ? '<strong>Published!</strong>' : 'Saved as draft.'}<br>
+        <a href="${esc(res.quizUrl)}" target="_blank" class="quiz-result-link">Open in Canvas ↗</a>`;
     }
     if (statusEl) statusEl.textContent = '';
     toast(`Quiz "${title}" created on Canvas!`, 'success');
   } catch (e) {
-    if (resultEl) {
-      resultEl.style.display = 'block';
-      resultEl.className = 'quiz-result-banner quiz-result-error';
-      resultEl.textContent = 'Error: ' + e.message;
-    }
+    if (resultEl) { resultEl.style.display = 'block'; resultEl.className = 'quiz-result-banner quiz-result-error'; resultEl.textContent = 'Error: ' + e.message; }
     toast('Failed: ' + e.message, 'error');
-  } finally {
-    if (btn1) btn1.disabled = false;
-    if (btn2) btn2.disabled = false;
   }
 }
 
@@ -1440,6 +1510,7 @@ function parseQuizFile(text) {
 
 async function uploadQuizFile(input) {
   const files = Array.from(input.files); if (!files.length) return;
+  const chapter = document.getElementById('upload-chapter')?.value?.trim() || 'Uncategorized';
   let totalImported = 0, totalWithAnswers = 0, errors = [];
   for (const file of files) {
     const fd = new FormData(); fd.append('file', file);
@@ -1447,15 +1518,18 @@ async function uploadQuizFile(input) {
       const resp = await fetch('/api/quiz-bank/upload', { method: 'POST', body: fd });
       const data = await resp.json();
       if (!resp.ok) throw new Error(data.error);
-      const parsed = parseQuizFile(data.text);
+      const parsed = parseQuizFile(data.text).map(q =>
+        typeof q === 'string' ? { question: q, answer: '', choices: [], chapter }
+                              : { ...q, chapter: q.chapter || chapter }
+      );
       S.quizBank.questions = [...(S.quizBank.questions || []), ...parsed];
       totalImported += parsed.length;
       totalWithAnswers += parsed.filter(q => q.answer).length;
     } catch (e) { errors.push(`${file.name}: ${e.message}`); }
   }
   if (totalImported) await PUT('/api/quiz-bank', S.quizBank);
-  if (errors.length) toast('Some files failed:\n' + errors.join('\n'), 'error');
-  else toast(`Imported ${totalImported} questions (${totalWithAnswers} with answers) from ${files.length} file${files.length > 1 ? 's' : ''}.`, 'success');
+  if (errors.length) toast('Some files failed: ' + errors.join(', '), 'error');
+  else toast(`Imported ${totalImported} questions (${totalWithAnswers} with answers) tagged as "${chapter}".`, 'success');
   showView('quiz');
   input.value = '';
 }
@@ -1643,7 +1717,7 @@ async function addManualStudent(gradeNow) {
   toast(`Added ${name}.`, 'success');
   if (gradeNow && S.rubric && text && S.health?.claude) {
     try {
-      const res = await POST('/api/grade/single', { text, rubric: S.rubric, studentName: name, hasAiCitation, aiInstructions: S.aiInstructions });
+      const res = await POST('/api/grade/single', { text, rubric: S.rubric, studentName: name, hasAiCitation, aiInstructions: S.aiInstructions, isCaseWriteup: classifyAssignment(S.currentAssignment) === 'Case Discussions' });
       applyAiGrade(id, res.grade, res.aiDetection, res.flagged);
       await saveGrade(id);
       toast(`${name} graded!`, 'success');

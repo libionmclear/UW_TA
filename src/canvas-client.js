@@ -50,7 +50,7 @@ async function getAnnouncements(courseId) {
 }
 
 async function getModules(courseId) {
-  return canvasGet(`/courses/${courseId}/modules?per_page=50`);
+  return canvasGet(`/courses/${courseId}/modules?per_page=50&include[]=items`);
 }
 
 async function getModuleItems(courseId, moduleId) {

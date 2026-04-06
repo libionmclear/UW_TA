@@ -352,6 +352,15 @@ tbody td { padding: 7px 10px; vertical-align: middle; }
 .quiz-answer   { margin-top: 6px; padding: 6px 10px; background: #f0fdf4; border: 1px solid #86efac; border-radius: var(--radius); font-size: 12px; color: #166534; }
 .quiz-q-item   { align-items: flex-start; }
 
+/* ── Quiz bank upload drop area ─────────────────────────────────────────────── */
+.upload-drop-area  { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; padding:20px 16px; border:2px dashed var(--border); border-radius:var(--radius); cursor:pointer; text-align:center; font-size:13px; color:var(--text-muted); transition:border-color .15s,background .15s; margin-top:8px; }
+.upload-drop-area:hover { border-color:var(--uw-purple); background:var(--ai-col); color:var(--uw-purple); }
+.upload-drop-icon  { font-size:24px; line-height:1; }
+
+/* ── Chapter blocks in bank browser ─────────────────────────────────────────── */
+.chapter-block    { margin-bottom:16px; }
+.chapter-heading  { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; color:var(--uw-purple); padding:4px 0; border-bottom:1px solid var(--border); margin-bottom:6px; }
+
 /* ── Create Quiz on Canvas ───────────────────────────────────────────────────── */
 .create-quiz-card  { margin-top: 20px; }
 .create-quiz-grid  { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 14px; }

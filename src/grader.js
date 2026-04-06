@@ -11,7 +11,7 @@ function client() {
 }
 
 // ── Grade a single submission ─────────────────────────────────────────────────
-async function gradeSubmission(submissionText, rubric, studentName, aiInstructions = '') {
+async function gradeSubmission(submissionText, rubric, studentName, aiInstructions = '', isCaseWriteup = false) {
   const criteriaLines = rubric.criteria
     .map(c =>
       `  - id="${c.id}" | "${c.name}" | 0–${c.maxPoints} pts` +
@@ -36,14 +36,14 @@ ${customInstructions}
 RUBRIC CRITERIA:
 ${criteriaLines}
 
-CASE WRITE-UP STRUCTURE GUIDANCE (apply when grading business analyses or case write-ups):
+${isCaseWriteup ? `CASE WRITE-UP STRUCTURE GUIDANCE:
 Evaluate whether the student has included:
 1. Executive Summary — concise overview with clear, actionable RECOMMENDATIONS upfront
 2. Supporting Points — evidence, data, and analysis that back up the recommendations
 3. Conclusion / Alternatives / Other Thoughts — wrap-up, alternatives considered, additional insights
 Penalize submissions missing a clear recommendation, burying conclusions, or lacking evidence.
 
-STUDENT SUBMISSION (first 6000 chars):
+` : ''}STUDENT SUBMISSION (first 6000 chars):
 ---
 ${text.substring(0, 6000)}${text.length > 6000 ? '\n[...truncated]' : ''}
 ---

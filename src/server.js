@@ -234,9 +234,9 @@ app.delete('/api/grades/:cid/:aid', (req, res) => {
 // ── AI Grading ────────────────────────────────────────────────────────────────
 app.post('/api/grade/single', async (req, res) => {
   try {
-    const { text, rubric, studentName, hasAiCitation, aiInstructions } = req.body;
+    const { text, rubric, studentName, hasAiCitation, aiInstructions, isCaseWriteup } = req.body;
     const [grade, detect] = await Promise.all([
-      grader.gradeSubmission(text, rubric, studentName, aiInstructions || ''),
+      grader.gradeSubmission(text, rubric, studentName, aiInstructions || '', !!isCaseWriteup),
       Promise.resolve(analyzeText(text)),
     ]);
     ok(res, { grade, aiDetection: detect, flagged: !hasAiCitation && detect.score >= 7 });
@@ -246,12 +246,12 @@ app.post('/api/grade/single', async (req, res) => {
 app.post('/api/grade/batch', async (req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' });
   const send = (obj) => res.write(`data: ${JSON.stringify(obj)}\n\n`);
-  const { submissions, rubric, aiInstructions } = req.body;
+  const { submissions, rubric, aiInstructions, isCaseWriteup } = req.body;
   let completed = 0;
   for (const sub of submissions) {
     try {
       const [grade, detect] = await Promise.all([
-        grader.gradeSubmission(sub.text || '', rubric, sub.studentName, aiInstructions || ''),
+        grader.gradeSubmission(sub.text || '', rubric, sub.studentName, aiInstructions || '', !!isCaseWriteup),
         Promise.resolve(analyzeText(sub.text || '')),
       ]);
       completed++;
