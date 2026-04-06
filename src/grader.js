@@ -173,11 +173,11 @@ Each object must have:
 Return ONLY a valid JSON array — no explanation, no markdown fences.
 
 RAW TEXT:
-${rawText.slice(0, 12000)}`;
+${rawText.slice(0, 60000)}`;
 
   const msg = await client().messages.create({
     model: 'claude-opus-4-6',
-    max_tokens: 4096,
+    max_tokens: 8192,
     messages: [{ role: 'user', content: prompt }],
   });
   const content = msg.content[0].text.trim();

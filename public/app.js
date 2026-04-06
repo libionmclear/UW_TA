@@ -26,6 +26,7 @@ const S = {
   syllabus: [],
   teams: {},          // studentId → { team: number }
   teamMeta: {},       // teamNum → { name, memberNames }
+  dismissed: new Set(), // assignment IDs dismissed from "Needs Grading"
   allStudentsList: [], // all students for course (for grade book)
   me: null,           // current logged-in user { username, role }
 };
@@ -127,17 +128,19 @@ async function loadCourseData() {
   if (!S.course) return;
   toast('Loading course data…');
   try {
-    const [assignments, allGradesRaw, teamsRaw, teamMetaRaw, students] = await Promise.all([
+    const [assignments, allGradesRaw, teamsRaw, teamMetaRaw, students, dismissedArr] = await Promise.all([
       GET(`/api/courses/${S.course.id}/assignments`),
       GET(`/api/grades/${S.course.id}/all`).catch(() => ({})),
       GET(`/api/teams/${S.course.id}`).catch(() => ({})),
       GET(`/api/team-meta/${S.course.id}`).catch(() => ({})),
       GET(`/api/courses/${S.course.id}/students`).catch(() => []),
+      GET(`/api/dismissed/${S.course.id}`).catch(() => []),
     ]);
-    S.assignments   = assignments;
-    S.allGrades     = allGradesRaw;
-    S.teamMeta      = teamMetaRaw;
+    S.assignments     = assignments;
+    S.allGrades       = allGradesRaw;
+    S.teamMeta        = teamMetaRaw;
     S.allStudentsList = students;
+    S.dismissed       = new Set(dismissedArr.map(String));
 
     // Auto-seed student→team mapping by name if mostly unset
     const assignedCount = Object.keys(teamsRaw).length;
@@ -546,6 +549,12 @@ function nextClassDates(from) {
   return results;  // [next class, class after that]
 }
 
+async function dismissAssignment(aid) {
+  S.dismissed.add(String(aid));
+  await PUT(`/api/dismissed/${S.course.id}`, [...S.dismissed]).catch(() => {});
+  renderOverview();
+}
+
 function renderOverview(root) {
   root = root || document.getElementById('view-root');
   const now = new Date();
@@ -573,6 +582,7 @@ function renderOverview(root) {
   }
 
   const needsGrading = S.assignments.filter(a => {
+    if (S.dismissed.has(String(a.id))) return false;
     const g = S.allGrades[String(a.id)] || {};
     return Object.values(g).some(gr => gr.status !== 'reviewed');
   });
@@ -678,7 +688,10 @@ function renderOverview(root) {
             <td>${due}</td>
             <td>${a.points_possible || '—'}</td>
             <td><span class="status-badge status--warn">${pending} pending</span></td>
-            <td><button class="btn btn-surf" style="font-size:11px;padding:4px 10px" onclick="selectAssignment('${a.id}')">Open</button></td>
+            <td style="display:flex;gap:5px">
+              <button class="btn btn-surf" style="font-size:11px;padding:4px 10px" onclick="selectAssignment('${a.id}')">Open</button>
+              <button class="btn btn-ghost" style="font-size:11px;padding:4px 10px" title="Hide until new submission" onclick="dismissAssignment('${a.id}')">✓ Done</button>
+            </td>
           </tr>`;
         }).join('')}</tbody>
       </table>` : '<p class="muted">All assignments reviewed! 🎉</p>'}

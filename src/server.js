@@ -85,7 +85,7 @@ const DEFAULT_TEAM_META = {
   '8': { name: 'GoPro',             memberNames: ['Makylie Bean','Kha-vy Bui','Caden Chiong','Noah Graetzer','Hailey Granvold'] },
 };
 
-const store = { rubrics: {}, grades: {}, assignmentSettings: {}, assignmentRubrics: {}, quizBank: { questions: [] }, syllabus: null, teams: {}, teamMeta: {} };
+const store = { rubrics: {}, grades: {}, assignmentSettings: {}, assignmentRubrics: {}, quizBank: { questions: [] }, syllabus: null, teams: {}, teamMeta: {}, dismissed: {} };
 
 try {
   if (fs.existsSync(DATA_FILE)) {
@@ -509,6 +509,14 @@ app.post('/api/comments/:cid/:aid', requireAuth, (req, res) => {
   store.comments[key].push(comment);
   save();
   ok(res, comment);
+});
+
+// ── Dismissed assignments (overview "Done") ───────────────────────────────────
+app.get('/api/dismissed/:cid', (req, res) => ok(res, store.dismissed[req.params.cid] || []));
+app.put('/api/dismissed/:cid', (req, res) => {
+  store.dismissed[req.params.cid] = req.body;
+  save();
+  ok(res, store.dismissed[req.params.cid]);
 });
 
 // ── Teams ──────────────────────────────────────────────────────────────────────
