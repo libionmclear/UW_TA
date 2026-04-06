@@ -446,6 +446,26 @@ app.get('/api/grades/:cid/:aid/export.csv', (req, res) => {
   res.send(csv);
 });
 
+// ── Current user ──────────────────────────────────────────────────────────────
+app.get('/api/me', requireAuth, (req, res) => ok(res, { username: req.session.username, role: req.session.role || 'admin' }));
+
+// ── Assignment Comments (instructor chat) ─────────────────────────────────────
+app.get('/api/comments/:cid/:aid', requireAuth, (req, res) => {
+  const key = `${req.params.cid}__${req.params.aid}`;
+  ok(res, (store.comments || {})[key] || []);
+});
+app.post('/api/comments/:cid/:aid', requireAuth, (req, res) => {
+  if (!store.comments) store.comments = {};
+  const key = `${req.params.cid}__${req.params.aid}`;
+  if (!store.comments[key]) store.comments[key] = [];
+  const { text } = req.body;
+  if (!text?.trim()) return fail(res, { message: 'Empty comment' }, 400);
+  const comment = { author: req.session.username, text: text.trim(), ts: new Date().toISOString() };
+  store.comments[key].push(comment);
+  save();
+  ok(res, comment);
+});
+
 // ── Teams ──────────────────────────────────────────────────────────────────────
 app.get('/api/teams/:cid', (req, res) => ok(res, store.teams[req.params.cid] || {}));
 app.put('/api/teams/:cid', (req, res) => {

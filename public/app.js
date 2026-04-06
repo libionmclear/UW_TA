@@ -25,6 +25,7 @@ const S = {
   syllabus: [],
   teams: {},          // studentId → { team: number }
   allStudentsList: [], // all students for course (for grade book)
+  me: null,           // current logged-in user { username, role }
 };
 
 const DEFAULT_COURSE_NAME = 'B BUS 464';
@@ -64,8 +65,9 @@ function esc(str) {
    BOOT
    ═══════════════════════════════════════════════════════════════════════════ */
 async function init() {
-  // Check health
+  // Check health + current user
   try { S.health = await GET('/api/health'); renderStatusBadges(); } catch { }
+  try { S.me = await GET('/api/me'); } catch { S.me = { username: 'unknown' }; }
 
   // Load quiz bank + syllabus
   try { S.quizBank = await GET('/api/quiz-bank'); } catch { S.quizBank = { questions: [] }; }
@@ -473,7 +475,7 @@ function showView(name) {
   if (name !== 'assignment') setActiveSidebarBtn(name);
   const root = document.getElementById('view-root');
   switch (name) {
-    case 'overview':    renderOverview(root); break;
+    case 'overview':    stopChatPoll(); renderOverview(root); break;
     case 'assignment':  renderAssignmentView(root); break;
     case 'gradebook':   renderGradeBook(root); break;
     case 'quiz':        renderQuizView(root); break;
@@ -898,43 +900,86 @@ const ACT_TYPE_COLORS = {
 function actTypeClass(t) { return ACT_TYPE_COLORS[t] || 'act-other'; }
 
 /* ── SYLLABUS VIEW ───────────────────────────────────────────────────────────── */
+/* ── Syllabus save debounce ──────────────────────────────────────────────────── */
+let _sylTimer;
+function saveSylDebounced() {
+  clearTimeout(_sylTimer);
+  _sylTimer = setTimeout(() => PUT('/api/syllabus', S.syllabus).catch(() => {}), 800);
+}
+
+function updateSylField(idx, field, value) {
+  if (!S.syllabus[idx]) return;
+  S.syllabus[idx][field] = field === 'points' ? (value === '' ? null : Number(value))
+                          : field === 'actNum' ? (value === '' ? '' : Number(value))
+                          : value;
+  saveSylDebounced();
+}
+
 function renderSyllabusView(root) {
   root = root || document.getElementById('view-root');
   const rows = S.syllabus || [];
+  const actTypes = Object.keys(ACT_TYPE_COLORS);
+
+  const si = (idx, field, val, extra = '') =>
+    `<input class="syl-cell-input" type="text" value="${esc(val || '')}"
+      oninput="updateSylField(${idx},'${field}',this.value)" ${extra} />`;
 
   const rowsHtml = rows.map((row, i) => {
-    const isHeader = !!row.session;
     const isCancelled = !!row.isCancelled;
-    const pts = row.points != null ? row.points : '';
-    const due = row.assignmentDue && row.assignmentDue !== '—' ? row.assignmentDue : '';
-    const read = row.reading && row.reading !== '—' ? row.reading : '';
+    const isHeader = !!row.session && !isCancelled;
+    const rowCls = isCancelled ? 'syl-row-cancelled' : isHeader ? 'syl-row-header' : 'syl-row';
 
-    return `<tr class="${isCancelled ? 'syl-row-cancelled' : isHeader ? 'syl-row-header' : 'syl-row'}">
-      <td class="syl-session">${esc(row.session || '')}</td>
-      <td class="syl-date">${formatSylDate(row.date)}</td>
-      <td class="syl-day">${esc(row.day || '')}</td>
-      <td class="syl-loc">${esc(row.location || '')}</td>
-      <td class="syl-time">${esc(row.estTime || '')}</td>
-      <td class="syl-num">${row.actNum || ''}</td>
-      <td><span class="syl-act-badge ${actTypeClass(row.actType)}">${esc(row.actType || '')}</span></td>
-      <td class="syl-topic-cell">${esc(row.topic || '')}</td>
-      <td class="syl-reading-cell">${esc(read)}</td>
-      <td class="syl-due-cell ${due ? 'syl-has-due' : ''}">${esc(due)}</td>
-      <td class="syl-pts">${pts !== '' ? `<span class="syl-pts-val">${pts}</span>` : ''}</td>
+    const actTypeOpts = actTypes.map(t =>
+      `<option value="${esc(t)}" ${row.actType === t ? 'selected' : ''}>${esc(t)}</option>`
+    ).join('');
+
+    return `<tr class="${rowCls}" id="syl-row-${i}">
+      <td class="syl-session">${si(i,'session',row.session,'placeholder="Class #"')}</td>
+      <td class="syl-date">
+        <input class="syl-cell-input syl-date-input" type="date" value="${row.date || ''}"
+          oninput="updateSylField(${i},'date',this.value);updateDayFromDate(${i},this.value)" />
+      </td>
+      <td class="syl-day">${si(i,'day',row.day,'placeholder="Mon"')}</td>
+      <td class="syl-loc">
+        <select class="syl-cell-select" onchange="updateSylField(${i},'location',this.value)">
+          ${['Zoom','Bothell','Online','—'].map(l=>`<option ${row.location===l?'selected':''}>${l}</option>`).join('')}
+        </select>
+      </td>
+      <td class="syl-time">${si(i,'estTime',row.estTime,'placeholder="15 min"')}</td>
+      <td class="syl-num">
+        <input class="syl-cell-input syl-num-input" type="number" min="1" value="${row.actNum||''}"
+          oninput="updateSylField(${i},'actNum',this.value)" />
+      </td>
+      <td>
+        <select class="syl-cell-select syl-act-select ${actTypeClass(row.actType)}"
+          onchange="updateSylField(${i},'actType',this.value);this.className='syl-cell-select syl-act-select '+actTypeClass(this.value)">
+          ${actTypeOpts}
+        </select>
+      </td>
+      <td class="syl-topic-cell">
+        <textarea class="syl-cell-ta" rows="2" oninput="updateSylField(${i},'topic',this.value)">${esc(row.topic||'')}</textarea>
+      </td>
+      <td class="syl-reading-cell">
+        <textarea class="syl-cell-ta" rows="2" oninput="updateSylField(${i},'reading',this.value)">${esc(row.reading && row.reading!=='—' ? row.reading : '')}</textarea>
+      </td>
+      <td class="syl-due-cell">
+        <textarea class="syl-cell-ta syl-due-ta" rows="2" oninput="updateSylField(${i},'assignmentDue',this.value)">${esc(row.assignmentDue && row.assignmentDue!=='—' ? row.assignmentDue : '')}</textarea>
+      </td>
+      <td class="syl-pts">
+        <input class="syl-cell-input syl-num-input" type="number" min="0" value="${row.points ?? ''}"
+          oninput="updateSylField(${i},'points',this.value)" placeholder="—" />
+      </td>
       <td class="syl-inst-cell">
-        <select class="syl-inst-select" data-idx="${i}" onchange="updateSylInstructor(${i}, this.value)">
-          <option value="Marco"   ${row.instructor === 'Marco'   ? 'selected' : ''}>Marco</option>
-          <option value="Marlowe" ${row.instructor === 'Marlowe' ? 'selected' : ''}>Marlowe</option>
-          <option value="Both"    ${row.instructor === 'Both'    ? 'selected' : ''}>Both</option>
-          <option value="—"       ${row.instructor === '—'       ? 'selected' : ''}>—</option>
+        <select class="syl-cell-select" onchange="updateSylField(${i},'instructor',this.value)">
+          ${['Marco','Marlowe','Both','—'].map(v=>`<option ${row.instructor===v?'selected':''}>${v}</option>`).join('')}
         </select>
       </td>
       <td class="syl-notes-cell">
-        <input class="syl-note-input" type="text" value="${esc(row.notes || '')}" data-idx="${i}"
-          onchange="updateSylNotes(${i}, this.value)" placeholder="Add note…" />
+        <textarea class="syl-cell-ta syl-notes-ta" rows="2" oninput="updateSylField(${i},'notes',this.value)" placeholder="Notes…">${esc(row.notes||'')}</textarea>
       </td>
-      <td>
-        <button class="btn-icon" title="Add row below" onclick="addSylRow(${i})">+</button>
+      <td class="syl-actions-cell">
+        <button class="btn-icon" title="Add row below" onclick="addSylRow(${i})">＋</button>
+        <button class="btn-icon btn-icon-del" title="Delete row" onclick="deleteSylRow(${i})">✕</button>
       </td>
     </tr>`;
   }).join('');
@@ -942,24 +987,21 @@ function renderSyllabusView(root) {
   root.innerHTML = `
     <div class="page-title">Instructor Syllabus — B BUS 464
       <div class="page-actions">
-        <button class="btn btn-ghost" onclick="resetSyllabus()" title="Reset to original">↺ Reset</button>
+        <button class="btn btn-surf" onclick="addSylRow(-1)">＋ Add Row</button>
+        <button class="btn btn-ghost" onclick="resetSyllabus()">↺ Reset to Default</button>
       </div>
     </div>
-
     <div class="syl-legend">
-      ${Object.entries(ACT_TYPE_COLORS).map(([t, c]) => `<span class="syl-act-badge ${c}">${esc(t)}</span>`).join('')}
+      ${Object.entries(ACT_TYPE_COLORS).map(([t,c])=>`<span class="syl-act-badge ${c}">${esc(t)}</span>`).join('')}
     </div>
-
     <div class="syl-table-wrap">
       <table class="syl-table">
-        <thead>
-          <tr>
-            <th>Session</th><th>Date</th><th>Day</th><th>Location</th>
-            <th>Est. Time</th><th>#</th><th>Activity Type</th><th>Topic / Description</th>
-            <th>Reading / Videos Assigned</th><th>Assignment DUE</th><th>Pts</th>
-            <th>Instructor</th><th>Notes</th><th></th>
-          </tr>
-        </thead>
+        <thead><tr>
+          <th>Session</th><th>Date</th><th>Day</th><th>Location</th>
+          <th>Est.Time</th><th>#</th><th>Activity Type</th><th>Topic / Description</th>
+          <th>Reading / Videos</th><th>Assignment DUE</th><th>Pts</th>
+          <th>Instructor</th><th>Notes</th><th style="width:56px"></th>
+        </tr></thead>
         <tbody>${rowsHtml}</tbody>
       </table>
     </div>`;
@@ -971,30 +1013,40 @@ function formatSylDate(iso) {
   return d.toLocaleDateString('en-US', { month:'short', day:'numeric' });
 }
 
-async function updateSylInstructor(idx, val) {
-  if (!S.syllabus[idx]) return;
-  S.syllabus[idx].instructor = val;
-  await PUT('/api/syllabus', S.syllabus);
-}
-
-async function updateSylNotes(idx, val) {
-  if (!S.syllabus[idx]) return;
-  S.syllabus[idx].notes = val;
-  await PUT('/api/syllabus', S.syllabus);
+function updateDayFromDate(idx, iso) {
+  if (!iso) return;
+  const day = new Date(iso + 'T12:00:00').toLocaleDateString('en-US', { weekday:'long' });
+  updateSylField(idx, 'day', day);
+  // also update the day input in the same row
+  const row = document.getElementById(`syl-row-${idx}`);
+  if (row) { const inp = row.querySelectorAll('.syl-cell-input')[1]; if (inp) inp.value = day; }
 }
 
 async function addSylRow(afterIdx) {
-  const ref = S.syllabus[afterIdx] || {};
-  const newRow = { session:'', date: ref.date || '', day: ref.day || '', location: ref.location || '',
-    estTime:'', actNum:'', actType:'Admin', topic:'', reading:'', assignmentDue:'—', points:null,
+  const ref = afterIdx >= 0 ? (S.syllabus[afterIdx] || {}) : {};
+  const newRow = { session:'', date: ref.date || '', day: ref.day || '', location: ref.location || 'Zoom',
+    estTime:'', actNum:'', actType:'Admin', topic:'', reading:'', assignmentDue:'', points:null,
     instructor:'Both', notes:'' };
-  S.syllabus.splice(afterIdx + 1, 0, newRow);
+  if (afterIdx < 0) S.syllabus.push(newRow);
+  else S.syllabus.splice(afterIdx + 1, 0, newRow);
+  await PUT('/api/syllabus', S.syllabus);
+  renderSyllabusView();
+  // scroll to new row
+  setTimeout(() => {
+    const newIdx = afterIdx < 0 ? S.syllabus.length - 1 : afterIdx + 1;
+    document.getElementById(`syl-row-${newIdx}`)?.scrollIntoView({ behavior:'smooth', block:'center' });
+  }, 100);
+}
+
+async function deleteSylRow(idx) {
+  if (!confirm('Delete this row?')) return;
+  S.syllabus.splice(idx, 1);
   await PUT('/api/syllabus', S.syllabus);
   renderSyllabusView();
 }
 
 async function resetSyllabus() {
-  if (!confirm('Reset syllabus to original? Custom instructor changes and notes will be lost.')) return;
+  if (!confirm('Reset syllabus to original? All edits will be lost.')) return;
   await fetch('/api/syllabus', { method: 'DELETE' });
   S.syllabus = await GET('/api/syllabus');
   renderSyllabusView();
@@ -1039,17 +1091,21 @@ function renderAssignmentView(root) {
       <button class="assign-tab active" data-atab="instructions" onclick="switchAssignTab('instructions')">Instructions & Rubric</button>
       <button class="assign-tab" data-atab="students" onclick="switchAssignTab('students')">Students (${students.length})</button>
       <button class="assign-tab" data-atab="matrix" onclick="switchAssignTab('matrix')">Grading Matrix</button>
+      <button class="assign-tab" data-atab="chat" onclick="switchAssignTab('chat')">💬 Notes</button>
     </div>
 
     <div id="atab-instructions" class="atab-content active">${renderInstructionsTab()}</div>
     <div id="atab-students"     class="atab-content">${renderStudentsTabHtml()}</div>
     <div id="atab-matrix"       class="atab-content">${renderMatrixTabHtml()}</div>
+    <div id="atab-chat"         class="atab-content">${renderChatTabHtml()}</div>
   `;
 }
 
 function switchAssignTab(tab) {
   document.querySelectorAll('.assign-tab').forEach(b => b.classList.toggle('active', b.dataset.atab === tab));
   document.querySelectorAll('.atab-content').forEach(c => c.classList.toggle('active', c.id === `atab-${tab}`));
+  if (tab === 'chat') loadComments();
+  else stopChatPoll();
 }
 
 /* ── Instructions & Rubric Tab ───────────────────────────────────────────────── */
@@ -1974,6 +2030,88 @@ async function addSuggestedQ(q) {
   await PUT('/api/quiz-bank', S.quizBank);
   toast('Added to bank.', 'success');
   showView('quiz');
+}
+
+/* ── Assignment Chat / Notes ─────────────────────────────────────────────────── */
+let _chatPollTimer = null;
+let _chatComments  = [];
+
+function renderChatTabHtml() {
+  return `<div class="chat-wrap" id="chat-wrap">
+    <div class="chat-messages" id="chat-messages"><p class="muted" style="padding:12px">Loading…</p></div>
+    <div class="chat-input-row">
+      <input id="chat-input" class="input chat-input" type="text" placeholder="Add a note… (Enter to send)"
+        onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendComment();}" />
+      <button class="btn btn-primary chat-send" onclick="sendComment()">Send</button>
+    </div>
+  </div>`;
+}
+
+function authorColor(name) {
+  const n = (name || '').toLowerCase();
+  if (n === 'marco')   return '#4B2E83';  // UW purple
+  if (n === 'marlowe') return '#16a34a';  // green
+  // cycle through a few colors for others
+  const colors = ['#2563eb','#d97706','#dc2626','#0891b2'];
+  let h = 0; for (let c of name) h = (h * 31 + c.charCodeAt(0)) & 0xffff;
+  return colors[h % colors.length];
+}
+
+function renderChatMessages(comments) {
+  const me = S.me?.username || '';
+  if (!comments.length) return '<p class="muted" style="padding:16px;text-align:center">No notes yet. Be the first to add one.</p>';
+  return comments.map(c => {
+    const isMe = c.author === me;
+    const color = authorColor(c.author);
+    const time  = new Date(c.ts).toLocaleString('en-US', { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' });
+    const initial = (c.author || '?')[0].toUpperCase();
+    return `<div class="chat-msg ${isMe ? 'chat-msg-me' : 'chat-msg-them'}">
+      ${!isMe ? `<div class="chat-avatar" style="background:${color}" title="${esc(c.author)}">${initial}</div>` : ''}
+      <div class="chat-bubble-wrap">
+        ${!isMe ? `<div class="chat-author" style="color:${color}">${esc(c.author)}</div>` : ''}
+        <div class="chat-bubble ${isMe ? 'chat-bubble-me' : 'chat-bubble-them'}" style="${isMe ? `background:${color}` : ''}">
+          ${esc(c.text)}
+        </div>
+        <div class="chat-time">${time}</div>
+      </div>
+      ${isMe ? `<div class="chat-avatar chat-avatar-me" style="background:${color}">${initial}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+async function loadComments() {
+  if (!S.course || !S.currentAssignment) return;
+  try {
+    _chatComments = await GET(`/api/comments/${S.course.id}/${S.currentAssignment.id}`);
+  } catch { _chatComments = []; }
+  const el = document.getElementById('chat-messages');
+  if (el) {
+    el.innerHTML = renderChatMessages(_chatComments);
+    el.scrollTop = el.scrollHeight;
+  }
+  // Poll every 12 seconds
+  stopChatPoll();
+  _chatPollTimer = setInterval(loadComments, 12000);
+}
+
+function stopChatPoll() {
+  if (_chatPollTimer) { clearInterval(_chatPollTimer); _chatPollTimer = null; }
+}
+
+async function sendComment() {
+  const input = document.getElementById('chat-input');
+  const text = input?.value?.trim();
+  if (!text || !S.course || !S.currentAssignment) return;
+  input.value = '';
+  input.disabled = true;
+  try {
+    const comment = await POST(`/api/comments/${S.course.id}/${S.currentAssignment.id}`, { text });
+    _chatComments.push(comment);
+    const el = document.getElementById('chat-messages');
+    if (el) { el.innerHTML = renderChatMessages(_chatComments); el.scrollTop = el.scrollHeight; }
+  } catch (e) { toast('Failed to send: ' + e.message, 'error'); input.value = text; }
+  input.disabled = false;
+  input.focus();
 }
 
 /* ── Course Content View ─────────────────────────────────────────────────────── */
