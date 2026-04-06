@@ -38,6 +38,7 @@ async function api(method, path, body) {
   const opts = { method, headers: { 'Content-Type': 'application/json' } };
   if (body) opts.body = JSON.stringify(body);
   const r = await fetch(path, opts);
+  if (r.status === 401) { window.location.href = '/login.html'; throw new Error('Session expired — redirecting to login'); }
   const data = await r.json();
   if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
   return data;
@@ -466,49 +467,67 @@ async function loadAssignmentData(assignmentId) {
 function defaultRubricForAssignment(a) {
   if (!a) return defaultRubric();
   const group = classifyAssignment(a);
-  const pts = a.points_possible || 15;
+  const pts   = a.points_possible || 10;
+  const mk    = (id, name, maxPoints, description, autoGrant = false) => ({ id, name, maxPoints, description, autoGrant });
 
   if (group === 'Recorded Lectures') {
-    return {
-      name: a.name, totalPoints: pts,
-      criteria: [
-        { id: 'c1', name: 'Lecture Viewed', maxPoints: pts, description: 'Student has watched all required lecture videos for this week.', autoGrant: false },
-      ],
-    };
+    return { name: a.name, totalPoints: pts, criteria: [
+      mk('c1', 'Lecture Viewed', pts, 'Student has watched all required lecture videos.', false),
+    ]};
   }
   if (group === 'Quizzes') {
-    return {
-      name: a.name, totalPoints: pts,
-      criteria: [
-        { id: 'c1', name: 'Quiz Score', maxPoints: pts, description: 'Automatically graded quiz score (5 pts).', autoGrant: false },
-      ],
-    };
+    return { name: a.name, totalPoints: pts, criteria: [
+      mk('c1', 'Quiz Score', pts, 'Automatically graded quiz score from Canvas.', false),
+    ]};
   }
-  if (group === 'Case Studies') {
-    return {
-      name: a.name, totalPoints: pts,
-      description: '',
-      criteria: [
-        { id: 'c1', name: 'Submission', maxPoints: 5, description: 'Student submitted any work.', autoGrant: true },
-        { id: 'c2', name: 'Executive Summary & Recommendations', maxPoints: 4, description: 'Clear executive summary with specific, actionable recommendations presented upfront.', autoGrant: false },
-        { id: 'c3', name: 'Supporting Points & Evidence', maxPoints: 3, description: 'Recommendations backed with data, evidence, and analysis.', autoGrant: false },
-        { id: 'c4', name: 'Conclusion / Alternatives', maxPoints: 2, description: 'Thoughtful conclusion with alternatives considered or other insights.', autoGrant: false },
-        { id: 'c5', name: 'Writing Quality', maxPoints: 1, description: 'Well-organized, clearly written, and professional.', autoGrant: false },
-      ],
-    };
+  if (group === 'Case Discussions') {
+    return { name: a.name, totalPoints: pts, description: '', criteria: [
+      mk('c1', 'Submission',                        Math.round(pts * 0.20), 'Student submitted a complete write-up.', true),
+      mk('c2', 'Executive Summary & Recommendations', Math.round(pts * 0.33), 'Clear executive summary with specific, actionable recommendations upfront.'),
+      mk('c3', 'Supporting Points & Evidence',        Math.round(pts * 0.27), 'Recommendations backed with data, evidence, and analysis.'),
+      mk('c4', 'Conclusion / Alternatives',           Math.round(pts * 0.13), 'Thoughtful conclusion with alternatives considered.'),
+      mk('c5', 'Writing Quality',                     Math.round(pts * 0.07), 'Well-organized, clearly written, professional.'),
+    ]};
   }
-  return defaultRubric();
+  if (group === 'Activities') {
+    return { name: a.name, totalPoints: pts, criteria: [
+      mk('c1', 'Participation',   Math.round(pts * 0.50), 'Active participation in the activity/simulation.'),
+      mk('c2', 'Quality of Work', Math.round(pts * 0.30), 'Quality and thoughtfulness of submitted work.'),
+      mk('c3', 'Completion',      Math.round(pts * 0.20), 'All required elements completed and submitted.', true),
+    ]};
+  }
+  if (group === 'AI Assignments') {
+    return { name: a.name, totalPoints: pts, criteria: [
+      mk('c1', 'Submission',     Math.round(pts * 0.20), 'AI-generated output submitted.', true),
+      mk('c2', 'Output Quality', Math.round(pts * 0.40), 'Quality and relevance of the AI-generated content.'),
+      mk('c3', 'Reflection',     Math.round(pts * 0.40), 'Student reflection on the AI output and process.'),
+    ]};
+  }
+  if (group === 'Group Project') {
+    return { name: a.name, totalPoints: pts, criteria: [
+      mk('c1', 'Submission',          Math.round(pts * 0.10), 'Deliverable submitted on time.', true),
+      mk('c2', 'Content & Analysis',  Math.round(pts * 0.40), 'Depth and quality of analysis.'),
+      mk('c3', 'Recommendations',     Math.round(pts * 0.30), 'Clear, actionable, and well-supported recommendations.'),
+      mk('c4', 'Presentation',        Math.round(pts * 0.20), 'Organization, clarity, and professional presentation.'),
+    ]};
+  }
+  if (group === 'Participation') {
+    return { name: a.name, totalPoints: pts, criteria: [
+      mk('c1', 'Attendance',        Math.round(pts * 0.30), 'Present and engaged throughout class.', true),
+      mk('c2', 'Contribution',      Math.round(pts * 0.70), 'Quality of contributions to discussion.'),
+    ]};
+  }
+  // Generic fallback
+  return defaultRubric(a.name, pts);
 }
 
-function defaultRubric() {
+function defaultRubric(name = '', pts = 10) {
   return {
-    name: '', totalPoints: 15,
+    name, totalPoints: pts,
     criteria: [
-      { id: 'c1', name: 'Submission', maxPoints: 5, description: 'Student submitted any work.', autoGrant: true },
-      { id: 'c2', name: 'Executive Summary & Recommendations', maxPoints: 3, description: 'Clear executive summary with specific, actionable recommendations upfront.', autoGrant: false },
-      { id: 'c3', name: 'Supporting Points & Evidence', maxPoints: 3, description: 'Claims backed with specific evidence, data, or analysis.', autoGrant: false },
-      { id: 'c4', name: 'Conclusion / Alternatives', maxPoints: 3, description: 'Thoughtful conclusion, alternatives considered, additional insights.', autoGrant: false },
-      { id: 'c5', name: 'Writing Quality', maxPoints: 1, description: 'Well-organized, clearly written, professional.', autoGrant: false },
+      { id: 'c1', name: 'Submission',    maxPoints: Math.round(pts * 0.20), description: 'Work submitted.', autoGrant: true },
+      { id: 'c2', name: 'Content',       maxPoints: Math.round(pts * 0.50), description: 'Quality and completeness of content.', autoGrant: false },
+      { id: 'c3', name: 'Quality',       maxPoints: Math.round(pts * 0.30), description: 'Clarity, organization, and presentation.', autoGrant: false },
     ],
   };
 }
