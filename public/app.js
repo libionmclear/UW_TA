@@ -201,11 +201,16 @@ function normName(n) {
 /* ── Assignment grouping ─────────────────────────────────────────────────────── */
 // Maps Canvas assignment name patterns → display group (matches syllabus exactly)
 const GROUP_RULES = [
-  // QUIZZES — "Quiz – Chapters X–Y", "Chapter 15-16 5pt", any chapter-numbered assignment
+  // QUIZZES — only "Quiz" in name, or specific "Chapter X-Y" quiz-style patterns
   { key: 'Quizzes', patterns: [
     /quiz/i,
-    /chapt/i,
-    /chapter/i,
+    /chapter\s*\d{1,2}\s*[-–]\s*\d{1,2}/i,   // "Chapter 15-16"
+  ]},
+  // PRODUCT OF THE WEEK — spotlight presentations
+  { key: 'Product of the Week', patterns: [
+    /product of the week/i,
+    /potw/i,
+    /spotlight/i,
   ]},
   // COURSE EVALUATION — standalone
   { key: 'Course Evaluation', patterns: [
@@ -213,11 +218,12 @@ const GROUP_RULES = [
     /submit.*eval/i,
     /evaluation/i,
   ]},
-  // RECORDED LECTURES
-  { key: 'Recorded Lectures', patterns: [
+  // PANOPTO / VIDEO VIEWS — "Week X" assignments (video watch requirements)
+  { key: 'Panopto Video Views', patterns: [
+    /^week \d/i,
     /recorded lecture/i,
-    /lecture.*week/i,
-    /week \d.*lecture/i,
+    /panopto/i,
+    /video view/i,
   ]},
   // AI ASSIGNMENTS — in-class AI exercises and demos (before Activities to avoid overlap)
   { key: 'AI Assignments', patterns: [
@@ -251,7 +257,7 @@ const GROUP_RULES = [
     /gillette/i,
     /tesla.*marketing/i,
     /chipotle/i,
-    /crossing the chasm/i,   // essay OR discussion
+    /crossing the chasm/i,
     /chasm/i,
   ]},
   // ACTIVITIES — simulations, workshops, presentations
@@ -262,7 +268,6 @@ const GROUP_RULES = [
     /food truck/i,
     /persona/i,
     /positioning.*(map|sim)/i,
-    /product of the week/i,
     /atar/i,
     /launch management/i,
     /minimum viable/i,
@@ -322,23 +327,24 @@ function groupAssignments() {
 
 /* ── Sidebar ─────────────────────────────────────────────────────────────────── */
 const GROUP_ICONS = {
-  'Recorded Lectures':  '▶',
-  'Quizzes':            '✎',
-  'AI Assignments':     '✦',
-  'Case Discussions':   '◆',
-  'Activities':         '▣',
-  'Group Project':      '◈',
-  'Participation':      '●',
-  'Final Exam':         '★',
-  'Course Evaluation':  '✓',
-  'Other Assignments':  '○',
+  'Quizzes':              '✎',
+  'AI Assignments':       '✦',
+  'Case Discussions':     '◆',
+  'Activities':           '▣',
+  'Group Project':        '◈',
+  'Final Exam':           '★',
+  'Panopto Video Views':  '▶',
+  'Participation':        '●',
+  'Course Evaluation':    '✓',
+  'Product of the Week':  '◎',
+  'Other Assignments':    '○',
 };
 
 // Sidebar display order — main grading groups
 const GROUP_ORDER = ['Quizzes', 'AI Assignments', 'Case Discussions', 'Activities', 'Group Project', 'Final Exam'];
 
-// Groups that go in the "Other Assignments" sidebar box (not accordion)
-const OTHER_GROUPS = ['Recorded Lectures', 'Participation', 'Course Evaluation', 'Other Assignments'];
+// Groups that go in the "Other Assignments" sidebar box
+const OTHER_GROUPS = ['Panopto Video Views', 'Participation', 'Course Evaluation', 'Product of the Week', 'Other Assignments'];
 
 // All groups start CLOSED — click to expand
 const expandedGroups = new Set();
@@ -1507,6 +1513,19 @@ function renderAssignmentView(root) {
       </div>
     </div>
 
+    <!-- Student Randomizer (for Product of the Week) -->
+    ${group === 'Product of the Week' ? `<div class="card potw-randomizer-card">
+      <div class="card-title">◎ Student Randomizer — Product of the Week Spotlight</div>
+      <div class="potw-body">
+        <div class="potw-result" id="potw-result">Click the button to pick a random student</div>
+        <div class="potw-actions">
+          <button class="btn btn-primary potw-spin-btn" onclick="potwRandomize()">🎲 Pick Random Student</button>
+          <button class="btn btn-ghost" onclick="potwRandomize(true)">🔄 Pick Another</button>
+        </div>
+        <div class="potw-history" id="potw-history"></div>
+      </div>
+    </div>` : ''}
+
     <!-- Grade Distribution -->
     ${scores.length ? `<div class="card dist-chart-card">
       <div class="card-title">Grade Distribution</div>
@@ -1569,6 +1588,54 @@ function renderAssignmentView(root) {
     <div id="atab-matrix"       class="atab-content">${renderMatrixTabHtml()}</div>
     <div id="atab-chat"         class="atab-content">${renderChatTabHtml()}</div>
   `;
+}
+
+/* ── Product of the Week Randomizer ─────────────────────────────────────────── */
+let _potwPicked = [];
+
+function potwRandomize() {
+  const students = allStudents();
+  if (!students.length) { toast('No students loaded.', 'warn'); return; }
+
+  // Filter out already-picked students (unless we've exhausted the list)
+  let pool = students.filter(s => !_potwPicked.includes(s.id));
+  if (!pool.length) {
+    _potwPicked = [];
+    pool = students;
+  }
+
+  // Pick random
+  const pick = pool[Math.floor(Math.random() * pool.length)];
+  _potwPicked.push(pick.id);
+
+  // Animate the result
+  const resultEl = document.getElementById('potw-result');
+  if (resultEl) {
+    resultEl.classList.add('potw-spinning');
+    let flashes = 0;
+    const interval = setInterval(() => {
+      const rnd = students[Math.floor(Math.random() * students.length)];
+      resultEl.textContent = rnd.name;
+      flashes++;
+      if (flashes >= 12) {
+        clearInterval(interval);
+        resultEl.textContent = pick.name;
+        resultEl.classList.remove('potw-spinning');
+        resultEl.classList.add('potw-picked');
+        setTimeout(() => resultEl.classList.remove('potw-picked'), 600);
+      }
+    }, 80);
+  }
+
+  // Update history
+  const histEl = document.getElementById('potw-history');
+  if (histEl) {
+    const items = _potwPicked.map((id, i) => {
+      const st = students.find(s => s.id === id);
+      return `<span class="potw-history-item">${i + 1}. ${esc(st?.name || id)}</span>`;
+    }).join('');
+    histEl.innerHTML = `<div class="muted" style="font-size:10px;margin-top:8px;font-weight:700">PICKED SO FAR:</div>${items}`;
+  }
 }
 
 function switchAssignTab(tab) {

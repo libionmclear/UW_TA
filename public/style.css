@@ -792,6 +792,23 @@ tbody td { padding: 7px 10px; vertical-align: middle; }
 }
 .sc-photo-upload-btn:hover { filter: brightness(1.1); }
 
+/* ── Product of the Week Randomizer ─────────────────────────────────────────── */
+.potw-randomizer-card { border-left: 4px solid var(--uw-gold); }
+.potw-body { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 10px 0; }
+.potw-result {
+  font-size: 28px; font-weight: 900; color: var(--uw-purple); text-align: center;
+  padding: 16px 24px; min-height: 60px; display: flex; align-items: center; justify-content: center;
+  transition: transform .15s;
+}
+.potw-spinning { animation: potw-flash .08s linear infinite alternate; }
+@keyframes potw-flash { 0% { opacity: 1; } 100% { opacity: .4; } }
+.potw-picked { animation: potw-pop .4s ease; }
+@keyframes potw-pop { 0% { transform: scale(1); } 50% { transform: scale(1.15); } 100% { transform: scale(1); } }
+.potw-actions { display: flex; gap: 8px; }
+.potw-spin-btn { font-size: 15px !important; padding: 10px 24px !important; }
+.potw-history { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.potw-history-item { font-size: 11px; background: var(--bg); border: 1px solid var(--border); padding: 2px 8px; border-radius: 10px; color: var(--text-muted); }
+
 /* ── Syncing Badge ──────────────────────────────────────────────────────────── */
 .syncing-badge {
   display: inline-flex; align-items: center; gap: 2px;
