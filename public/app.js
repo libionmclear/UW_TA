@@ -1309,11 +1309,11 @@ function renderQuizView(root) {
         <label class="upload-drop-area" onclick="document.getElementById('quiz-file-input').click()">
           <div class="upload-drop-icon">📂</div>
           <div>Click to select files</div>
-          <div class="muted" style="font-size:11px;margin-top:4px">.txt · .csv · .json · .md — multiple files OK</div>
-          <input id="quiz-file-input" type="file" accept=".txt,.csv,.json,.md" multiple style="display:none" onchange="uploadQuizFile(this)" />
+          <div class="muted" style="font-size:11px;margin-top:4px">.docx · .doc · .txt · .csv · .json · .md — multiple files OK</div>
+          <input id="quiz-file-input" type="file" accept=".txt,.csv,.json,.md,.doc,.docx" multiple style="display:none" onchange="uploadQuizFile(this)" />
         </label>
         <div style="font-size:11px;color:var(--text-muted);margin-top:10px;line-height:1.7">
-          <strong>Formats:</strong> Plain text (one Q per line, <code>ANSWER:</code> on next line),
+          <strong>Formats:</strong> Word (.docx/.doc), plain text (one Q per line, <code>ANSWER:</code> on next line),
           Q:/A: pairs, numbered lists with a)–d) choices, or JSON array.
         </div>
         <div style="margin-top:12px;font-size:12px;color:var(--text-muted)">

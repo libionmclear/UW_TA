@@ -4,6 +4,7 @@ const session = require('express-session');
 const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
+const mammoth = require('mammoth');
 const canvas = require('./canvas-client');
 const { analyzeText, stripHtml } = require('./ai-detector');
 const grader = require('./grader');
@@ -269,10 +270,19 @@ app.post('/api/grade/batch', async (req, res) => {
 app.get('/api/quiz-bank', (_req, res) => ok(res, store.quizBank));
 app.put('/api/quiz-bank', (req, res) => { store.quizBank = req.body; save(); ok(res, store.quizBank); });
 app.delete('/api/quiz-bank', (_req, res) => { store.quizBank = { questions: [] }; save(); ok(res, { ok: true }); });
-app.post('/api/quiz-bank/upload', upload.single('file'), (req, res) => {
+app.post('/api/quiz-bank/upload', upload.single('file'), async (req, res) => {
   if (!req.file) return fail(res, { message: 'No file uploaded' }, 400);
-  const text = req.file.buffer.toString('utf8', 0, Math.min(req.file.buffer.length, 200000));
-  ok(res, { filename: req.file.originalname, text: stripHtml(text) });
+  try {
+    const name = req.file.originalname.toLowerCase();
+    let text;
+    if (name.endsWith('.docx') || name.endsWith('.doc')) {
+      const result = await mammoth.extractRawText({ buffer: req.file.buffer });
+      text = result.value;
+    } else {
+      text = req.file.buffer.toString('utf8', 0, Math.min(req.file.buffer.length, 200000));
+    }
+    ok(res, { filename: req.file.originalname, text: stripHtml(text.substring(0, 200000)) });
+  } catch (e) { fail(res, e); }
 });
 app.post('/api/quiz-bank/suggest', async (req, res) => {
   try {
