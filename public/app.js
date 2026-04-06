@@ -1357,6 +1357,30 @@ function renderAssignmentView(root) {
   const scores  = Object.values(S.grades).map(g => g.finalScore).filter(s => s != null);
   const avg     = scores.length ? (scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1) : '—';
 
+  const submitted = S.submissions.filter(s => s.workflow_state !== 'unsubmitted').length;
+
+  // Grade distribution buckets
+  const distBuckets = { 'A (90-100%)': 0, 'B (80-89%)': 0, 'C (70-79%)': 0, 'D (60-69%)': 0, 'F (<60%)': 0 };
+  const distColors  = { 'A (90-100%)': '#16a34a', 'B (80-89%)': '#2563eb', 'C (70-79%)': '#d97706', 'D (60-69%)': '#ea580c', 'F (<60%)': '#dc2626' };
+  const maxPts = a.points_possible || S.rubric?.totalPoints || 1;
+  scores.forEach(s => {
+    const pct = (s / maxPts) * 100;
+    if (pct >= 90) distBuckets['A (90-100%)']++;
+    else if (pct >= 80) distBuckets['B (80-89%)']++;
+    else if (pct >= 70) distBuckets['C (70-79%)']++;
+    else if (pct >= 60) distBuckets['D (60-69%)']++;
+    else distBuckets['F (<60%)']++;
+  });
+  const maxBucket = Math.max(1, ...Object.values(distBuckets));
+  const distBars = Object.entries(distBuckets).map(([label, count]) => {
+    const pct = Math.round((count / maxBucket) * 100);
+    return `<div class="dist-bar-row">
+      <span class="dist-bar-label">${label}</span>
+      <div class="dist-bar-track"><div class="dist-bar-fill" style="width:${pct}%;background:${distColors[label]}"></div></div>
+      <span class="dist-bar-count">${count}</span>
+    </div>`;
+  }).join('');
+
   root.innerHTML = `
     <div class="page-title">
       ${esc(a.name)}
@@ -1366,27 +1390,64 @@ function renderAssignmentView(root) {
       </div>
     </div>
 
-    <!-- Assignment meta + stats -->
-    <div class="assignment-meta-bar">
-      <span>Due: <strong>${due}</strong></span>
-      <span>Points: <strong>${a.points_possible || '?'}</strong></span>
-      <span>Students: <strong>${students.length}</strong></span>
-      <span>Graded: <strong>${graded.length}</strong></span>
-      <span>Avg: <strong>${avg}</strong></span>
-      ${flagged.length ? `<span class="ai-badge ai-badge--high">⚑ ${flagged.length} AI flags</span>` : ''}
+    <!-- Assignment stat cards -->
+    <div class="asgn-stat-cards">
+      <div class="asgn-stat-card asgn-stat--due">
+        <div class="asgn-stat-icon">📅</div>
+        <div class="asgn-stat-value">${due}</div>
+        <div class="asgn-stat-label">Due Date</div>
+      </div>
+      <div class="asgn-stat-card asgn-stat--points">
+        <div class="asgn-stat-icon">⭐</div>
+        <div class="asgn-stat-value">${a.points_possible || '?'}</div>
+        <div class="asgn-stat-label">Points</div>
+      </div>
+      <div class="asgn-stat-card asgn-stat--students">
+        <div class="asgn-stat-icon">👥</div>
+        <div class="asgn-stat-value">${students.length}</div>
+        <div class="asgn-stat-label">Students</div>
+      </div>
+      <div class="asgn-stat-card asgn-stat--submitted">
+        <div class="asgn-stat-icon">📥</div>
+        <div class="asgn-stat-value">${submitted}</div>
+        <div class="asgn-stat-label">Submitted</div>
+      </div>
+      <div class="asgn-stat-card asgn-stat--graded">
+        <div class="asgn-stat-icon">✅</div>
+        <div class="asgn-stat-value">${graded.length}</div>
+        <div class="asgn-stat-label">Graded</div>
+      </div>
+      <div class="asgn-stat-card asgn-stat--avg">
+        <div class="asgn-stat-icon">📊</div>
+        <div class="asgn-stat-value">${avg}</div>
+        <div class="asgn-stat-label">Average</div>
+      </div>
+      ${flagged.length ? `<div class="asgn-stat-card asgn-stat--flagged">
+        <div class="asgn-stat-icon">⚑</div>
+        <div class="asgn-stat-value">${flagged.length}</div>
+        <div class="asgn-stat-label">AI Flags</div>
+      </div>` : ''}
     </div>
+
+    <!-- Grade Distribution -->
+    ${scores.length ? `<div class="card dist-chart-card">
+      <div class="card-title">Grade Distribution</div>
+      <div class="dist-chart">${distBars}</div>
+    </div>` : ''}
 
     <!-- Tabs -->
     <div class="assign-tabs" id="assign-tabs">
       <button class="assign-tab active" data-atab="instructions" onclick="switchAssignTab('instructions')">Instructions & Rubric</button>
       <button class="assign-tab" data-atab="students" onclick="switchAssignTab('students')">Students (${students.length})</button>
       <button class="assign-tab" data-atab="matrix" onclick="switchAssignTab('matrix')">Grading Matrix</button>
-      <button class="assign-tab" data-atab="chat" onclick="switchAssignTab('chat')">💬 Notes</button>
+      <button class="assign-tab" data-atab="oneByOne" onclick="switchAssignTab('oneByOne')">Grade One-by-One</button>
+      <button class="assign-tab" data-atab="chat" onclick="switchAssignTab('chat')">Notes</button>
     </div>
 
     <div id="atab-instructions" class="atab-content active">${renderInstructionsTab()}</div>
     <div id="atab-students"     class="atab-content">${renderStudentsTabHtml()}</div>
     <div id="atab-matrix"       class="atab-content">${renderMatrixTabHtml()}</div>
+    <div id="atab-oneByOne"     class="atab-content">${renderOneByOneTab()}</div>
     <div id="atab-chat"         class="atab-content">${renderChatTabHtml()}</div>
   `;
 }
@@ -1687,6 +1748,232 @@ function renderMatrixTabHtml() {
     </thead>
     <tbody>${rows}</tbody>
   </table></div>`;
+}
+
+/* ── Grade One-by-One Tab ───────────────────────────────────────────────────── */
+let oboIndex = 0; // current student index in one-by-one view
+let oboChatMessages = []; // chat messages for Marco & Marlowe discussion
+
+function renderOneByOneTab() {
+  const students = allStudents();
+  if (!students.length) return '<p class="muted padded">No students loaded.</p>';
+  if (!S.rubric) return '<p class="muted padded">No rubric set. Configure it in the Instructions & Rubric tab.</p>';
+  if (oboIndex >= students.length) oboIndex = 0;
+  const st = students[oboIndex];
+  const sub = submissionFor(st.id);
+  const g = S.grades[st.id];
+  const subText = submissionText(sub) || '(No submission text)';
+  const submitted = sub && sub.workflow_state !== 'unsubmitted';
+
+  const criteriaRows = S.rubric.criteria.map(c => {
+    const cd = g?.criteria?.[c.id] || {};
+    const aiS = cd.aiScore != null ? cd.aiScore : '—';
+    const marV = cd.marcoScore != null ? cd.marcoScore : '';
+    const mrlV = cd.marlowScore != null ? cd.marlowScore : '';
+    const justif = cd.aiJustification || '';
+    return `<div class="obo-crit-row">
+      <div class="obo-crit-name">${esc(c.name)} <span class="muted">/ ${c.maxPoints}</span></div>
+      <div class="obo-crit-scores">
+        <div class="obo-score-cell obo-score-ai"><span class="obo-score-lbl">AI</span><span class="obo-score-val">${aiS}</span></div>
+        <div class="obo-score-cell obo-score-m1"><span class="obo-score-lbl">Marco</span>
+          <input class="obo-score-input" type="number" min="0" max="${c.maxPoints}" value="${marV}" placeholder="—"
+            data-criterion="${esc(c.id)}" data-max="${c.maxPoints}" data-grader="marco" onchange="onOboScoreChange(this)" />
+        </div>
+        <div class="obo-score-cell obo-score-m2"><span class="obo-score-lbl">Marlowe</span>
+          <input class="obo-score-input obo-input-m2" type="number" min="0" max="${c.maxPoints}" value="${mrlV}" placeholder="—"
+            data-criterion="${esc(c.id)}" data-max="${c.maxPoints}" data-grader="marlowe" onchange="onOboScoreChange(this)" />
+        </div>
+      </div>
+      ${justif ? `<div class="obo-crit-justif">${esc(justif)}</div>` : ''}
+    </div>`;
+  }).join('');
+
+  const aiTotal = g?.aiTotalScore != null ? g.aiTotalScore : '—';
+  const marcoTotal = g?.marcoTotalScore != null ? g.marcoTotalScore : '—';
+  const marloweTotal = g?.marloweTotalScore != null ? g.marloweTotalScore : '—';
+  const finalTotal = g?.finalScore != null ? g.finalScore : '—';
+
+  const aiFeedback = g?.aiOverallFeedback || '';
+  const chatHtml = oboChatMessages.map(m => {
+    const isMarco = m.from === 'Marco';
+    const avatarBg = isMarco ? 'var(--info)' : 'var(--success)';
+    return `<div class="obo-chat-msg ${isMarco ? 'obo-chat-left' : 'obo-chat-right'}">
+      <div class="obo-chat-avatar" style="background:${avatarBg}">${m.from[0]}</div>
+      <div class="obo-chat-bubble-wrap">
+        <div class="obo-chat-author">${esc(m.from)}</div>
+        <div class="obo-chat-bubble">${esc(m.text)}</div>
+      </div>
+    </div>`;
+  }).join('');
+
+  return `
+    <div class="obo-container">
+      <!-- Navigation bar -->
+      <div class="obo-nav">
+        <button class="btn btn-ghost" onclick="oboNavigate(-1)" ${oboIndex === 0 ? 'disabled' : ''}>← Previous</button>
+        <div class="obo-nav-info">
+          <strong>${esc(st.name)}</strong>
+          <span class="muted">${oboIndex + 1} of ${students.length}</span>
+          ${!submitted ? '<span class="status-badge status--pending">Not Submitted</span>' : sub?.late ? '<span class="status-badge status--late">Late</span>' : '<span class="status-badge status--submitted">Submitted</span>'}
+          ${g?.flagged ? '<span class="ai-badge ai-badge--flagged">⚑ AI Flagged</span>' : ''}
+        </div>
+        <button class="btn btn-ghost" onclick="oboNavigate(1)" ${oboIndex >= students.length - 1 ? 'disabled' : ''}>Next →</button>
+      </div>
+
+      <div class="obo-layout">
+        <!-- Left: Submission -->
+        <div class="obo-panel obo-submission-panel">
+          <div class="card">
+            <div class="card-title">Student Submission</div>
+            <div class="submission-text" style="max-height:500px">${esc(subText)}</div>
+          </div>
+        </div>
+
+        <!-- Right: Grading -->
+        <div class="obo-panel obo-grading-panel">
+          <!-- Grade with AI button -->
+          <div class="obo-grade-actions">
+            <button class="btn btn-surf" id="obo-grade-ai-btn" onclick="oboGradeWithAi()">✦ Grade with AI</button>
+            <button class="btn btn-ghost" onclick="oboSaveGrade()">Save Grade</button>
+          </div>
+
+          <!-- Criteria scores -->
+          <div class="obo-criteria">${criteriaRows}</div>
+
+          <!-- Totals -->
+          <div class="obo-totals">
+            <div class="obo-total-item obo-total-ai"><span>AI</span><strong>${aiTotal}</strong></div>
+            <div class="obo-total-item obo-total-m1"><span>Marco</span><strong>${marcoTotal}</strong></div>
+            <div class="obo-total-item obo-total-m2"><span>Marlowe</span><strong>${marloweTotal}</strong></div>
+            <div class="obo-total-item obo-total-final"><span>Final</span><strong>${finalTotal}</strong></div>
+          </div>
+
+          <!-- AI Explanation -->
+          <div class="obo-ai-explain card" ${aiFeedback ? '' : 'style="display:none"'} id="obo-ai-explain">
+            <div class="card-title">AI Grading Explanation</div>
+            <p class="obo-ai-explain-text" id="obo-ai-explain-text">${esc(aiFeedback)}</p>
+          </div>
+
+          <!-- Marco & Marlowe Chat -->
+          <div class="obo-chat-card card">
+            <div class="card-title">Marco & Marlowe Discussion</div>
+            <div class="obo-chat-messages" id="obo-chat-messages">${chatHtml || '<p class="muted" style="text-align:center;padding:20px">Start a discussion about this grade...</p>'}</div>
+            <div class="obo-chat-input-row">
+              <select class="obo-chat-from" id="obo-chat-from">
+                <option value="Marco">Marco</option>
+                <option value="Marlowe">Marlowe</option>
+              </select>
+              <input class="input obo-chat-input" id="obo-chat-input" placeholder="Type a message..." onkeydown="if(event.key==='Enter')oboSendChat()" />
+              <button class="btn btn-surf" onclick="oboSendChat()">Send</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+
+function oboNavigate(dir) {
+  const students = allStudents();
+  oboIndex = Math.max(0, Math.min(students.length - 1, oboIndex + dir));
+  oboChatMessages = []; // reset chat per student
+  refreshOneByOneTab();
+}
+
+function refreshOneByOneTab() {
+  const el = document.getElementById('atab-oneByOne');
+  if (el) el.innerHTML = renderOneByOneTab();
+}
+
+function onOboScoreChange(input) {
+  const students = allStudents();
+  const st = students[oboIndex];
+  if (!st) return;
+  const criterionId = input.dataset.criterion;
+  const max = Number(input.dataset.max);
+  const grader = input.dataset.grader;
+  let val = input.value.trim() === '' ? null : Number(input.value);
+  if (val !== null) val = Math.max(0, Math.min(max, val));
+
+  if (!S.grades[st.id]) S.grades[st.id] = buildEmptyGrade(st.id);
+  if (!S.grades[st.id].criteria) S.grades[st.id].criteria = {};
+  if (!S.grades[st.id].criteria[criterionId]) S.grades[st.id].criteria[criterionId] = {};
+
+  if (grader === 'marlowe') S.grades[st.id].criteria[criterionId].marlowScore = val;
+  else S.grades[st.id].criteria[criterionId].marcoScore = val;
+
+  recalcTotals(st.id);
+  S.grades[st.id].status = 'reviewed';
+
+  // Update totals display without full re-render
+  const totalsEl = document.querySelector('.obo-totals');
+  if (totalsEl) {
+    const g = S.grades[st.id];
+    totalsEl.innerHTML = `
+      <div class="obo-total-item obo-total-ai"><span>AI</span><strong>${g?.aiTotalScore ?? '—'}</strong></div>
+      <div class="obo-total-item obo-total-m1"><span>Marco</span><strong>${g?.marcoTotalScore ?? '—'}</strong></div>
+      <div class="obo-total-item obo-total-m2"><span>Marlowe</span><strong>${g?.marloweTotalScore ?? '—'}</strong></div>
+      <div class="obo-total-item obo-total-final"><span>Final</span><strong>${g?.finalScore ?? '—'}</strong></div>`;
+  }
+}
+
+async function oboGradeWithAi() {
+  const students = allStudents();
+  const st = students[oboIndex];
+  if (!st || !S.rubric) return;
+  if (!S.health?.claude) { toast('Claude not configured.', 'error'); return; }
+  const sub = submissionFor(st.id);
+  const btn = document.getElementById('obo-grade-ai-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Grading...'; }
+  try {
+    const res = await POST('/api/grade/single', {
+      text: submissionText(sub) || '', rubric: S.rubric,
+      studentName: st.name,
+      hasAiCitation: sub?._hasAiCitation || false,
+      aiInstructions: S.aiInstructions,
+      isCaseWriteup: classifyAssignment(S.currentAssignment) === 'Case Discussions',
+    });
+    applyAiGrade(st.id, res.grade, res.aiDetection, res.flagged);
+    await saveGrade(st.id);
+    refreshOneByOneTab();
+    toast('AI grading complete!', 'success');
+  } catch (e) { toast('Grading error: ' + e.message, 'error'); }
+  finally { if (btn) { btn.disabled = false; btn.textContent = '✦ Grade with AI'; } }
+}
+
+async function oboSaveGrade() {
+  const students = allStudents();
+  const st = students[oboIndex];
+  if (!st) return;
+  if (!S.grades[st.id]) S.grades[st.id] = buildEmptyGrade(st.id);
+  S.grades[st.id].status = 'reviewed';
+  await saveGrade(st.id);
+  toast('Grade saved!', 'success');
+}
+
+function oboSendChat() {
+  const input = document.getElementById('obo-chat-input');
+  const from = document.getElementById('obo-chat-from');
+  const text = input?.value?.trim();
+  if (!text) return;
+  oboChatMessages.push({ from: from.value, text, time: new Date().toLocaleTimeString() });
+  input.value = '';
+  const container = document.getElementById('obo-chat-messages');
+  if (container) {
+    const isMarco = from.value === 'Marco';
+    const avatarBg = isMarco ? 'var(--info)' : 'var(--success)';
+    container.innerHTML = oboChatMessages.map(m => {
+      const isMar = m.from === 'Marco';
+      const bg = isMar ? 'var(--info)' : 'var(--success)';
+      return `<div class="obo-chat-msg ${isMar ? 'obo-chat-left' : 'obo-chat-right'}">
+        <div class="obo-chat-avatar" style="background:${bg}">${m.from[0]}</div>
+        <div class="obo-chat-bubble-wrap">
+          <div class="obo-chat-author">${esc(m.from)}</div>
+          <div class="obo-chat-bubble">${esc(m.text)}</div>
+        </div>
+      </div>`;
+    }).join('');
+    container.scrollTop = container.scrollHeight;
+  }
 }
 
 /* ── Push Finals to Canvas ───────────────────────────────────────────────────── */
@@ -2712,8 +2999,8 @@ document.getElementById('btn-export').addEventListener('click', () => {
 /* ── Helpers ─────────────────────────────────────────────────────────────────── */
 function allStudents() {
   const canvas = S.students.map(e => ({
-    id: String(e.user_id || e.user?.id || e.id),
-    name: e.user?.name || e.user?.sortable_name || `Student ${e.user_id}`,
+    id: String(e.id || e.user_id || e.user?.id),
+    name: e.name || e.user?.name || e.user?.sortable_name || `Student ${e.id || e.user_id}`,
     source: 'canvas',
   }));
   const manual = S.manualStudents.map(s => ({ ...s, source: 'manual' }));

@@ -585,6 +585,120 @@ tbody td { padding: 7px 10px; vertical-align: middle; }
 .ldg-cell-c       { background:#ffedd5; color:#9a3412; }
 .ldg-cell-f       { background:#fee2e2; color:#991b1b; }
 
+/* ── Assignment Stat Cards ───────────────────────────────────────────────────── */
+.asgn-stat-cards { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+.asgn-stat-card {
+  background: var(--surface); border-radius: var(--radius-lg); padding: 14px 18px; min-width: 110px;
+  box-shadow: var(--shadow); text-align: center; border-left: 4px solid var(--border); flex: 1;
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+}
+.asgn-stat-icon { font-size: 18px; margin-bottom: 2px; }
+.asgn-stat-value { font-size: 22px; font-weight: 800; }
+.asgn-stat-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--text-muted); }
+
+.asgn-stat--due      { border-left-color: #6366f1; }
+.asgn-stat--due .asgn-stat-value { color: #6366f1; font-size: 15px; font-weight: 700; }
+.asgn-stat--points   { border-left-color: #eab308; }
+.asgn-stat--points .asgn-stat-value { color: #a16207; }
+.asgn-stat--students { border-left-color: #2563eb; }
+.asgn-stat--students .asgn-stat-value { color: #2563eb; }
+.asgn-stat--submitted{ border-left-color: #0891b2; }
+.asgn-stat--submitted .asgn-stat-value { color: #0891b2; }
+.asgn-stat--graded   { border-left-color: #16a34a; }
+.asgn-stat--graded .asgn-stat-value { color: #16a34a; }
+.asgn-stat--avg      { border-left-color: var(--uw-purple); }
+.asgn-stat--avg .asgn-stat-value { color: var(--uw-purple); }
+.asgn-stat--flagged  { border-left-color: #dc2626; }
+.asgn-stat--flagged .asgn-stat-value { color: #dc2626; }
+
+/* ── Grade Distribution Chart ───────────────────────────────────────────────── */
+.dist-chart-card { margin-bottom: 16px; padding: 14px 18px; }
+.dist-chart { display: flex; flex-direction: column; gap: 6px; }
+.dist-bar-row { display: flex; align-items: center; gap: 10px; }
+.dist-bar-label { font-size: 11px; font-weight: 600; min-width: 80px; color: var(--text-muted); }
+.dist-bar-track { flex: 1; height: 18px; background: var(--bg); border-radius: 9px; overflow: hidden; }
+.dist-bar-fill { height: 100%; border-radius: 9px; transition: width .4s ease; min-width: 2px; }
+.dist-bar-count { font-size: 13px; font-weight: 800; min-width: 28px; text-align: right; color: var(--text); }
+
+/* ── Grade One-by-One ───────────────────────────────────────────────────────── */
+.obo-container { display: flex; flex-direction: column; gap: 12px; }
+.obo-nav {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
+  padding: 10px 16px; box-shadow: var(--shadow);
+}
+.obo-nav-info { display: flex; align-items: center; gap: 10px; flex: 1; justify-content: center; }
+
+.obo-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 1000px) { .obo-layout { grid-template-columns: 1fr; } }
+.obo-panel { display: flex; flex-direction: column; gap: 12px; }
+
+.obo-grade-actions { display: flex; gap: 8px; }
+
+.obo-criteria { display: flex; flex-direction: column; gap: 6px; }
+.obo-crit-row {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 10px 12px; box-shadow: var(--shadow);
+}
+.obo-crit-name { font-size: 13px; font-weight: 700; color: var(--uw-purple); margin-bottom: 6px; }
+.obo-crit-scores { display: flex; gap: 8px; }
+.obo-score-cell { display: flex; flex-direction: column; align-items: center; gap: 2px; flex: 1; padding: 6px 4px; border-radius: var(--radius); }
+.obo-score-ai { background: var(--ai-col); }
+.obo-score-m1 { background: var(--m1-col); }
+.obo-score-m2 { background: var(--m2-col); }
+.obo-score-lbl { font-size: 10px; font-weight: 700; text-transform: uppercase; color: var(--text-muted); }
+.obo-score-val { font-size: 18px; font-weight: 800; color: var(--uw-purple); }
+.obo-score-input {
+  width: 52px; text-align: center; border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 4px; font-size: 14px; font-weight: 700; background: var(--surface); color: var(--text);
+}
+.obo-score-input:focus { border-color: var(--uw-purple); outline: none; }
+.obo-input-m2 { border-color: #86efac; }
+.obo-input-m2:focus { border-color: var(--success); }
+.obo-crit-justif { font-size: 11px; color: var(--text-muted); margin-top: 6px; padding: 6px 8px; background: var(--bg); border-radius: var(--radius); line-height: 1.4; font-style: italic; }
+
+.obo-totals {
+  display: flex; gap: 8px; flex-wrap: wrap;
+}
+.obo-total-item {
+  flex: 1; min-width: 70px; text-align: center; padding: 10px 8px; border-radius: var(--radius-lg);
+  display: flex; flex-direction: column; gap: 2px;
+}
+.obo-total-item span { font-size: 10px; font-weight: 700; text-transform: uppercase; color: var(--text-muted); }
+.obo-total-item strong { font-size: 20px; }
+.obo-total-ai { background: var(--ai-col); }
+.obo-total-ai strong { color: var(--uw-purple); }
+.obo-total-m1 { background: var(--m1-col); }
+.obo-total-m1 strong { color: #1d4ed8; }
+.obo-total-m2 { background: var(--m2-col); }
+.obo-total-m2 strong { color: #15803d; }
+.obo-total-final { background: #fef3c7; border: 2px solid var(--uw-gold); }
+.obo-total-final strong { color: var(--uw-purple); font-size: 24px; }
+
+.obo-ai-explain { background: #f0f4ff; border: 1px solid #c7d2fe; }
+.obo-ai-explain-text { font-size: 13px; line-height: 1.6; color: var(--text); }
+
+/* ── One-by-One Chat ────────────────────────────────────────────────────────── */
+.obo-chat-card { }
+.obo-chat-messages {
+  max-height: 200px; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 8px;
+  background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius);
+  margin-bottom: 8px; min-height: 80px;
+}
+.obo-chat-msg { display: flex; gap: 6px; align-items: flex-start; max-width: 85%; }
+.obo-chat-left { align-self: flex-start; }
+.obo-chat-right { align-self: flex-end; flex-direction: row-reverse; }
+.obo-chat-avatar { width: 26px; height: 26px; border-radius: 50%; color: #fff; font-size: 11px; font-weight: 700; display: grid; place-items: center; flex-shrink: 0; }
+.obo-chat-bubble-wrap { display: flex; flex-direction: column; gap: 1px; }
+.obo-chat-author { font-size: 10px; font-weight: 700; color: var(--text-muted); padding: 0 4px; }
+.obo-chat-bubble { padding: 6px 10px; border-radius: 12px; font-size: 12px; line-height: 1.4; background: var(--surface); border: 1px solid var(--border); max-width: 260px; word-break: break-word; }
+.obo-chat-right .obo-chat-bubble { background: #ede9fe; border-color: #c4b5fd; }
+.obo-chat-right .obo-chat-bubble-wrap { align-items: flex-end; }
+
+.obo-chat-input-row { display: flex; gap: 6px; align-items: center; }
+.obo-chat-from { width: 80px; font-size: 12px; padding: 5px 6px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); font-weight: 600; }
+.obo-chat-input { flex: 1; }
+
 /* ── Misc ────────────────────────────────────────────────────────────────────── */
 .muted   { color: var(--text-muted); font-size: 13px; }
 .padded  { padding: 12px 0; }
