@@ -74,7 +74,18 @@ app.use(express.static(path.join(__dirname, '../public')));
 
 // ── Persistence ──────────────────────────────────────────────────────────────
 const DATA_FILE = path.join(__dirname, '../data/store.json');
-const store = { rubrics: {}, grades: {}, assignmentSettings: {}, assignmentRubrics: {}, quizBank: { questions: [] }, syllabus: null, teams: {} };
+const DEFAULT_TEAM_META = {
+  '1': { name: 'Nike',              memberNames: ['Alexia Drecin','Jacob Hilse','Handan Karakucuk','Will Nguyen','Uina Yamaguchi'] },
+  '2': { name: 'Southwest',         memberNames: ['Fatimah Naji','Benny Nguyen','Issabella Nguyen','Kairi Rojas','Sing Well To'] },
+  '3': { name: 'Ferrari',           memberNames: ['Andrew Brunson','Ari Cherny','Matthew Lee','Quentin Swanson','Josh Winiarski'] },
+  '4': { name: 'Samsung Wearables', memberNames: ['Alfredo Alamdar','Dylan Brand','Aaron Gaceta','Yejun Noh','Iman Salhi'] },
+  '5': { name: 'Peloton',           memberNames: ['Jade Ellis','Marlen Makramalla','Gabe Moreno','Paul Soper','Yordanos Abebaw Tsegaye'] },
+  '6': { name: 'Sony',              memberNames: ['Isabelle Berariu','Sanjana Bonagiri','Devon Dang','Tammy Huynh','Laura Summers','Mark Trofimchik'] },
+  '7': { name: '',                  memberNames: ['Nikita Dubitski','Lance Kimerer','Kamron Korrell','Francis Stellano Neri','David Semaan'] },
+  '8': { name: 'GoPro',             memberNames: ['Makylie Bean','Kha-vy Bui','Caden Chiong','Noah Graetzer','Hailey Granvold'] },
+};
+
+const store = { rubrics: {}, grades: {}, assignmentSettings: {}, assignmentRubrics: {}, quizBank: { questions: [] }, syllabus: null, teams: {}, teamMeta: {} };
 
 try {
   if (fs.existsSync(DATA_FILE)) {
@@ -492,6 +503,16 @@ app.post('/api/comments/:cid/:aid', requireAuth, (req, res) => {
 });
 
 // ── Teams ──────────────────────────────────────────────────────────────────────
+app.get('/api/team-meta/:cid', (req, res) => {
+  if (!store.teamMeta[req.params.cid]) store.teamMeta[req.params.cid] = DEFAULT_TEAM_META;
+  ok(res, store.teamMeta[req.params.cid]);
+});
+app.put('/api/team-meta/:cid', (req, res) => {
+  store.teamMeta[req.params.cid] = req.body;
+  save();
+  ok(res, store.teamMeta[req.params.cid]);
+});
+
 app.get('/api/teams/:cid', (req, res) => ok(res, store.teams[req.params.cid] || {}));
 app.put('/api/teams/:cid', (req, res) => {
   store.teams[req.params.cid] = req.body;

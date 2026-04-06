@@ -525,6 +525,27 @@ tbody td { padding: 7px 10px; vertical-align: middle; }
 .syl-inst         { white-space:nowrap; color:var(--text-muted); }
 .syl-due          { color:var(--warn); font-weight:600; white-space:nowrap; }
 
+/* ── Teams View ──────────────────────────────────────────────────────────────── */
+.tm-grid           { display:grid; grid-template-columns:repeat(auto-fill,minmax(380px,1fr)); gap:16px; }
+.tm-card           { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-lg); padding:16px; display:flex; flex-direction:column; gap:10px; }
+.tm-card-hdr       { display:flex; align-items:center; gap:10px; border-bottom:2px solid var(--uw-purple); padding-bottom:8px; }
+.tm-num            { background:var(--uw-purple); color:#fff; font-weight:700; font-size:13px; padding:3px 9px; border-radius:20px; white-space:nowrap; }
+.tm-company        { font-weight:700; font-size:15px; color:var(--uw-purple); flex:1; }
+.tm-count          { font-size:11px; }
+.tm-table-wrap     { overflow-x:auto; }
+.tm-table          { border-collapse:collapse; font-size:12px; width:100%; }
+.tm-table th       { background:var(--bg); padding:5px 8px; border:1px solid var(--border); font-weight:600; font-size:11px; text-align:left; }
+.tm-name-hdr       { min-width:120px; }
+.tm-asg-hdr        { text-align:center; min-width:80px; }
+.tm-table td       { padding:4px 8px; border:1px solid var(--border); }
+.tm-member-name    { font-size:12px; }
+.tm-score          { text-align:center; font-size:12px; }
+.tm-total-row td   { background:var(--bg); font-size:12px; }
+.tm-avg            { color:var(--uw-purple); }
+.tm-members-bare   { display:flex; flex-wrap:wrap; gap:5px; margin-top:4px; }
+.tm-badge          { background:var(--bg); border:1px solid var(--border); border-radius:20px; padding:2px 8px; font-size:11px; color:var(--text-muted); }
+.tm-label-pill     { background:var(--uw-purple); color:#fff; border-radius:20px; padding:2px 10px; font-size:11px; font-weight:600; white-space:nowrap; }
+
 /* ── Grade Ledger ────────────────────────────────────────────────────────────── */
 .ldg-wrap         { overflow-x:auto; max-height:calc(100vh - 130px); border:1px solid var(--border); border-radius:var(--radius-lg); background:var(--surface); }
 .ldg-table        { border-collapse:collapse; font-size:12px; white-space:nowrap; }

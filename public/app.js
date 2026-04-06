@@ -25,6 +25,7 @@ const S = {
   quizBank: { questions: [] },
   syllabus: [],
   teams: {},          // studentId → { team: number }
+  teamMeta: {},       // teamNum → { name, memberNames }
   allStudentsList: [], // all students for course (for grade book)
   me: null,           // current logged-in user { username, role }
 };
@@ -126,20 +127,51 @@ async function loadCourseData() {
   if (!S.course) return;
   toast('Loading course data…');
   try {
-    const [assignments, allGradesRaw, teamsRaw] = await Promise.all([
+    const [assignments, allGradesRaw, teamsRaw, teamMetaRaw, students] = await Promise.all([
       GET(`/api/courses/${S.course.id}/assignments`),
       GET(`/api/grades/${S.course.id}/all`).catch(() => ({})),
       GET(`/api/teams/${S.course.id}`).catch(() => ({})),
+      GET(`/api/team-meta/${S.course.id}`).catch(() => ({})),
+      GET(`/api/courses/${S.course.id}/students`).catch(() => []),
     ]);
-    S.assignments = assignments;
-    S.allGrades = allGradesRaw;
-    S.teams = teamsRaw;
-    S.allStudentsList = [];   // reset so grade book reloads fresh students
+    S.assignments   = assignments;
+    S.allGrades     = allGradesRaw;
+    S.teamMeta      = teamMetaRaw;
+    S.allStudentsList = students;
+
+    // Auto-seed student→team mapping by name if mostly unset
+    const assignedCount = Object.keys(teamsRaw).length;
+    if (assignedCount < students.length * 0.5 && students.length && Object.keys(teamMetaRaw).length) {
+      const seeded = { ...teamsRaw };
+      students.forEach(st => {
+        if (seeded[st.id]) return;
+        const normSt = normName(st.name);
+        for (const [tNum, tData] of Object.entries(teamMetaRaw)) {
+          if ((tData.memberNames || []).some(mn => {
+            const normMn = normName(mn);
+            return normSt.includes(normMn) || normMn.includes(normSt) ||
+                   normSt.split(' ')[0] === normMn.split(' ')[0] && normSt.split(' ').slice(-1)[0] === normMn.split(' ').slice(-1)[0];
+          })) {
+            seeded[st.id] = { team: Number(tNum) };
+            break;
+          }
+        }
+      });
+      S.teams = seeded;
+      PUT(`/api/teams/${S.course.id}`, seeded).catch(() => {});
+    } else {
+      S.teams = teamsRaw;
+    }
+
     groupAssignments();
     renderSidebar();
     showView('overview');
     toast('Course loaded.', 'success');
   } catch (e) { toast('Load error: ' + e.message, 'error'); }
+}
+
+function normName(n) {
+  return (n || '').replace(/\s*\(.*?\)/g, '').trim().toLowerCase();
 }
 
 /* ── Assignment grouping ─────────────────────────────────────────────────────── */
@@ -484,6 +516,7 @@ function showView(name) {
     case 'overview':    stopChatPoll(); renderOverview(root); break;
     case 'assignment':  renderAssignmentView(root); break;
     case 'gradebook':   renderGradeBook(root); break;
+    case 'teams':       renderTeamsView(root); break;
     case 'ledger':      renderLedgerView(root); break;
     case 'quiz':        renderQuizView(root); break;
     case 'content':     renderContentView(root); loadCourseContent(); break;
@@ -777,9 +810,11 @@ function buildStudentCard(studentId) {
   const st = S.allStudentsList.find(s => s.id === studentId) || S.students.find(s => s.id === studentId);
   if (!st) return '<p class="muted">Student not found.</p>';
 
-  const teamData = S.teams[studentId] || {};
-  const teamNum  = teamData.team || null;
-  const teammates = teamNum
+  const teamData    = S.teams[studentId] || {};
+  const teamNum     = teamData.team || null;
+  const teamMeta    = teamNum ? (S.teamMeta[String(teamNum)] || {}) : {};
+  const teamLabel   = teamNum ? (teamMeta.name ? `Team ${teamNum} — ${teamMeta.name}` : `Team ${teamNum}`) : null;
+  const teammates   = teamNum
     ? S.allStudentsList.filter(s => s.id !== studentId && (S.teams[s.id]?.team) === teamNum).map(s => s.name)
     : [];
 
@@ -864,6 +899,7 @@ function buildStudentCard(studentId) {
         value="${teamNum || ''}"
         onchange="saveStudentTeam('${esc(studentId)}', this.value)"
         title="Set team number" />
+      ${teamLabel ? `<span class="tm-label-pill">${esc(teamLabel)}</span>` : ''}
       ${teammates.length ? `<span class="muted" style="font-size:11px">with ${teammates.slice(0,4).map(n => n.split(' ')[0]).join(', ')}</span>` : ''}
     </div>
 
@@ -877,6 +913,97 @@ function buildStudentCard(studentId) {
     <div class="sc-assessment">${esc(assessment)}</div>
 
     <div class="sc-categories">${categoryBlocks}</div>`;
+}
+
+/* ── TEAMS VIEW ──────────────────────────────────────────────────────────────── */
+function renderTeamsView(root) {
+  root = root || document.getElementById('view-root');
+  if (!S.course) { root.innerHTML = '<p class="muted padded">Select a course first.</p>'; return; }
+
+  // Group project assignments
+  const projectAssignments = S.assignments.filter(a => classifyAssignment(a) === 'Group Project')
+    .sort((a, b) => new Date(a.due_at||0) - new Date(b.due_at||0));
+
+  // Build team → [studentIds] map
+  const teamStudents = {};
+  S.allStudentsList.forEach(st => {
+    const t = S.teams[st.id]?.team;
+    if (t) { if (!teamStudents[t]) teamStudents[t] = []; teamStudents[t].push(st); }
+  });
+
+  const teamNums = Object.keys(S.teamMeta).map(Number).sort((a, b) => a - b);
+
+  const teamCards = teamNums.map(tNum => {
+    const meta    = S.teamMeta[String(tNum)] || {};
+    const members = teamStudents[tNum] || [];
+    const label   = meta.name ? `Team ${tNum} — ${meta.name}` : `Team ${tNum}`;
+
+    // Member rows with group project scores
+    const memberRows = members.map(st => {
+      const scoreCells = projectAssignments.map(a => {
+        const g = (S.allGrades[String(a.id)] || {})[st.id];
+        const score = g?.finalScore ?? g?.canvasScore ?? null;
+        const pct = score != null && a.points_possible ? score / a.points_possible : null;
+        const cls = pct == null ? '' : pct >= 0.9 ? 'ldg-cell-a' : pct >= 0.8 ? 'ldg-cell-b' : pct >= 0.7 ? 'ldg-cell-c' : 'ldg-cell-f';
+        return `<td class="tm-score ${cls}">${score != null ? score : '<span class="ldg-empty">—</span>'}</td>`;
+      }).join('');
+      return `<tr>
+        <td class="tm-member-name"><button class="link-btn" onclick="showView('gradebook');setTimeout(()=>showStudentCard('${esc(st.id)}'),100)">${esc(st.name)}</button></td>
+        ${scoreCells}
+      </tr>`;
+    }).join('');
+
+    // Team totals per assignment (average of members who have a score)
+    const totalRow = projectAssignments.map(a => {
+      const scores = members.map(st => {
+        const g = (S.allGrades[String(a.id)] || {})[st.id];
+        return g?.finalScore ?? g?.canvasScore ?? null;
+      }).filter(s => s != null);
+      const avg = scores.length ? (scores.reduce((x,y) => x+y, 0) / scores.length).toFixed(1) : '—';
+      return `<td class="tm-score tm-avg"><strong>${avg}</strong></td>`;
+    }).join('');
+
+    const asgHeaders = projectAssignments.map(a =>
+      `<th class="tm-asg-hdr" title="${esc(a.name)}">${esc(a.name.length > 20 ? a.name.slice(0,18)+'…' : a.name)}<div class="ldg-pts">${a.points_possible||'?'}pt</div></th>`
+    ).join('');
+
+    return `
+      <div class="tm-card">
+        <div class="tm-card-hdr">
+          <span class="tm-num">Team ${tNum}</span>
+          <span class="tm-company">${esc(meta.name || '')}</span>
+          <span class="tm-count muted">${members.length} students</span>
+        </div>
+        ${projectAssignments.length ? `
+        <div class="tm-table-wrap">
+          <table class="tm-table">
+            <thead><tr>
+              <th class="tm-name-hdr">Student</th>
+              ${asgHeaders}
+            </tr></thead>
+            <tbody>
+              ${memberRows}
+              <tr class="tm-total-row">
+                <td class="tm-name-hdr"><em>Team Avg</em></td>
+                ${totalRow}
+              </tr>
+            </tbody>
+          </table>
+        </div>` : `<div class="muted" style="padding:10px 0;font-size:12px">No Group Project assignments found yet.</div>`}
+        <div class="tm-members-bare">
+          ${members.map(st => `<span class="tm-badge">${esc(st.name.split(' ')[0])} ${esc(st.name.split(' ').slice(-1)[0])}</span>`).join('')}
+        </div>
+      </div>`;
+  }).join('');
+
+  root.innerHTML = `
+    <div class="page-title">Teams — ${esc(S.course?.name || '')}
+      <div class="page-actions">
+        <button class="btn btn-ghost" onclick="renderTeamsView()">⟳ Refresh</button>
+      </div>
+    </div>
+    ${teamNums.length ? `<div class="tm-grid">${teamCards}</div>`
+      : '<p class="muted padded">No team data found. Load a course first.</p>'}`;
 }
 
 /* ── LEDGER VIEW (Canvas-style grade spreadsheet) ────────────────────────────── */
