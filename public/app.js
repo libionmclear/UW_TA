@@ -201,26 +201,23 @@ function normName(n) {
 /* ── Assignment grouping ─────────────────────────────────────────────────────── */
 // Maps Canvas assignment name patterns → display group (matches syllabus exactly)
 const GROUP_RULES = [
-  // RECORDED LECTURES — must come before Quizzes so "Week 9 Quiz" / chapter videos aren't misclassified
-  { key: 'Recorded Lectures', patterns: [
-    /recorded lecture/i,
-    /week \d.*chapter/i,
-    /chapter.*week \d/i,
-    /lecture.*week/i,
-    /week \d.*lecture/i,
-    /week 9/i,
-  ]},
-  // QUIZZES — "Quiz – Chapters X–Y" style, chapter-numbered point assignments
+  // QUIZZES — "Quiz – Chapters X–Y", "Chapter 15-16 5pt", any chapter-numbered assignment
   { key: 'Quizzes', patterns: [
     /quiz/i,
-    /chapter \d{1,2}[-–]\d{1,2}/i,
-    /chapters? \d{1,2}/i,
+    /chapt/i,
+    /chapter/i,
   ]},
   // COURSE EVALUATION — standalone
   { key: 'Course Evaluation', patterns: [
     /course eval/i,
     /submit.*eval/i,
     /evaluation/i,
+  ]},
+  // RECORDED LECTURES
+  { key: 'Recorded Lectures', patterns: [
+    /recorded lecture/i,
+    /lecture.*week/i,
+    /week \d.*lecture/i,
   ]},
   // AI ASSIGNMENTS — in-class AI exercises and demos (before Activities to avoid overlap)
   { key: 'AI Assignments', patterns: [
@@ -337,27 +334,31 @@ const GROUP_ICONS = {
   'Other Assignments':  '○',
 };
 
-// Sidebar display order
-const GROUP_ORDER = ['Recorded Lectures', 'Quizzes', 'AI Assignments', 'Case Discussions', 'Activities', 'Group Project', 'Participation', 'Final Exam', 'Course Evaluation', 'Other Assignments'];
+// Sidebar display order — main grading groups
+const GROUP_ORDER = ['Quizzes', 'AI Assignments', 'Case Discussions', 'Activities', 'Group Project', 'Final Exam'];
+
+// Groups that go in the "Other Assignments" sidebar box (not accordion)
+const OTHER_GROUPS = ['Recorded Lectures', 'Participation', 'Course Evaluation', 'Other Assignments'];
 
 // All groups start CLOSED — click to expand
 const expandedGroups = new Set();
 
 function renderSidebar() {
   const wrap = document.getElementById('sidebar-assignments');
-  if (!S.assignments.length) { wrap.innerHTML = ''; return; }
+  const otherWrap = document.getElementById('sidebar-other-assignments');
+  const otherBox = document.getElementById('sidebar-other-box');
+  if (!S.assignments.length) { wrap.innerHTML = ''; if (otherWrap) otherWrap.innerHTML = ''; if (otherBox) otherBox.style.display = 'none'; return; }
 
-  const keys = [...GROUP_ORDER.filter(k => S.assignmentGroups[k]), ...Object.keys(S.assignmentGroups).filter(k => !GROUP_ORDER.includes(k))];
+  // Split groups into main grading and "other"
+  const allKeys = [...GROUP_ORDER.filter(k => S.assignmentGroups[k]), ...Object.keys(S.assignmentGroups).filter(k => !GROUP_ORDER.includes(k) && !OTHER_GROUPS.includes(k))];
+  const otherKeys = OTHER_GROUPS.filter(k => S.assignmentGroups[k]);
 
-  wrap.innerHTML = keys.map(groupName => {
+  function renderGroup(groupName) {
     const assignments = S.assignmentGroups[groupName] || [];
     const isOpen = expandedGroups.has(groupName);
-    const icon = GROUP_ICONS[groupName] || '◉';
-
-    // Count how many need grading in this group
+    const icon = GROUP_ICONS[groupName] || '○';
     const needsGrading = assignments.filter(a => assignmentNeedsGrading(a)).length;
     const badge = needsGrading > 0 ? `<span class="sidebar-badge">${needsGrading}</span>` : '';
-
     const items = assignments.map(a => {
       const isActive = S.currentAssignment && String(S.currentAssignment.id) === String(a.id);
       const pts = a.points_possible ? ` · ${a.points_possible}pt` : '';
@@ -366,7 +367,6 @@ function renderSidebar() {
         ${flag}${esc(shortName(a.name))}${pts}
       </button>`;
     }).join('');
-
     return `<div class="sidebar-group">
       <button class="sidebar-group-header" onclick="toggleGroup('${esc(groupName)}')">
         <span class="nav-icon">${icon}</span>
@@ -376,7 +376,17 @@ function renderSidebar() {
       </button>
       <div class="sidebar-group-items ${isOpen ? 'open' : ''}" id="grp-${esc(groupName)}">${items}</div>
     </div>`;
-  }).join('');
+  }
+
+  wrap.innerHTML = allKeys.map(renderGroup).join('');
+
+  // Other Assignments box
+  if (otherKeys.length && otherWrap && otherBox) {
+    otherBox.style.display = '';
+    otherWrap.innerHTML = otherKeys.map(renderGroup).join('');
+  } else if (otherBox) {
+    otherBox.style.display = 'none';
+  }
 }
 
 function shortName(name) {
