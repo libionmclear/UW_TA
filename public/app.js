@@ -22,6 +22,7 @@ const S = {
   aiInstructions: '',
   manualStudents: [],
   quizBank: { questions: [] },
+  syllabus: [],
 };
 
 const DEFAULT_COURSE_NAME = 'B BUS 464';
@@ -64,8 +65,9 @@ async function init() {
   // Check health
   try { S.health = await GET('/api/health'); renderStatusBadges(); } catch { }
 
-  // Load quiz bank
+  // Load quiz bank + syllabus
   try { S.quizBank = await GET('/api/quiz-bank'); } catch { S.quizBank = { questions: [] }; }
+  try { S.syllabus = await GET('/api/syllabus'); } catch { S.syllabus = []; }
 
   // Load courses then auto-select B BUS 464
   if (S.health?.canvas) {
@@ -363,6 +365,16 @@ async function loadAssignmentData(assignmentId) {
     if (savedRubric) S.rubric = savedRubric;
     else S.rubric = defaultRubricForAssignment(S.currentAssignment);
 
+    // Merge Canvas scores: if a submission has a score and our grade lacks a finalScore, import it
+    subs.forEach(sub => {
+      const sid = String(sub.user_id);
+      if (sub.score != null && !S.grades[sid]) {
+        S.grades[sid] = { status: 'canvas', canvasScore: sub.score, finalScore: sub.score, studentName: sub.user?.name || sid };
+      } else if (sub.score != null && S.grades[sid]) {
+        S.grades[sid].canvasScore = sub.score;
+      }
+    });
+
     // Update allGrades cache
     S.allGrades[String(aid)] = grades;
 
@@ -440,6 +452,7 @@ function showView(name) {
     case 'assignment':  renderAssignmentView(root); break;
     case 'quiz':        renderQuizView(root); break;
     case 'content':     renderContentView(root); loadCourseContent(); break;
+    case 'syllabus':    renderSyllabusView(root); break;
     case 'manual':      renderManualView(root); break;
     default:            renderOverview(root);
   }
@@ -462,24 +475,27 @@ function renderOverview(root) {
   root = root || document.getElementById('view-root');
   const now = new Date();
 
-  // Next two class days
-  const [nextClass, classAfter] = nextClassDates(now);
-  const nextClassLabel = nextClass ? nextClass.toLocaleDateString('en-US', { weekday:'long', month:'short', day:'numeric' }) : '—';
-  const classAfterLabel = classAfter ? classAfter.toLocaleDateString('en-US', { weekday:'long', month:'short', day:'numeric' }) : '—';
-
-  // Assignments due on or before next class
-  const dueNextClass = S.assignments.filter(a => {
-    if (!a.due_at) return false;
-    const d = new Date(a.due_at); d.setHours(23,59,59,0);
-    return d >= now && nextClass && d <= new Date(nextClass.getTime() + 86399999);
-  }).sort((a,b) => new Date(a.due_at) - new Date(b.due_at));
-
-  // Assignments due between next class and the one after
-  const dueWeek = S.assignments.filter(a => {
-    if (!a.due_at || !nextClass || !classAfter) return false;
-    const d = new Date(a.due_at);
-    return d > new Date(nextClass.getTime() + 86399999) && d <= new Date(classAfter.getTime() + 86399999);
-  }).sort((a,b) => new Date(a.due_at) - new Date(b.due_at));
+  // Find next 2 class sessions from syllabus
+  const today = now.toISOString().slice(0,10);
+  const upcomingSessions = [];
+  const seenDates = new Set();
+  for (const row of (S.syllabus || [])) {
+    if (row.date >= today && !row.isCancelled && row.session && row.session.startsWith('Class') && !seenDates.has(row.date)) {
+      seenDates.add(row.date);
+      if (upcomingSessions.length < 2) upcomingSessions.push(row.date);
+    }
+  }
+  // Build activities per session date
+  function sessionRows(date) { return (S.syllabus || []).filter(r => r.date === date && !r.isCancelled); }
+  function sessionLabel(date) {
+    if (!date) return '—';
+    const d = new Date(date + 'T12:00:00');
+    return d.toLocaleDateString('en-US', { weekday:'long', month:'short', day:'numeric' });
+  }
+  function sessionName(date) {
+    const first = (S.syllabus || []).find(r => r.date === date && r.session);
+    return first?.session || '';
+  }
 
   const needsGrading = S.assignments.filter(a => {
     const g = S.allGrades[String(a.id)] || {};
@@ -546,23 +562,30 @@ function renderOverview(root) {
       </div>
     </div>
 
-    <!-- Upcoming by class day -->
+    <!-- Upcoming by class day (from syllabus) -->
     <div class="overview-grid">
-
-      <div class="card">
-        <div class="card-title">📅 Next Class — ${esc(nextClassLabel)}
-          <span class="card-title-hint">${dueNextClass.length} due</span>
-        </div>
-        ${upcomingRows(dueNextClass)}
-      </div>
-
-      <div class="card">
-        <div class="card-title">📅 Class After — ${esc(classAfterLabel)}
-          <span class="card-title-hint">${dueWeek.length} due</span>
-        </div>
-        ${upcomingRows(dueWeek)}
-      </div>
-
+      ${upcomingSessions.map((date, idx) => {
+        const rows = sessionRows(date);
+        const label = sessionLabel(date);
+        const sName = sessionName(date);
+        const hasDue = rows.some(r => r.assignmentDue && r.assignmentDue !== '—');
+        return `<div class="card">
+          <div class="card-title">📅 ${esc(sName)} — ${esc(label)}
+            ${hasDue ? '<span class="card-title-hint" style="color:var(--warn)">assignments due</span>' : ''}
+          </div>
+          <table class="syllabus-mini">
+            <tbody>${rows.map(r => `<tr>
+              <td class="syl-act-type ${actTypeClass(r.actType)}">${esc(r.actType)}</td>
+              <td class="syl-topic">${esc(r.topic)}</td>
+              <td class="syl-inst">${esc(r.instructor)}</td>
+              ${r.assignmentDue && r.assignmentDue !== '—' ? `<td class="syl-due">⚑ ${esc(r.assignmentDue)}</td>` : '<td></td>'}
+            </tr>`).join('')}</tbody>
+          </table>
+          ${hasDue ? `<div style="font-size:11px;color:var(--warn);margin-top:6px;padding:0 2px">
+            ${rows.filter(r => r.assignmentDue && r.assignmentDue !== '—').map(r => `<div>• ${esc(r.assignmentDue)}</div>`).join('')}
+          </div>` : ''}
+        </div>`;
+      }).join('')}
     </div>
 
     <!-- Needs grading -->
@@ -616,6 +639,126 @@ function renderOverview(root) {
       </div>
 
     </div>`;
+}
+
+/* ── Syllabus helpers ───────────────────────────────────────────────────────── */
+const ACT_TYPE_COLORS = {
+  'Quiz':           'act-quiz',
+  'Case Discussion':'act-case',
+  'Simulation':     'act-sim',
+  'AI Exercise':    'act-ai',
+  'Online Recorded':'act-recorded',
+  'Group Work':     'act-group',
+  'Discussion':     'act-discuss',
+  'News/Current':   'act-news',
+  'Admin':          'act-admin',
+  'Exam':           'act-exam',
+  'Presentation':   'act-present',
+};
+function actTypeClass(t) { return ACT_TYPE_COLORS[t] || 'act-other'; }
+
+/* ── SYLLABUS VIEW ───────────────────────────────────────────────────────────── */
+function renderSyllabusView(root) {
+  root = root || document.getElementById('view-root');
+  const rows = S.syllabus || [];
+
+  const rowsHtml = rows.map((row, i) => {
+    const isHeader = !!row.session;
+    const isCancelled = !!row.isCancelled;
+    const pts = row.points != null ? row.points : '';
+    const due = row.assignmentDue && row.assignmentDue !== '—' ? row.assignmentDue : '';
+    const read = row.reading && row.reading !== '—' ? row.reading : '';
+
+    return `<tr class="${isCancelled ? 'syl-row-cancelled' : isHeader ? 'syl-row-header' : 'syl-row'}">
+      <td class="syl-session">${esc(row.session || '')}</td>
+      <td class="syl-date">${formatSylDate(row.date)}</td>
+      <td class="syl-day">${esc(row.day || '')}</td>
+      <td class="syl-loc">${esc(row.location || '')}</td>
+      <td class="syl-time">${esc(row.estTime || '')}</td>
+      <td class="syl-num">${row.actNum || ''}</td>
+      <td><span class="syl-act-badge ${actTypeClass(row.actType)}">${esc(row.actType || '')}</span></td>
+      <td class="syl-topic-cell">${esc(row.topic || '')}</td>
+      <td class="syl-reading-cell">${esc(read)}</td>
+      <td class="syl-due-cell ${due ? 'syl-has-due' : ''}">${esc(due)}</td>
+      <td class="syl-pts">${pts !== '' ? `<span class="syl-pts-val">${pts}</span>` : ''}</td>
+      <td class="syl-inst-cell">
+        <select class="syl-inst-select" data-idx="${i}" onchange="updateSylInstructor(${i}, this.value)">
+          <option value="Marco"   ${row.instructor === 'Marco'   ? 'selected' : ''}>Marco</option>
+          <option value="Marlowe" ${row.instructor === 'Marlowe' ? 'selected' : ''}>Marlowe</option>
+          <option value="Both"    ${row.instructor === 'Both'    ? 'selected' : ''}>Both</option>
+          <option value="—"       ${row.instructor === '—'       ? 'selected' : ''}>—</option>
+        </select>
+      </td>
+      <td class="syl-notes-cell">
+        <input class="syl-note-input" type="text" value="${esc(row.notes || '')}" data-idx="${i}"
+          onchange="updateSylNotes(${i}, this.value)" placeholder="Add note…" />
+      </td>
+      <td>
+        <button class="btn-icon" title="Add row below" onclick="addSylRow(${i})">+</button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  root.innerHTML = `
+    <div class="page-title">Instructor Syllabus — B BUS 464
+      <div class="page-actions">
+        <button class="btn btn-ghost" onclick="resetSyllabus()" title="Reset to original">↺ Reset</button>
+      </div>
+    </div>
+
+    <div class="syl-legend">
+      ${Object.entries(ACT_TYPE_COLORS).map(([t, c]) => `<span class="syl-act-badge ${c}">${esc(t)}</span>`).join('')}
+    </div>
+
+    <div class="syl-table-wrap">
+      <table class="syl-table">
+        <thead>
+          <tr>
+            <th>Session</th><th>Date</th><th>Day</th><th>Location</th>
+            <th>Est. Time</th><th>#</th><th>Activity Type</th><th>Topic / Description</th>
+            <th>Reading / Videos Assigned</th><th>Assignment DUE</th><th>Pts</th>
+            <th>Instructor</th><th>Notes</th><th></th>
+          </tr>
+        </thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>
+    </div>`;
+}
+
+function formatSylDate(iso) {
+  if (!iso) return '';
+  const d = new Date(iso + 'T12:00:00');
+  return d.toLocaleDateString('en-US', { month:'short', day:'numeric' });
+}
+
+async function updateSylInstructor(idx, val) {
+  if (!S.syllabus[idx]) return;
+  S.syllabus[idx].instructor = val;
+  await PUT('/api/syllabus', S.syllabus);
+}
+
+async function updateSylNotes(idx, val) {
+  if (!S.syllabus[idx]) return;
+  S.syllabus[idx].notes = val;
+  await PUT('/api/syllabus', S.syllabus);
+}
+
+async function addSylRow(afterIdx) {
+  const ref = S.syllabus[afterIdx] || {};
+  const newRow = { session:'', date: ref.date || '', day: ref.day || '', location: ref.location || '',
+    estTime:'', actNum:'', actType:'Admin', topic:'', reading:'', assignmentDue:'—', points:null,
+    instructor:'Both', notes:'' };
+  S.syllabus.splice(afterIdx + 1, 0, newRow);
+  await PUT('/api/syllabus', S.syllabus);
+  renderSyllabusView();
+}
+
+async function resetSyllabus() {
+  if (!confirm('Reset syllabus to original? Custom instructor changes and notes will be lost.')) return;
+  await fetch('/api/syllabus', { method: 'DELETE' });
+  S.syllabus = await GET('/api/syllabus');
+  renderSyllabusView();
+  toast('Syllabus reset.', 'success');
 }
 
 /* ── ASSIGNMENT VIEW ─────────────────────────────────────────────────────────── */
@@ -866,6 +1009,7 @@ function renderMatrixTabHtml() {
 
     const statusBadge = !submitted ? '<span class="status-badge status--pending">Not Submitted</span>'
       : sub?.late ? '<span class="status-badge status--late">Late</span>'
+      : g?.status === 'canvas' ? '<span class="status-badge status--canvas">Canvas</span>'
       : g ? `<span class="status-badge status--${g.status === 'reviewed' ? 'reviewed' : 'graded'}">${g.status === 'reviewed' ? 'Reviewed' : 'Graded'}</span>`
       : '<span class="status-badge status--submitted">Submitted</span>';
 
@@ -890,10 +1034,11 @@ function renderMatrixTabHtml() {
         </td>`;
     }).join('');
 
-    const aiT  = g?.aiTotalScore     != null ? g.aiTotalScore     : '—';
-    const marT = g?.marcoTotalScore  != null ? g.marcoTotalScore  : '—';
-    const mrlT = g?.marloweTotalScore != null ? g.marloweTotalScore : '—';
-    const fin  = g?.finalScore       != null ? `<strong>${g.finalScore}</strong>` : '—';
+    const aiT    = g?.aiTotalScore      != null ? g.aiTotalScore      : '—';
+    const marT   = g?.marcoTotalScore   != null ? g.marcoTotalScore   : '—';
+    const mrlT   = g?.marloweTotalScore != null ? g.marloweTotalScore : '—';
+    const canvS  = g?.canvasScore       != null ? `<span title="Imported from Canvas" style="color:var(--uw-purple);font-weight:600">${g.canvasScore}</span>` : '—';
+    const fin    = g?.finalScore        != null ? `<strong>${g.finalScore}</strong>` : '—';
 
     return `<tr class="${rowClass}" id="row-${esc(st.id)}">
       <td class="col-sticky"><button class="link-btn" onclick="openStudent('${esc(st.id)}')">${esc(st.name)}</button></td>
@@ -903,6 +1048,7 @@ function renderMatrixTabHtml() {
       <td class="score-td score-td-ai">${aiT}</td>
       <td class="score-td score-td-m1">${marT}</td>
       <td class="score-td score-td-m2">${mrlT}</td>
+      <td class="score-td" style="background:#f3f0ff">${canvS}</td>
       <td><strong>${fin}</strong></td>
     </tr>`;
   }).join('');
@@ -929,6 +1075,7 @@ function renderMatrixTabHtml() {
         <th rowspan="2" class="sub-th-ai">AI Total</th>
         <th rowspan="2" class="sub-th-m1">Marco</th>
         <th rowspan="2" class="sub-th-m2">Marlowe</th>
+        <th rowspan="2" style="color:var(--uw-purple)">Canvas</th>
         <th rowspan="2">Final</th>
       </tr>
       <tr>${subHeaders}</tr>
@@ -1000,10 +1147,12 @@ function recalcTotals(studentId) {
   g.aiTotalScore      = aiT;
   g.marcoTotalScore   = hasMarco  ? marT : null;
   g.marloweTotalScore = hasMarlow ? mrlT : null;
-  // Final priority: Marlowe → Marco → AI
+  // Final priority: Marlowe → Marco → AI → Canvas (imported)
   g.finalScore = g.marloweTotalScore != null ? g.marloweTotalScore
                : g.marcoTotalScore   != null ? g.marcoTotalScore
-               : g.aiTotalScore;
+               : g.aiTotalScore      != null ? g.aiTotalScore
+               : g.canvasScore       != null ? g.canvasScore
+               : null;
 }
 
 /* ── Grade All with AI ───────────────────────────────────────────────────────── */

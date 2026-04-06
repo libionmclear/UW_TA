@@ -378,6 +378,62 @@ tbody td { padding: 7px 10px; vertical-align: middle; }
 .quiz-result-error    { background: #fee2e2; border: 1px solid #fca5a5; color: #991b1b; }
 .quiz-result-link     { color: #166534; font-weight: 700; }
 
+/* ── Canvas score status badge ──────────────────────────────────────────────── */
+.status--canvas { background:#ede9fe; color:#5b21b6; }
+
+/* ── Syllabus table ──────────────────────────────────────────────────────────── */
+.syl-legend       { display:flex; flex-wrap:wrap; gap:5px; margin-bottom:12px; }
+.syl-table-wrap   { overflow-x:auto; border:1px solid var(--border); border-radius:var(--radius-lg); }
+.syl-table        { width:100%; border-collapse:collapse; font-size:12px; }
+.syl-table th     { background:var(--uw-purple); color:#fff; padding:7px 8px; text-align:left; font-size:11px; white-space:nowrap; position:sticky; top:0; z-index:2; }
+.syl-table td     { padding:5px 8px; border-bottom:1px solid var(--border); vertical-align:top; }
+.syl-row-header   { background:#f5f0ff; }
+.syl-row-header td{ font-weight:600; }
+.syl-row          { background:var(--surface); }
+.syl-row:hover    { background:#fafbff; }
+.syl-row-cancelled{ background:#fff3f3; opacity:.7; }
+.syl-row-cancelled td { color:var(--danger); font-style:italic; }
+.syl-session      { font-weight:700; color:var(--uw-purple); white-space:nowrap; min-width:70px; }
+.syl-date         { white-space:nowrap; font-weight:600; min-width:60px; }
+.syl-day          { white-space:nowrap; color:var(--text-muted); }
+.syl-loc          { white-space:nowrap; }
+.syl-time         { white-space:nowrap; color:var(--text-muted); min-width:70px; }
+.syl-num          { text-align:center; color:var(--text-muted); }
+.syl-topic-cell   { min-width:200px; max-width:280px; line-height:1.4; }
+.syl-reading-cell { min-width:160px; max-width:220px; font-size:11px; color:var(--text-muted); line-height:1.4; }
+.syl-due-cell     { min-width:140px; font-size:11px; line-height:1.4; }
+.syl-has-due      { color:var(--warn); font-weight:600; }
+.syl-pts          { text-align:center; white-space:nowrap; }
+.syl-pts-val      { display:inline-block; background:var(--uw-gold); color:var(--uw-purple); font-weight:700; font-size:11px; padding:1px 6px; border-radius:10px; }
+.syl-inst-select  { font-size:11px; border:1px solid var(--border); border-radius:4px; padding:2px 4px; background:var(--surface); cursor:pointer; }
+.syl-note-input   { width:100%; min-width:140px; font-size:11px; border:1px solid transparent; border-radius:4px; padding:2px 6px; background:transparent; }
+.syl-note-input:focus { border-color:var(--uw-purple); background:var(--surface); outline:none; }
+.btn-icon         { background:none; border:1px solid var(--border); border-radius:4px; padding:1px 6px; font-size:12px; cursor:pointer; color:var(--uw-purple); }
+.btn-icon:hover   { background:var(--ai-col); }
+
+/* Activity type badge colors */
+.syl-act-badge    { display:inline-block; font-size:10px; font-weight:600; padding:2px 7px; border-radius:10px; white-space:nowrap; }
+.act-quiz         { background:#dbeafe; color:#1d4ed8; }
+.act-case         { background:#fef3c7; color:#92400e; }
+.act-sim          { background:#d1fae5; color:#065f46; }
+.act-ai           { background:#ede9fe; color:#5b21b6; }
+.act-recorded     { background:#f3f4f6; color:#374151; }
+.act-group        { background:#fce7f3; color:#9d174d; }
+.act-discuss      { background:#e0f2fe; color:#0369a1; }
+.act-news         { background:#fef9c3; color:#713f12; }
+.act-admin        { background:#f3f4f6; color:#6b7280; }
+.act-exam         { background:#fee2e2; color:#991b1b; }
+.act-present      { background:#f0fdf4; color:#166534; }
+.act-other        { background:#f9fafb; color:#374151; }
+
+/* Syllabus mini table used in overview */
+.syllabus-mini    { width:100%; border-collapse:collapse; font-size:11px; margin-top:6px; }
+.syllabus-mini td { padding:3px 5px; border-bottom:1px solid var(--border); vertical-align:top; }
+.syl-act-type     { white-space:nowrap; }
+.syl-topic        { line-height:1.4; }
+.syl-inst         { white-space:nowrap; color:var(--text-muted); }
+.syl-due          { color:var(--warn); font-weight:600; white-space:nowrap; }
+
 /* ── Misc ────────────────────────────────────────────────────────────────────── */
 .muted   { color: var(--text-muted); font-size: 13px; }
 .padded  { padding: 12px 0; }

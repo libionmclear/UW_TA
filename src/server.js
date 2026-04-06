@@ -5,6 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
 const mammoth = require('mammoth');
+const DEFAULT_SYLLABUS = require('./syllabus-data');
 const canvas = require('./canvas-client');
 const { analyzeText, stripHtml } = require('./ai-detector');
 const grader = require('./grader');
@@ -73,7 +74,7 @@ app.use(express.static(path.join(__dirname, '../public')));
 
 // ── Persistence ──────────────────────────────────────────────────────────────
 const DATA_FILE = path.join(__dirname, '../data/store.json');
-const store = { rubrics: {}, grades: {}, assignmentSettings: {}, assignmentRubrics: {}, quizBank: { questions: [] } };
+const store = { rubrics: {}, grades: {}, assignmentSettings: {}, assignmentRubrics: {}, quizBank: { questions: [] }, syllabus: null };
 
 try {
   if (fs.existsSync(DATA_FILE)) {
@@ -84,6 +85,8 @@ try {
     if (!store.assignmentRubrics) store.assignmentRubrics = {};
   }
 } catch { }
+// Seed syllabus from default if never customized
+if (!store.syllabus) store.syllabus = DEFAULT_SYLLABUS;
 
 function save() {
   try {
@@ -441,6 +444,21 @@ app.get('/api/grades/:cid/:aid/export.csv', (req, res) => {
   res.setHeader('Content-Type', 'text/csv');
   res.setHeader('Content-Disposition', `attachment; filename="grades_${req.params.aid}.csv"`);
   res.send(csv);
+});
+
+// ── Syllabus ──────────────────────────────────────────────────────────────────
+app.get('/api/syllabus', (_req, res) => ok(res, store.syllabus));
+app.put('/api/syllabus', (req, res) => {
+  if (!Array.isArray(req.body)) return fail(res, { message: 'Expected array' }, 400);
+  store.syllabus = req.body;
+  save();
+  ok(res, store.syllabus);
+});
+// Reset to default
+app.delete('/api/syllabus', (_req, res) => {
+  store.syllabus = DEFAULT_SYLLABUS.map(r => ({ ...r }));
+  save();
+  ok(res, store.syllabus);
 });
 
 // ── SPA fallback ──────────────────────────────────────────────────────────────
