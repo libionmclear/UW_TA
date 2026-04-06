@@ -138,7 +138,8 @@ document.getElementById('sel-course').addEventListener('change', async function 
 
 async function loadCourseData() {
   if (!S.course) return;
-  toast('Loading course data…');
+  const root = document.getElementById('view-root');
+  if (root) root.innerHTML = `<div class="loading-splash"><div class="loading-bounce"></div><div class="loading-text">Grabbing Data<span class="loading-dots"></span></div><div class="muted">Loading course, assignments, students &amp; grades...</div></div>`;
   try {
     const [assignments, allGradesRaw, teamsRaw, teamMetaRaw, students, dismissedArr] = await Promise.all([
       GET(`/api/courses/${S.course.id}/assignments`),
@@ -435,6 +436,20 @@ async function loadAssignmentData(assignmentId) {
   if (!S.course) return;
   const cid = S.course.id;
   const aid = assignmentId;
+
+  // Show loading in the assignment view
+  const root = document.getElementById('view-root');
+  if (root) {
+    const existing = root.querySelector('.loading-splash');
+    if (!existing) {
+      // Insert loading bar at top of view
+      const bar = document.createElement('div');
+      bar.className = 'loading-bar-top';
+      bar.id = 'assignment-loading-bar';
+      bar.innerHTML = '<div class="loading-bar-fill"></div>';
+      root.prepend(bar);
+    }
+  }
 
   try {
     const [enrollments, subs, grades, settings, savedRubric] = await Promise.all([
@@ -1996,53 +2011,77 @@ async function oboEnterGrading() {
   students.forEach(st => {
     const sub = submissionFor(st.id);
     if (!sub || sub._extractedText) return; // already has text
-    if (sub.body || sub._manualText) return; // has inline text
     if (sub.attachments?.length) {
-      const att = sub.attachments[0]; // extract first attachment
-      subsToExtract.push({ sub, att, studentId: st.id });
+      // Extract ALL attachments (concatenate text from each)
+      subsToExtract.push({ sub, attachments: sub.attachments, studentId: st.id, studentName: st.name });
+    } else if (sub.body) {
+      // Has inline body — check it's not empty HTML
+      const clean = sub.body.replace(/<[^>]*>/g, '').trim();
+      if (!clean) subsToExtract.push({ sub, attachments: [], studentId: st.id, studentName: st.name, emptyBody: true });
     }
   });
-
-  if (!subsToExtract.length) return;
 
   // Show loading overlay in the tab
   const el = document.getElementById('atab-oneByOne');
   if (!el) return;
+  const total = students.length;
+  const toExtract = subsToExtract.filter(s => s.attachments.length > 0).length;
   el.innerHTML = `<div class="obo-loading">
     <div class="obo-loading-spinner"></div>
-    <div class="obo-loading-text">Loading & extracting ${subsToExtract.length} submissions...</div>
-    <div class="obo-loading-sub" id="obo-loading-progress">0 / ${subsToExtract.length}</div>
+    <div class="obo-loading-text">Loading ${total} students, extracting ${toExtract} file submissions...</div>
+    <div class="obo-loading-sub" id="obo-loading-progress">Extracting documents... 0 / ${toExtract}</div>
+    <div class="obo-loading-detail muted" id="obo-loading-detail" style="font-size:11px;margin-top:4px"></div>
   </div>`;
 
+  if (!toExtract && !subsToExtract.length) {
+    refreshOneByOneTab();
+    return;
+  }
+
   let done = 0;
-  for (const { sub, att, studentId } of subsToExtract) {
+  let errors = 0;
+  for (const item of subsToExtract) {
+    if (!item.attachments.length) continue;
+    const detailEl = document.getElementById('obo-loading-detail');
+    if (detailEl) detailEl.textContent = item.studentName + ' — ' + (item.attachments[0].display_name || item.attachments[0].filename || 'file');
     try {
-      const res = await POST('/api/canvas/extract-text', { url: att.url, filename: att.display_name || att.filename });
-      sub._extractedText = res.text;
-    } catch { /* skip failures */ }
+      // Extract all attachments and concatenate
+      let allText = '';
+      for (const att of item.attachments) {
+        try {
+          const res = await POST('/api/canvas/extract-text', { url: att.url, filename: att.display_name || att.filename });
+          if (res.text) allText += (allText ? '\n\n--- Next File ---\n\n' : '') + res.text;
+        } catch { errors++; }
+      }
+      if (allText) item.sub._extractedText = allText;
+    } catch { errors++; }
     done++;
     const prog = document.getElementById('obo-loading-progress');
-    if (prog) prog.textContent = `${done} / ${subsToExtract.length}`;
+    if (prog) prog.textContent = `Extracting documents... ${done} / ${toExtract}`;
   }
 
   // Now run AI detection on all submissions that have text
   const progEl = document.getElementById('obo-loading-progress');
-  if (progEl) progEl.textContent = 'Running AI detection...';
+  if (progEl) progEl.textContent = 'Running AI detection on submissions...';
+  const detailEl2 = document.getElementById('obo-loading-detail');
 
+  let aiDone = 0;
   for (const st of students) {
     const text = submissionText(submissionFor(st.id));
     if (!text || S.grades[st.id]?.aiDetection) continue;
+    if (detailEl2) detailEl2.textContent = st.name;
     try {
       const det = await POST('/api/ai-detect', { text });
       if (!S.grades[st.id]) S.grades[st.id] = buildEmptyGrade(st.id);
       S.grades[st.id].aiDetection = det;
       S.grades[st.id].flagged = det.pct >= 80;
+      aiDone++;
     } catch { /* skip */ }
   }
 
   // Re-render
   refreshOneByOneTab();
-  toast(`Extracted ${done} submissions, AI detection complete.`, 'success');
+  toast(`Extracted ${done} submissions${errors ? ` (${errors} errors)` : ''}, AI detection on ${aiDone} students.`, 'success');
 }
 
 function oboNavigate(dir) {
