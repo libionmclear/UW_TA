@@ -5,6 +5,8 @@ const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
 const mammoth = require('mammoth');
+const pdfParse = require('pdf-parse');
+const fetch = require('node-fetch');
 const DEFAULT_SYLLABUS = require('./syllabus-data');
 const canvas = require('./canvas-client');
 const { analyzeText, stripHtml } = require('./ai-detector');
@@ -564,6 +566,86 @@ app.delete('/api/syllabus', (_req, res) => {
   store.syllabus = DEFAULT_SYLLABUS.map(r => ({ ...r }));
   save();
   ok(res, store.syllabus);
+});
+
+// ── Canvas File Proxy (download attachments) ────────────────────────────────
+app.get('/api/canvas/file-proxy', requireAuth, async (req, res) => {
+  const fileUrl = req.query.url;
+  if (!fileUrl) return fail(res, { message: 'No url provided' }, 400);
+  try {
+    const resp = await fetch(fileUrl, { headers: { Authorization: `Bearer ${process.env.CANVAS_API_TOKEN}` }, redirect: 'follow' });
+    if (!resp.ok) throw new Error(`Canvas file fetch ${resp.status}`);
+    const ct = resp.headers.get('content-type') || 'application/octet-stream';
+    res.setHeader('Content-Type', ct);
+    const disp = resp.headers.get('content-disposition');
+    if (disp) res.setHeader('Content-Disposition', disp);
+    resp.body.pipe(res);
+  } catch (e) { fail(res, e); }
+});
+
+// ── Extract text from Canvas attachment (PDF / DOCX) for AI grading ─────────
+app.post('/api/canvas/extract-text', requireAuth, async (req, res) => {
+  const { url, filename } = req.body;
+  if (!url) return fail(res, { message: 'No url provided' }, 400);
+  try {
+    const resp = await fetch(url, { headers: { Authorization: `Bearer ${process.env.CANVAS_API_TOKEN}` }, redirect: 'follow' });
+    if (!resp.ok) throw new Error(`Canvas file fetch ${resp.status}`);
+    const buf = Buffer.from(await resp.arrayBuffer());
+    const name = (filename || '').toLowerCase();
+    let text = '';
+    if (name.endsWith('.pdf')) {
+      const pdf = await pdfParse(buf);
+      text = pdf.text;
+    } else if (name.endsWith('.docx') || name.endsWith('.doc')) {
+      const result = await mammoth.extractRawText({ buffer: buf });
+      text = result.value;
+    } else if (name.endsWith('.txt') || name.endsWith('.md') || name.endsWith('.csv') || name.endsWith('.html') || name.endsWith('.htm')) {
+      text = buf.toString('utf8');
+      text = stripHtml(text);
+    } else {
+      text = buf.toString('utf8', 0, Math.min(buf.length, 100000));
+    }
+    ok(res, { text: text.substring(0, 200000), filename });
+  } catch (e) { fail(res, e); }
+});
+
+// ── Student Photos ──────────────────────────────────────────────────────────
+const PHOTOS_DIR = path.join(__dirname, '../data/photos');
+if (!fs.existsSync(PHOTOS_DIR)) fs.mkdirSync(PHOTOS_DIR, { recursive: true });
+
+app.get('/api/student-photo/:studentId', (req, res) => {
+  const sid = req.params.studentId;
+  const exts = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
+  for (const ext of exts) {
+    const fp = path.join(PHOTOS_DIR, sid + ext);
+    if (fs.existsSync(fp)) return res.sendFile(fp);
+  }
+  res.status(404).json({ error: 'No photo' });
+});
+
+app.post('/api/student-photo/:studentId', requireAuth, upload.single('photo'), (req, res) => {
+  if (!req.file) return fail(res, { message: 'No file uploaded' }, 400);
+  const sid = req.params.studentId;
+  const ext = path.extname(req.file.originalname).toLowerCase() || '.jpg';
+  // Remove old photos for this student
+  const exts = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
+  for (const e of exts) {
+    const fp = path.join(PHOTOS_DIR, sid + e);
+    if (fs.existsSync(fp)) fs.unlinkSync(fp);
+  }
+  const fp = path.join(PHOTOS_DIR, sid + ext);
+  fs.writeFileSync(fp, req.file.buffer);
+  ok(res, { ok: true, path: `/api/student-photo/${sid}` });
+});
+
+app.delete('/api/student-photo/:studentId', requireAuth, (req, res) => {
+  const sid = req.params.studentId;
+  const exts = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
+  for (const e of exts) {
+    const fp = path.join(PHOTOS_DIR, sid + e);
+    if (fs.existsSync(fp)) fs.unlinkSync(fp);
+  }
+  ok(res, { ok: true });
 });
 
 // ── SPA fallback ──────────────────────────────────────────────────────────────

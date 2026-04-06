@@ -856,6 +856,22 @@ function showStudentCard(studentId) {
   _renderGradeBookHtml(null, studentId);
 }
 
+async function uploadStudentPhoto(studentId, file) {
+  if (!file) return;
+  const form = new FormData();
+  form.append('photo', file);
+  try {
+    const resp = await fetch(`/api/student-photo/${studentId}`, { method: 'POST', body: form });
+    if (!resp.ok) throw new Error('Upload failed');
+    toast('Photo uploaded!', 'success');
+    // Refresh the photo
+    const img = document.getElementById(`sc-photo-${studentId}`);
+    const avatar = document.getElementById(`sc-avatar-${studentId}`);
+    if (img) { img.src = `/api/student-photo/${studentId}?t=${Date.now()}`; img.style.display = ''; }
+    if (avatar) avatar.style.display = 'none';
+  } catch (e) { toast('Upload failed: ' + e.message, 'error'); }
+}
+
 function buildStudentCard(studentId) {
   const st = S.allStudentsList.find(s => s.id === studentId) || S.students.find(s => s.id === studentId);
   if (!st) return '<p class="muted">Student not found.</p>';
@@ -933,9 +949,18 @@ function buildStudentCard(studentId) {
     : pct >= 60 ? 'Below expectations. Recommend reaching out to student.'
     : 'Struggling. Immediate attention recommended.';
 
+  const photoUrl = `/api/student-photo/${esc(studentId)}`;
+
   return `
     <div class="sc-header">
-      <div class="sc-avatar-lg">${esc((st.name||'?')[0].toUpperCase())}</div>
+      <div class="sc-photo-wrap">
+        <img class="sc-photo-img" id="sc-photo-${esc(studentId)}" src="${photoUrl}" alt="${esc(st.name)}"
+          onerror="this.style.display='none';this.nextElementSibling.style.display='grid'" />
+        <div class="sc-avatar-lg" id="sc-avatar-${esc(studentId)}" style="display:none">${esc((st.name||'?')[0].toUpperCase())}</div>
+        <button class="sc-photo-upload-btn" title="Upload photo" onclick="document.getElementById('photo-input-${esc(studentId)}').click()">+</button>
+        <input type="file" id="photo-input-${esc(studentId)}" accept="image/*" style="display:none"
+          onchange="uploadStudentPhoto('${esc(studentId)}', this.files[0])" />
+      </div>
       <div>
         <div class="sc-student-name">${esc(st.name)}</div>
         <div class="muted" style="font-size:12px">${esc(st.email || '')}</div>
@@ -1762,7 +1787,6 @@ function renderOneByOneTab() {
   const st = students[oboIndex];
   const sub = submissionFor(st.id);
   const g = S.grades[st.id];
-  const subText = submissionText(sub) || '(No submission text)';
   const submitted = sub && sub.workflow_state !== 'unsubmitted';
 
   const criteriaRows = S.rubric.criteria.map(c => {
@@ -1794,11 +1818,12 @@ function renderOneByOneTab() {
   const finalTotal = g?.finalScore != null ? g.finalScore : '—';
 
   const aiFeedback = g?.aiOverallFeedback || '';
+  const userName = S.me?.username || 'You';
   const chatHtml = oboChatMessages.map(m => {
-    const isMarco = m.from === 'Marco';
-    const avatarBg = isMarco ? 'var(--info)' : 'var(--success)';
-    return `<div class="obo-chat-msg ${isMarco ? 'obo-chat-left' : 'obo-chat-right'}">
-      <div class="obo-chat-avatar" style="background:${avatarBg}">${m.from[0]}</div>
+    const isMe = m.from === userName;
+    const bg = isMe ? 'var(--uw-purple)' : 'var(--info)';
+    return `<div class="obo-chat-msg ${isMe ? 'obo-chat-right' : 'obo-chat-left'}">
+      <div class="obo-chat-avatar" style="background:${bg}">${m.from[0].toUpperCase()}</div>
       <div class="obo-chat-bubble-wrap">
         <div class="obo-chat-author">${esc(m.from)}</div>
         <div class="obo-chat-bubble">${esc(m.text)}</div>
@@ -1825,7 +1850,7 @@ function renderOneByOneTab() {
         <div class="obo-panel obo-submission-panel">
           <div class="card">
             <div class="card-title">Student Submission</div>
-            <div class="submission-text" style="max-height:500px">${esc(subText)}</div>
+            <div class="obo-submission-content">${renderSubmissionContent(sub)}</div>
           </div>
         </div>
 
@@ -1854,15 +1879,11 @@ function renderOneByOneTab() {
             <p class="obo-ai-explain-text" id="obo-ai-explain-text">${esc(aiFeedback)}</p>
           </div>
 
-          <!-- Marco & Marlowe Chat -->
+          <!-- Grading Discussion Chat -->
           <div class="obo-chat-card card">
-            <div class="card-title">Marco & Marlowe Discussion</div>
+            <div class="card-title">Grading Discussion</div>
             <div class="obo-chat-messages" id="obo-chat-messages">${chatHtml || '<p class="muted" style="text-align:center;padding:20px">Start a discussion about this grade...</p>'}</div>
             <div class="obo-chat-input-row">
-              <select class="obo-chat-from" id="obo-chat-from">
-                <option value="Marco">Marco</option>
-                <option value="Marlowe">Marlowe</option>
-              </select>
               <input class="input obo-chat-input" id="obo-chat-input" placeholder="Type a message..." onkeydown="if(event.key==='Enter')oboSendChat()" />
               <button class="btn btn-surf" onclick="oboSendChat()">Send</button>
             </div>
@@ -1952,28 +1973,30 @@ async function oboSaveGrade() {
 
 function oboSendChat() {
   const input = document.getElementById('obo-chat-input');
-  const from = document.getElementById('obo-chat-from');
   const text = input?.value?.trim();
   if (!text) return;
-  oboChatMessages.push({ from: from.value, text, time: new Date().toLocaleTimeString() });
+  const userName = S.me?.username || 'You';
+  oboChatMessages.push({ from: userName, text, time: new Date().toLocaleTimeString() });
   input.value = '';
+  renderOboChatMessages();
+}
+
+function renderOboChatMessages() {
   const container = document.getElementById('obo-chat-messages');
-  if (container) {
-    const isMarco = from.value === 'Marco';
-    const avatarBg = isMarco ? 'var(--info)' : 'var(--success)';
-    container.innerHTML = oboChatMessages.map(m => {
-      const isMar = m.from === 'Marco';
-      const bg = isMar ? 'var(--info)' : 'var(--success)';
-      return `<div class="obo-chat-msg ${isMar ? 'obo-chat-left' : 'obo-chat-right'}">
-        <div class="obo-chat-avatar" style="background:${bg}">${m.from[0]}</div>
-        <div class="obo-chat-bubble-wrap">
-          <div class="obo-chat-author">${esc(m.from)}</div>
-          <div class="obo-chat-bubble">${esc(m.text)}</div>
-        </div>
-      </div>`;
-    }).join('');
-    container.scrollTop = container.scrollHeight;
-  }
+  if (!container) return;
+  const userName = S.me?.username || 'You';
+  container.innerHTML = oboChatMessages.map(m => {
+    const isMe = m.from === userName;
+    const bg = isMe ? 'var(--uw-purple)' : 'var(--info)';
+    return `<div class="obo-chat-msg ${isMe ? 'obo-chat-right' : 'obo-chat-left'}">
+      <div class="obo-chat-avatar" style="background:${bg}">${m.from[0].toUpperCase()}</div>
+      <div class="obo-chat-bubble-wrap">
+        <div class="obo-chat-author">${esc(m.from)}</div>
+        <div class="obo-chat-bubble">${esc(m.text)}</div>
+      </div>
+    </div>`;
+  }).join('');
+  container.scrollTop = container.scrollHeight;
 }
 
 /* ── Push Finals to Canvas ───────────────────────────────────────────────────── */
@@ -2143,7 +2166,7 @@ function openStudent(studentId) {
   document.getElementById('modal-student-name').textContent = st?.name || studentId;
   const meta = [sub?.late && 'LATE', g?.flagged && '⚑ AI Flagged', g?.status?.replace('_', ' ').toUpperCase()].filter(Boolean);
   document.getElementById('modal-student-meta').textContent = meta.join(' · ');
-  document.getElementById('modal-submission-text').textContent = submissionText(sub) || '(No submission text)';
+  document.getElementById('modal-submission-text').innerHTML = renderSubmissionContent(sub);
 
   const flagBanner = document.getElementById('modal-ai-flag');
   if (g?.flagged) {
@@ -3014,7 +3037,81 @@ function submissionFor(studentId) {
 
 function submissionText(sub) {
   if (!sub) return '';
-  return sub._manualText || sub.body || '';
+  // Prioritize extracted text (from attachments), then manual, then body, then url
+  return sub._extractedText || sub._manualText || sub.body || sub.url || '';
+}
+
+function submissionHasAttachments(sub) {
+  return sub?.attachments?.length > 0 || sub?.url;
+}
+
+function renderSubmissionContent(sub) {
+  if (!sub) return '<p class="muted">(No submission)</p>';
+  let html = '';
+
+  // Show URL submission
+  if (sub.url) {
+    html += `<div class="sub-attachment-item">
+      <span class="sub-att-icon">🔗</span>
+      <a href="${esc(sub.url)}" target="_blank" class="sub-att-name">${esc(sub.url)}</a>
+    </div>`;
+  }
+
+  // Show attachments
+  if (sub.attachments?.length) {
+    html += '<div class="sub-attachments">';
+    sub.attachments.forEach((att, i) => {
+      const name = att.display_name || att.filename || 'file';
+      const ext = name.split('.').pop().toLowerCase();
+      const isPdf = ext === 'pdf';
+      const isImage = ['jpg','jpeg','png','gif','webp','bmp'].includes(ext);
+      const isDoc = ['doc','docx'].includes(ext);
+      const proxyUrl = `/api/canvas/file-proxy?url=${encodeURIComponent(att.url)}`;
+      const icon = isPdf ? '📄' : isImage ? '🖼' : isDoc ? '📝' : '📎';
+
+      html += `<div class="sub-attachment-item">
+        <span class="sub-att-icon">${icon}</span>
+        <span class="sub-att-name">${esc(name)}</span>
+        <span class="muted" style="font-size:11px">${att.size ? (att.size / 1024).toFixed(0) + ' KB' : ''}</span>
+        <a href="${esc(proxyUrl)}" target="_blank" class="btn btn-ghost" style="font-size:11px;padding:2px 8px">View</a>
+        <button class="btn btn-ghost" style="font-size:11px;padding:2px 8px" onclick="extractAttachmentText('${esc(att.url)}','${esc(name)}','${esc(String(sub.user_id))}')">Extract Text</button>
+      </div>`;
+
+      // Inline preview for images
+      if (isImage) {
+        html += `<div class="sub-att-preview"><img src="${esc(proxyUrl)}" alt="${esc(name)}" style="max-width:100%;max-height:300px;border-radius:var(--radius)" /></div>`;
+      }
+      // Inline preview for PDFs
+      if (isPdf) {
+        html += `<div class="sub-att-preview"><iframe src="${esc(proxyUrl)}" style="width:100%;height:400px;border:1px solid var(--border);border-radius:var(--radius)"></iframe></div>`;
+      }
+    });
+    html += '</div>';
+  }
+
+  // Show body text
+  const bodyText = sub._extractedText || sub._manualText || sub.body || '';
+  if (bodyText) {
+    html += `<div class="submission-text" style="max-height:400px;margin-top:8px">${esc(bodyText)}</div>`;
+  }
+
+  if (!html) html = '<p class="muted">(No submission text or attachments)</p>';
+  return html;
+}
+
+async function extractAttachmentText(url, filename, studentId) {
+  toast('Extracting text from ' + filename + '...');
+  try {
+    const res = await POST('/api/canvas/extract-text', { url, filename });
+    // Store extracted text on the submission
+    const sub = S.submissions.find(s => String(s.user_id) === String(studentId));
+    if (sub) {
+      sub._extractedText = res.text;
+    }
+    toast('Text extracted! (' + res.text.length + ' chars)', 'success');
+    // Refresh current view
+    showView('assignment');
+  } catch (e) { toast('Extract failed: ' + e.message, 'error'); }
 }
 
 function buildEmptyGrade(studentId) {

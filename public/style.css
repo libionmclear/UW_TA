@@ -183,10 +183,10 @@ a { color: var(--uw-purple); }
 /* ── Assignment view ─────────────────────────────────────────────────────────── */
 .assignment-meta-bar { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 16px; margin-bottom: 16px; font-size: 13px; }
 
-.assign-tabs { display: flex; gap: 2px; border-bottom: 2px solid var(--border); margin-bottom: 16px; }
-.assign-tab { background: transparent; border: none; padding: 9px 18px; font-size: 13px; font-weight: 600; color: var(--text-muted); border-bottom: 3px solid transparent; margin-bottom: -2px; cursor: pointer; transition: color .15s, border-color .15s; }
-.assign-tab:hover { color: var(--uw-purple); }
-.assign-tab.active { color: var(--uw-purple); border-bottom-color: var(--uw-purple); }
+.assign-tabs { display: flex; gap: 4px; margin-bottom: 16px; background: var(--bg); border-radius: var(--radius-lg); padding: 4px; border: 1px solid var(--border); }
+.assign-tab { background: transparent; border: none; padding: 10px 20px; font-size: 13px; font-weight: 700; color: var(--text-muted); border-radius: var(--radius); cursor: pointer; transition: all .2s; letter-spacing: .2px; }
+.assign-tab:hover { color: var(--uw-purple); background: rgba(75,46,131,.06); }
+.assign-tab.active { color: #fff; background: var(--uw-purple); box-shadow: 0 2px 6px rgba(75,46,131,.25); }
 .atab-content { display: none; }
 .atab-content.active { display: block; }
 
@@ -698,6 +698,32 @@ tbody td { padding: 7px 10px; vertical-align: middle; }
 .obo-chat-input-row { display: flex; gap: 6px; align-items: center; }
 .obo-chat-from { width: 80px; font-size: 12px; padding: 5px 6px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); font-weight: 600; }
 .obo-chat-input { flex: 1; }
+
+/* ── Submission Attachments ──────────────────────────────────────────────────── */
+.sub-attachments { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+.sub-attachment-item {
+  display: flex; align-items: center; gap: 8px; padding: 8px 10px;
+  background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius);
+  font-size: 12px;
+}
+.sub-att-icon { font-size: 16px; flex-shrink: 0; }
+.sub-att-name { font-weight: 600; flex: 1; color: var(--uw-purple); word-break: break-all; }
+.sub-att-preview { margin-top: 4px; margin-bottom: 6px; }
+.obo-submission-content { max-height: 600px; overflow-y: auto; }
+
+/* ── Student Photo ──────────────────────────────────────────────────────────── */
+.sc-photo-wrap { position: relative; width: 52px; height: 52px; flex-shrink: 0; }
+.sc-photo-img {
+  width: 52px; height: 52px; border-radius: 50%; object-fit: cover;
+  border: 2px solid var(--uw-purple);
+}
+.sc-photo-upload-btn {
+  position: absolute; bottom: -2px; right: -2px; width: 20px; height: 20px;
+  border-radius: 50%; background: var(--uw-gold); color: var(--uw-purple);
+  border: none; font-size: 11px; font-weight: 700; cursor: pointer;
+  display: grid; place-items: center; box-shadow: 0 1px 3px rgba(0,0,0,.2);
+}
+.sc-photo-upload-btn:hover { filter: brightness(1.1); }
 
 /* ── Misc ────────────────────────────────────────────────────────────────────── */
 .muted   { color: var(--text-muted); font-size: 13px; }
