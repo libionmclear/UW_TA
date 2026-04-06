@@ -796,11 +796,19 @@ function renderMatrixTabHtml() {
     </tr>`;
   }).join('');
 
+  const reviewed = Object.values(S.grades).filter(g => g.finalScore != null);
+
   return `<div class="grade-col-legend">
     <span class="legend-item legend-ai">AI (auto)</span>
     <span class="legend-item legend-m1">Marco</span>
     <span class="legend-item legend-m2">Marlowe</span>
-    <span class="muted" style="font-size:11px">Final = last human grade entered (Marlowe → Marco → AI)</span>
+    <span class="muted" style="font-size:11px">Final = Marlowe → Marco → AI</span>
+    <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+      <span class="muted" style="font-size:11px">${reviewed.length} with final grade</span>
+      <button class="btn btn-surf" style="font-size:12px;padding:5px 12px" onclick="pushAllToCanvas()">
+        ⬆ Push Finals to Canvas
+      </button>
+    </div>
   </div>
   <div class="table-wrap"><table>
     <thead>
@@ -816,6 +824,31 @@ function renderMatrixTabHtml() {
     </thead>
     <tbody>${rows}</tbody>
   </table></div>`;
+}
+
+/* ── Push Finals to Canvas ───────────────────────────────────────────────────── */
+async function pushAllToCanvas() {
+  if (!S.course || !S.currentAssignment) { toast('No assignment open.', 'warn'); return; }
+  const withFinal = Object.values(S.grades).filter(g => g.finalScore != null);
+  if (!withFinal.length) { toast('No final grades to push.', 'warn'); return; }
+
+  const confirmed = confirm(
+    `Push ${withFinal.length} final grade(s) to Canvas for "${S.currentAssignment.name}"?\n\n` +
+    `This will overwrite any existing Canvas grades for these students.`
+  );
+  if (!confirmed) return;
+
+  const btn = document.querySelector('[onclick="pushAllToCanvas()"]');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Pushing…'; }
+
+  try {
+    const res = await POST(`/api/canvas/push-grades/${S.course.id}/${S.currentAssignment.id}`, {});
+    toast(`✓ Pushed ${res.pushed} grades to Canvas!`, 'success');
+  } catch (e) {
+    toast('Push failed: ' + e.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '⬆ Push Finals to Canvas'; }
+  }
 }
 
 /* ── Score change handler ────────────────────────────────────────────────────── */
@@ -1095,15 +1128,57 @@ function closeModal() {
 }
 
 /* ── Quiz View ───────────────────────────────────────────────────────────────── */
+// Each question stored as: { question: "...", answer: "...", choices: ["A)...","B)..."] }
+// or plain string for backwards compat
+
+function qText(q)   { return typeof q === 'string' ? q : (q.question || ''); }
+function qAnswer(q) { return typeof q === 'string' ? '' : (q.answer || ''); }
+function qChoices(q){ return typeof q === 'string' ? [] : (q.choices || []); }
+
+// Show/hide answer for a question row
+function toggleAnswer(i) {
+  const el = document.getElementById(`q-answer-${i}`);
+  if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
 function renderQuizView(root) {
   root = root || document.getElementById('view-root');
   const qs = S.quizBank?.questions || [];
+
+  const bankHtml = qs.length ? qs.map((q, i) => {
+    const text    = qText(q);
+    const answer  = qAnswer(q);
+    const choices = qChoices(q);
+    return `<div class="quiz-q-item">
+      <span class="quiz-q-num">${i + 1}.</span>
+      <div style="flex:1">
+        <div class="quiz-q-text">${esc(text)}</div>
+        ${choices.length ? `<div class="quiz-choices">${choices.map(c => `<div class="quiz-choice">${esc(c)}</div>`).join('')}</div>` : ''}
+        ${answer ? `
+          <button class="btn btn-surf-sec" style="font-size:11px;padding:2px 8px;margin-top:4px" onclick="toggleAnswer(${i})">Show / Hide Answer</button>
+          <div id="q-answer-${i}" class="quiz-answer" style="display:none"><strong>Answer:</strong> ${esc(answer)}</div>
+        ` : ''}
+      </div>
+      <button class="btn btn-surf-sec" style="font-size:11px;padding:3px 8px;flex-shrink:0" onclick="deleteQuestion(${i})">✕</button>
+    </div>`;
+  }).join('') : '<p class="muted">No questions yet.</p>';
+
   root.innerHTML = `
     <div class="page-title">Quiz Question Bank
       <div class="page-actions">
         <button class="btn btn-secondary" onclick="document.getElementById('quiz-file-input').click()">⬆ Upload Test Bank</button>
         <input id="quiz-file-input" type="file" accept=".txt,.csv,.json,.md" style="display:none" onchange="uploadQuizFile(this)" />
         <button class="btn btn-ghost btn-danger" onclick="clearQuizBank()">Clear Bank</button>
+      </div>
+    </div>
+
+    <!-- Upload format hint -->
+    <div class="card" style="padding:12px 18px;margin-bottom:12px;background:#f8f9ff">
+      <div class="card-title" style="margin-bottom:6px">Accepted file formats</div>
+      <div style="font-size:12px;color:var(--text-muted);line-height:1.8">
+        <strong>Plain text (.txt)</strong> — one question per line. Optionally add answer on next line starting with <code>ANSWER:</code><br>
+        <strong>JSON (.json)</strong> — array of <code>[{"question":"...","answer":"...","choices":["A) ...","B) ..."]}]</code><br>
+        <strong>Q&amp;A format</strong> — lines starting with <code>Q:</code> are questions, <code>A:</code> are answers, <code>a)</code>–<code>d)</code> are choices
       </div>
     </div>
 
@@ -1114,24 +1189,22 @@ function renderQuizView(root) {
           <label>Topic / Focus</label>
           <input id="quiz-topic" type="text" class="input" placeholder="e.g. Customer segmentation and targeting" />
         </div>
-        <div class="field-group">
-          <label># of questions</label>
-          <input id="quiz-count" type="number" class="input" value="5" min="1" max="20" style="max-width:80px" />
+        <div class="field-group" style="display:flex;gap:10px">
+          <div style="flex:1">
+            <label style="font-size:12px;font-weight:600;color:var(--text-muted)"># of questions</label>
+            <input id="quiz-count" type="number" class="input" value="5" min="1" max="20" />
+          </div>
         </div>
         <div class="field-group">
           <label>Course content context (optional)</label>
-          <textarea id="quiz-context" class="input" rows="4" placeholder="Paste lecture notes, slides summary…"></textarea>
+          <textarea id="quiz-context" class="input" rows="4" placeholder="Paste lecture notes, slides summary, or video topics…"></textarea>
         </div>
         <button class="btn btn-surf" onclick="suggestQuizQuestions()">✦ Suggest Questions</button>
       </div>
 
       <div class="card">
         <div class="card-title">Bank <span class="card-title-hint">${qs.length} question${qs.length !== 1 ? 's' : ''}</span></div>
-        <div id="quiz-bank-list">
-          ${qs.length
-            ? qs.map((q, i) => `<div class="quiz-q-item"><span class="quiz-q-num">${i + 1}.</span><span class="quiz-q-text">${esc(typeof q === 'string' ? q : q.question)}</span><button class="btn btn-surf-sec" style="font-size:11px;padding:3px 8px;margin-left:auto" onclick="deleteQuestion(${i})">✕</button></div>`).join('')
-            : '<p class="muted">No questions yet.</p>'}
-        </div>
+        <div id="quiz-bank-list" style="max-height:420px;overflow-y:auto">${bankHtml}</div>
       </div>
     </div>
 
@@ -1141,6 +1214,43 @@ function renderQuizView(root) {
     </div>`;
 }
 
+/* Parse uploaded test bank file into structured question objects */
+function parseQuizFile(text) {
+  // Try JSON first
+  try {
+    const parsed = JSON.parse(text);
+    if (Array.isArray(parsed)) return parsed.map(q =>
+      typeof q === 'string' ? { question: q, answer: '', choices: [] } : q
+    );
+  } catch { /* not JSON */ }
+
+  const questions = [];
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  let current = null;
+
+  for (const line of lines) {
+    const qMatch  = line.match(/^(?:Q:|Question:|\d+[\.\)])\s*(.+)/i);
+    const aMatch  = line.match(/^(?:A:|Answer:|Correct:)\s*(.+)/i);
+    const choiceMatch = line.match(/^([a-dA-D][\.\)])\s*(.+)/);
+
+    if (qMatch) {
+      if (current) questions.push(current);
+      current = { question: qMatch[1].trim(), answer: '', choices: [] };
+    } else if (aMatch && current) {
+      current.answer = aMatch[1].trim();
+    } else if (choiceMatch && current) {
+      current.choices.push(choiceMatch[0].trim());
+    } else if (line.length > 10 && !current) {
+      // plain line with no prefix = just a question
+      questions.push({ question: line, answer: '', choices: [] });
+    } else if (line.match(/^ANSWER:\s*/i) && current) {
+      current.answer = line.replace(/^ANSWER:\s*/i, '').trim();
+    }
+  }
+  if (current) questions.push(current);
+  return questions.filter(q => q.question.length > 3);
+}
+
 async function uploadQuizFile(input) {
   const file = input.files[0]; if (!file) return;
   const fd = new FormData(); fd.append('file', file);
@@ -1148,10 +1258,12 @@ async function uploadQuizFile(input) {
     const resp = await fetch('/api/quiz-bank/upload', { method: 'POST', body: fd });
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error);
-    const lines = data.text.split('\n').map(l => l.trim()).filter(l => l.length > 5);
-    S.quizBank.questions = [...(S.quizBank.questions || []), ...lines];
+
+    const parsed = parseQuizFile(data.text);
+    S.quizBank.questions = [...(S.quizBank.questions || []), ...parsed];
     await PUT('/api/quiz-bank', S.quizBank);
-    toast(`Imported ${lines.length} questions.`, 'success');
+    const withAnswers = parsed.filter(q => q.answer).length;
+    toast(`Imported ${parsed.length} questions (${withAnswers} with answers).`, 'success');
     showView('quiz');
   } catch (e) { toast('Upload failed: ' + e.message, 'error'); }
   input.value = '';
@@ -1202,19 +1314,74 @@ async function addSuggestedQ(q) {
 }
 
 /* ── Course Content View ─────────────────────────────────────────────────────── */
+const PANOPTO_TOOL_URL = 'https://canvas.uw.edu/courses/1901907/external_tools/21130';
+
 function renderContentView(root) {
   root = root || document.getElementById('view-root');
+  const courseId = S.course?.id || '1901907';
+  const panoptoUrl = `https://canvas.uw.edu/courses/${courseId}/external_tools/21130`;
+
   root.innerHTML = `
     <div class="page-title">Course Content &amp; Videos
       <div class="page-actions">
-        <button class="btn btn-secondary" onclick="loadCourseContent()">⟳ Load from Canvas</button>
+        <button class="btn btn-secondary" onclick="loadCourseContent()">⟳ Load Modules &amp; Pages</button>
       </div>
     </div>
-    <div class="two-col-grid">
-      <div class="card"><div class="card-title">Modules</div><div id="content-modules"><p class="muted">Click Load from Canvas.</p></div></div>
-      <div class="card"><div class="card-title">Pages</div><div id="content-pages"><p class="muted">Click Load from Canvas.</p></div></div>
+
+    <!-- Panopto Video Attendance -->
+    <div class="card">
+      <div class="card-title">
+        ▶ Panopto — Video Attendance &amp; Analytics
+        <span class="card-title-hint">Shows who watched what, completion %, and engagement stats</span>
+        <div style="margin-left:auto;display:flex;gap:8px">
+          <button class="btn btn-surf" style="font-size:12px;padding:4px 12px"
+            onclick="togglePanopto()">Open / Close Panopto</button>
+          <a href="${esc(panoptoUrl)}" target="_blank" class="btn btn-ghost" style="font-size:12px;padding:4px 12px">
+            Open in Canvas ↗
+          </a>
+        </div>
+      </div>
+      <div id="panopto-container" style="display:none">
+        <div class="panopto-note">
+          <strong>Note:</strong> Panopto is embedded below via Canvas. You must be logged into Canvas in your browser.
+          Look for the <strong>Stats / Analytics</strong> tab inside Panopto to see per-student video viewing data.
+        </div>
+        <iframe
+          id="panopto-frame"
+          src="${esc(panoptoUrl)}"
+          width="100%" height="680"
+          style="border:1px solid var(--border);border-radius:var(--radius);margin-top:10px"
+          allow="fullscreen"
+          title="Panopto Video Attendance">
+        </iframe>
+      </div>
+      <div id="panopto-closed" class="panopto-hint">
+        Click <strong>Open / Close Panopto</strong> to embed the Panopto video tool here, or
+        <a href="${esc(panoptoUrl)}" target="_blank">open it in Canvas directly ↗</a>.
+        Inside Panopto, go to a video → <strong>Stats</strong> to see per-student viewing completion.
+      </div>
     </div>
-    <div class="card" style="margin-top:16px"><div class="card-title">Page Viewer</div><div id="content-viewer"><p class="muted">Click a page to view.</p></div></div>`;
+
+    <div class="two-col-grid">
+      <div class="card">
+        <div class="card-title">Course Modules</div>
+        <div id="content-modules"><p class="muted">Click Load Modules &amp; Pages.</p></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Pages</div>
+        <div id="content-pages"><p class="muted">Click Load Modules &amp; Pages.</p></div>
+      </div>
+    </div>
+    <div class="card"><div class="card-title">Page Viewer</div><div id="content-viewer"><p class="muted">Click a page to view.</p></div></div>`;
+}
+
+function togglePanopto() {
+  const container = document.getElementById('panopto-container');
+  const hint      = document.getElementById('panopto-closed');
+  if (!container) return;
+  const isOpen = container.style.display !== 'none';
+  container.style.display = isOpen ? 'none' : 'block';
+  if (hint) hint.style.display = isOpen ? 'block' : 'none';
 }
 
 async function loadCourseContent() {

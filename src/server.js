@@ -281,6 +281,39 @@ app.post('/api/quiz-bank/suggest', async (req, res) => {
   } catch (e) { fail(res, e); }
 });
 
+// ── Push grades to Canvas ─────────────────────────────────────────────────────
+app.post('/api/canvas/push-grades/:cid/:aid', async (req, res) => {
+  try {
+    const { cid, aid } = req.params;
+    const key = gradesKey(cid, aid);
+    const grades = store.grades[key] || {};
+    const entries = Object.values(grades).filter(g => g.finalScore != null && g.studentId);
+
+    if (!entries.length) return fail(res, { message: 'No graded students to push.' }, 400);
+
+    // Build grade_data object: { userId: { posted_grade: "score" }, ... }
+    const gradeData = {};
+    entries.forEach(g => {
+      gradeData[g.studentId] = { posted_grade: String(g.finalScore) };
+    });
+
+    const result = await canvas.pushGradesBulk(cid, aid, gradeData);
+    ok(res, { pushed: entries.length, result });
+  } catch (e) { fail(res, e); }
+});
+
+// Push a single student grade to Canvas
+app.post('/api/canvas/push-grade/:cid/:aid/:studentId', async (req, res) => {
+  try {
+    const { cid, aid, studentId } = req.params;
+    const key = gradesKey(cid, aid);
+    const g = store.grades[key]?.[studentId];
+    if (!g || g.finalScore == null) return fail(res, { message: 'No final grade for this student.' }, 400);
+    const result = await canvas.pushGrade(cid, aid, studentId, g.finalScore);
+    ok(res, { pushed: true, studentId, finalScore: g.finalScore, result });
+  } catch (e) { fail(res, e); }
+});
+
 // ── File upload ───────────────────────────────────────────────────────────────
 app.post('/api/upload/text', upload.single('file'), (req, res) => {
   if (!req.file) return fail(res, { message: 'No file uploaded' }, 400);

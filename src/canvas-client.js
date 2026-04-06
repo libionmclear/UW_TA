@@ -69,6 +69,37 @@ async function getFiles(courseId) {
   return canvasGet(`/courses/${courseId}/files?per_page=50&sort=updated_at&order=desc`);
 }
 
+// Push a grade back to Canvas for a single student
+async function pushGrade(courseId, assignmentId, userId, grade) {
+  const url = `${API_URL}/courses/${courseId}/assignments/${assignmentId}/submissions/${userId}`;
+  const res = await fetch(url, {
+    method: 'PUT',
+    headers,
+    body: JSON.stringify({ submission: { posted_grade: String(grade) } }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Canvas API error ${res.status}: ${text}`);
+  }
+  return res.json();
+}
+
+// Push grades for all students in bulk (uses grade_data endpoint)
+async function pushGradesBulk(courseId, assignmentId, gradeData) {
+  // gradeData: { userId: { posted_grade: "85" }, ... }
+  const url = `${API_URL}/courses/${courseId}/assignments/${assignmentId}/submissions/update_grades`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ grade_data: gradeData }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Canvas API error ${res.status}: ${text}`);
+  }
+  return res.json();
+}
+
 module.exports = {
   testConnection,
   getCourses,
@@ -83,4 +114,6 @@ module.exports = {
   getPages,
   getPage,
   getFiles,
+  pushGrade,
+  pushGradesBulk,
 };
