@@ -476,13 +476,14 @@ tbody td { padding: 7px 10px; vertical-align: middle; }
 .syl-table        { width:100%; border-collapse:collapse; font-size:12px; }
 .syl-table th     { background:var(--uw-purple); color:#fff; padding:7px 8px; text-align:left; font-size:11px; white-space:nowrap; position:sticky; top:0; z-index:2; }
 .syl-table td     { padding:5px 8px; border-bottom:1px solid var(--border); vertical-align:top; }
-.syl-row-header   { background:#f5f0ff; }
-.syl-row-header td{ font-weight:600; }
-.syl-row          { background:var(--surface); }
-.syl-row:hover    { background:#fafbff; }
+.syl-row-odd      { background:#ffffff; }
+.syl-row-even     { background:#eeebf7; }
+.syl-row-odd:hover  { background:#f8f8ff; }
+.syl-row-even:hover { background:#e6e1f2; }
 .syl-row-cancelled{ background:#fff3f3; opacity:.7; }
 .syl-row-cancelled td { color:var(--danger); font-style:italic; }
-.syl-session      { font-weight:700; color:var(--uw-purple); white-space:nowrap; min-width:70px; }
+.syl-session      { white-space:nowrap; min-width:80px; display:flex; align-items:center; gap:4px; }
+.syl-class-num    { background:var(--uw-purple); color:#fff; font-size:10px; font-weight:800; padding:1px 5px; border-radius:10px; white-space:nowrap; flex-shrink:0; }
 .syl-date         { white-space:nowrap; font-weight:600; min-width:60px; }
 .syl-day          { white-space:nowrap; color:var(--text-muted); }
 .syl-loc          { white-space:nowrap; }

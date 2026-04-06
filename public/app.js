@@ -1158,21 +1158,30 @@ function renderSyllabusView(root) {
   const rows = S.syllabus || [];
   const actTypes = Object.keys(ACT_TYPE_COLORS);
 
+  // Build date → class number map (sorted unique dates)
+  const uniqueDates = [...new Set(rows.map(r => r.date).filter(Boolean))].sort();
+  const dateToClassNum = {};
+  uniqueDates.forEach((d, i) => { dateToClassNum[d] = i + 1; });
+
   const si = (idx, field, val, extra = '') =>
     `<input class="syl-cell-input" type="text" value="${esc(val || '')}"
       oninput="updateSylField(${idx},'${field}',this.value)" ${extra} />`;
 
   const rowsHtml = rows.map((row, i) => {
     const isCancelled = !!row.isCancelled;
-    const isHeader = !!row.session && !isCancelled;
-    const rowCls = isCancelled ? 'syl-row-cancelled' : isHeader ? 'syl-row-header' : 'syl-row';
+    const classNum    = dateToClassNum[row.date] || '';
+    const isEven      = classNum % 2 === 0;
+    const rowCls = isCancelled ? 'syl-row-cancelled' : isEven ? 'syl-row syl-row-even' : 'syl-row syl-row-odd';
 
     const actTypeOpts = actTypes.map(t =>
       `<option value="${esc(t)}" ${row.actType === t ? 'selected' : ''}>${esc(t)}</option>`
     ).join('');
 
     return `<tr class="${rowCls}" id="syl-row-${i}">
-      <td class="syl-session">${si(i,'session',row.session,'placeholder="Class #"')}</td>
+      <td class="syl-session">
+        ${classNum ? `<span class="syl-class-num">C${classNum}</span>` : ''}
+        ${si(i,'session',row.session,'placeholder="label"')}
+      </td>
       <td class="syl-date">
         <input class="syl-cell-input syl-date-input" type="date" value="${row.date || ''}"
           oninput="updateSylField(${i},'date',this.value);updateDayFromDate(${i},this.value)" />
