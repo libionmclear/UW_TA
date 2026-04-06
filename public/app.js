@@ -2136,10 +2136,16 @@ async function oboEnterGrading() {
         try {
           const res = await POST('/api/canvas/extract-text', { url: att.url, filename: att.display_name || att.filename });
           if (res.text) allText += (allText ? '\n\n--- Next File ---\n\n' : '') + res.text;
-        } catch { errors++; }
+        } catch (e) {
+          console.warn('Extract failed for', att.display_name || att.filename, e.message);
+          errors++;
+        }
       }
       if (allText) item.sub._extractedText = allText;
-    } catch { errors++; }
+    } catch (e) {
+      console.warn('Extract batch error for', item.studentName, e.message);
+      errors++;
+    }
     done++;
     const prog = document.getElementById('obo-loading-progress');
     if (prog) prog.textContent = `Extracting documents... ${done} / ${toExtract}`;
@@ -3438,15 +3444,14 @@ async function extractAttachmentText(url, filename, studentId) {
   toast('Extracting text from ' + filename + '...');
   try {
     const res = await POST('/api/canvas/extract-text', { url, filename });
-    // Store extracted text on the submission
     const sub = S.submissions.find(s => String(s.user_id) === String(studentId));
-    if (sub) {
-      sub._extractedText = res.text;
-    }
-    toast('Text extracted! (' + res.text.length + ' chars)', 'success');
-    // Refresh current view
+    if (sub) sub._extractedText = res.text;
+    toast(`Text extracted! (${res.text.length} chars)`, 'success');
     showView('assignment');
-  } catch (e) { toast('Extract failed: ' + e.message, 'error'); }
+  } catch (e) {
+    console.error('Extract failed:', e.message, '| url:', url?.substring(0, 100));
+    toast('Extract failed: ' + e.message, 'error');
+  }
 }
 
 function buildEmptyGrade(studentId) {

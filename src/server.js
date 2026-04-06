@@ -580,18 +580,48 @@ app.delete('/api/syllabus', (_req, res) => {
   ok(res, store.syllabus);
 });
 
+// ── Canvas file download helper ──────────────────────────────────────────────
+async function fetchCanvasFile(url) {
+  const authHeader = { Authorization: `Bearer ${process.env.CANVAS_API_TOKEN}` };
+
+  // Strategy 1: Direct fetch with auth + follow redirects
+  let resp = await fetch(url, { headers: authHeader, redirect: 'follow' });
+  if (resp.ok) return Buffer.from(await resp.arrayBuffer());
+
+  // Strategy 2: Manual redirect — Canvas → S3 drops auth header on cross-origin
+  resp = await fetch(url, { headers: authHeader, redirect: 'manual' });
+  if (resp.status >= 300 && resp.status < 400 && resp.headers.get('location')) {
+    const s3Url = resp.headers.get('location');
+    resp = await fetch(s3Url, { redirect: 'follow' });
+    if (resp.ok) return Buffer.from(await resp.arrayBuffer());
+  }
+
+  // Strategy 3: If URL looks like a Canvas file API URL, try adding /download
+  if (!url.includes('/download')) {
+    const dlUrl = url.replace(/\?.*$/, '') + '/download?' + (url.split('?')[1] || '');
+    resp = await fetch(dlUrl, { headers: authHeader, redirect: 'follow' });
+    if (resp.ok) return Buffer.from(await resp.arrayBuffer());
+    // Try manual redirect on download URL too
+    resp = await fetch(dlUrl, { headers: authHeader, redirect: 'manual' });
+    if (resp.status >= 300 && resp.status < 400 && resp.headers.get('location')) {
+      resp = await fetch(resp.headers.get('location'), { redirect: 'follow' });
+      if (resp.ok) return Buffer.from(await resp.arrayBuffer());
+    }
+  }
+
+  throw new Error(`Failed to download Canvas file (tried multiple strategies). URL: ${url.substring(0, 100)}`);
+}
+
 // ── Canvas File Proxy (download attachments) ────────────────────────────────
 app.get('/api/canvas/file-proxy', requireAuth, async (req, res) => {
   const fileUrl = req.query.url;
   if (!fileUrl) return fail(res, { message: 'No url provided' }, 400);
   try {
-    const resp = await fetch(fileUrl, { headers: { Authorization: `Bearer ${process.env.CANVAS_API_TOKEN}` }, redirect: 'follow' });
-    if (!resp.ok) throw new Error(`Canvas file fetch ${resp.status}`);
-    const ct = resp.headers.get('content-type') || 'application/octet-stream';
-    res.setHeader('Content-Type', ct);
-    const disp = resp.headers.get('content-disposition');
-    if (disp) res.setHeader('Content-Disposition', disp);
-    resp.body.pipe(res);
+    const buf = await fetchCanvasFile(fileUrl);
+    const ext = (fileUrl.match(/\.(\w+)(\?|$)/) || [])[1] || '';
+    const mimeMap = { pdf: 'application/pdf', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', doc: 'application/msword', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif' };
+    res.setHeader('Content-Type', mimeMap[ext.toLowerCase()] || 'application/octet-stream');
+    res.send(buf);
   } catch (e) { fail(res, e); }
 });
 
@@ -600,9 +630,8 @@ app.post('/api/canvas/extract-text', requireAuth, async (req, res) => {
   const { url, filename } = req.body;
   if (!url) return fail(res, { message: 'No url provided' }, 400);
   try {
-    const resp = await fetch(url, { headers: { Authorization: `Bearer ${process.env.CANVAS_API_TOKEN}` }, redirect: 'follow' });
-    if (!resp.ok) throw new Error(`Canvas file fetch ${resp.status}`);
-    const buf = Buffer.from(await resp.arrayBuffer());
+    // Canvas file URLs redirect to S3 — need to handle the redirect chain
+    const buf = await fetchCanvasFile(url);
     const name = (filename || '').toLowerCase();
     let text = '';
     if (name.endsWith('.pdf')) {
@@ -617,8 +646,12 @@ app.post('/api/canvas/extract-text', requireAuth, async (req, res) => {
     } else {
       text = buf.toString('utf8', 0, Math.min(buf.length, 100000));
     }
+    console.log(`  Extracted ${text.length} chars from ${filename || 'unknown'} (${buf.length} bytes)`);
     ok(res, { text: text.substring(0, 200000), filename });
-  } catch (e) { fail(res, e); }
+  } catch (e) {
+    console.error('Extract-text error:', e.message, '| url:', (url || '').substring(0, 100));
+    fail(res, e);
+  }
 });
 
 // ── Student Photos ──────────────────────────────────────────────────────────
