@@ -2204,26 +2204,39 @@ function parseQuizFile(text) {
   } catch { /* not JSON */ }
 
   const questions = [];
-  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
   let current = null;
 
-  for (const line of lines) {
-    const qMatch  = line.match(/^(?:Q:|Question:|\d+[\.\)])\s*(.+)/i);
-    const aMatch  = line.match(/^(?:A:|Answer:|Correct:)\s*(.+)/i);
-    const choiceMatch = line.match(/^([a-dA-D][\.\)])\s*(.+)/);
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    // Question patterns: "Q:", "Question:", "1.", "1)", "1 " at start of line
+    const qMatch = line.match(/^(?:Q\s*:|Question\s*:|\d+[\.\)\s]\s+)\s*(.+)/i);
+    // Answer patterns: "A:", "Answer:", "Correct Answer:", "ANSWER:", "Ans:"
+    const aMatch = line.match(/^(?:A\s*:|Ans(?:wer)?\s*:|Correct(?:\s+Answer)?\s*:|ANSWER\s*:)\s*(.+)/i);
+    // Multiple choice: a) b) c) d)  or  A. B. C. D.
+    const choiceMatch = line.match(/^([a-eA-E][\.\)]\s*)(.+)/);
+    // Standalone answer indicator: just "A", "B", "C", "D" on its own line after choices
+    const singleLetter = line.match(/^([A-Ea-e])\.?\s*$/);
 
     if (qMatch) {
       if (current) questions.push(current);
       current = { question: qMatch[1].trim(), answer: '', choices: [] };
-    } else if (aMatch && current) {
-      current.answer = aMatch[1].trim();
+    } else if (aMatch) {
+      if (current) current.answer = aMatch[1].trim();
     } else if (choiceMatch && current) {
-      current.choices.push(choiceMatch[0].trim());
-    } else if (line.length > 10 && !current) {
-      // plain line with no prefix = just a question
-      questions.push({ question: line, answer: '', choices: [] });
-    } else if (line.match(/^ANSWER:\s*/i) && current) {
-      current.answer = line.replace(/^ANSWER:\s*/i, '').trim();
+      current.choices.push(choiceMatch[1].trim() + choiceMatch[2].trim());
+    } else if (singleLetter && current && current.choices.length > 0) {
+      // A single letter after choices = the answer
+      current.answer = singleLetter[1].toUpperCase();
+    } else if (line.length > 10 && !current && !choiceMatch) {
+      // Plain paragraph with no prefix = treat as a question (common in Word docs)
+      current = { question: line, answer: '', choices: [] };
+    } else if (current && !choiceMatch && !aMatch && line.length > 3) {
+      // Could be a continuation of the question text
+      if (!current.choices.length && !current.answer) {
+        current.question += ' ' + line;
+      }
     }
   }
   if (current) questions.push(current);
@@ -2233,25 +2246,49 @@ function parseQuizFile(text) {
 async function uploadQuizFile(input) {
   const files = Array.from(input.files); if (!files.length) return;
   const chapter = document.getElementById('upload-chapter')?.value?.trim() || 'Uncategorized';
-  let totalImported = 0, totalWithAnswers = 0, errors = [];
+  let totalImported = 0, totalWithAnswers = 0, errors = [], rawTexts = [];
   for (const file of files) {
     const fd = new FormData(); fd.append('file', file);
     try {
       const resp = await fetch('/api/quiz-bank/upload', { method: 'POST', body: fd });
       const data = await resp.json();
-      if (!resp.ok) throw new Error(data.error);
+      if (!resp.ok) throw new Error(data.error || `Server error ${resp.status}`);
+      if (!data.text || !data.text.trim()) throw new Error('File appears empty — no text could be extracted.');
       const parsed = parseQuizFile(data.text).map(q =>
         typeof q === 'string' ? { question: q, answer: '', choices: [], chapter }
                               : { ...q, chapter: q.chapter || chapter }
       );
-      S.quizBank.questions = [...(S.quizBank.questions || []), ...parsed];
-      totalImported += parsed.length;
-      totalWithAnswers += parsed.filter(q => q.answer).length;
+      if (parsed.length === 0) {
+        // Save raw text for display so user can diagnose format issues
+        rawTexts.push({ name: file.name, text: data.text });
+      } else {
+        S.quizBank.questions = [...(S.quizBank.questions || []), ...parsed];
+        totalImported += parsed.length;
+        totalWithAnswers += parsed.filter(q => q.answer).length;
+      }
     } catch (e) { errors.push(`${file.name}: ${e.message}`); }
   }
   if (totalImported) await PUT('/api/quiz-bank', S.quizBank);
-  if (errors.length) toast('Some files failed: ' + errors.join(', '), 'error');
-  else toast(`Imported ${totalImported} questions (${totalWithAnswers} with answers) tagged as "${chapter}".`, 'success');
+
+  if (errors.length) {
+    toast('Upload error: ' + errors.join('; '), 'error');
+  } else if (rawTexts.length) {
+    // 0 questions parsed — show raw extracted text in the view for diagnosis
+    showView('quiz');
+    const preview = rawTexts[0].text.slice(0, 600).replace(/</g, '&lt;');
+    const el = document.getElementById('view-root');
+    if (el) el.insertAdjacentHTML('afterbegin', `
+      <div class="card" style="border:2px solid var(--warn);margin-bottom:16px">
+        <div class="card-title" style="color:var(--warn)">⚠ 0 questions parsed from "${rawTexts[0].name}"</div>
+        <p style="font-size:12px;margin-bottom:8px">The file was uploaded successfully but no questions were recognised.
+        The parser looks for lines starting with <code>1.</code> / <code>Q:</code> / <code>Question:</code> and answers starting with <code>A:</code> / <code>Answer:</code> / <code>ANSWER:</code>.</p>
+        <div style="font-size:11px;background:var(--bg);border:1px solid var(--border);padding:10px;border-radius:6px;white-space:pre-wrap;max-height:200px;overflow-y:auto">${preview}…</div>
+        <p style="font-size:11px;color:var(--text-muted);margin-top:8px">Try reformatting your Word doc so each question starts with a number (e.g. <em>1. What is…</em>) and each answer with <em>Answer: B</em>.</p>
+      </div>`);
+    return;
+  } else {
+    toast(`Imported ${totalImported} questions (${totalWithAnswers} with answers) into "${chapter}".`, 'success');
+  }
   showView('quiz');
   input.value = '';
 }
