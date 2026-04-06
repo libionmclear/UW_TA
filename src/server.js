@@ -281,6 +281,81 @@ app.post('/api/quiz-bank/suggest', async (req, res) => {
   } catch (e) { fail(res, e); }
 });
 
+// ── Create Quiz on Canvas from question bank ──────────────────────────────────
+app.post('/api/canvas/create-quiz/:cid', async (req, res) => {
+  try {
+    const { cid } = req.params;
+    const { title, description, timeLimit, allowedAttempts, pointsPossible, questions, publish } = req.body;
+
+    if (!questions || !questions.length) return fail(res, { message: 'No questions provided.' }, 400);
+
+    // 1. Create the quiz shell
+    const quiz = await canvas.createQuiz(cid, {
+      title: title || 'Quiz',
+      description: description || '',
+      quiz_type: 'assignment',
+      time_limit: timeLimit || null,
+      allowed_attempts: allowedAttempts || 1,
+      points_possible: pointsPossible || questions.length * 1,
+      published: false, // publish after adding questions
+      show_correct_answers: true,
+    });
+
+    // 2. Add each question
+    const added = [];
+    for (const q of questions) {
+      const qText   = typeof q === 'string' ? q : (q.question || '');
+      const answer  = typeof q === 'string' ? '' : (q.answer || '');
+      const choices = typeof q === 'string' ? [] : (q.choices || []);
+      const pts     = typeof q === 'object' && q.points ? q.points : 1;
+
+      let questionType = 'multiple_choice_question';
+      let answers = [];
+
+      if (choices.length >= 2) {
+        // Multiple choice — mark correct answer by matching answer text or letter
+        answers = choices.map((c, i) => {
+          const choiceText = c.replace(/^[a-dA-D][\.\)]\s*/, '').trim();
+          const choiceLetter = String.fromCharCode(65 + i); // A, B, C, D
+          const isCorrect = answer
+            ? (answer.toUpperCase().startsWith(choiceLetter) || answer.toLowerCase().includes(choiceText.toLowerCase().substring(0, 15)))
+            : false;
+          return { answer_text: choiceText, weight: isCorrect ? 100 : 0 };
+        });
+      } else if (answer) {
+        // Short answer / essay
+        questionType = 'short_answer_question';
+        answers = [{ answer_text: answer, weight: 100 }];
+      } else {
+        // Essay (no answer key)
+        questionType = 'essay_question';
+        answers = [];
+      }
+
+      const created = await canvas.addQuizQuestion(cid, quiz.id, {
+        question_name: `Question`,
+        question_text: qText,
+        question_type: questionType,
+        points_possible: pts,
+        answers,
+      });
+      added.push(created);
+    }
+
+    // 3. Optionally publish
+    let finalQuiz = quiz;
+    if (publish) {
+      finalQuiz = await canvas.publishQuiz(cid, quiz.id);
+    }
+
+    ok(res, {
+      quiz: finalQuiz,
+      questionsAdded: added.length,
+      quizUrl: `${process.env.CANVAS_BASE_URL}/courses/${cid}/quizzes/${quiz.id}`,
+    });
+  } catch (e) { fail(res, e); }
+});
+
 // ── Push grades to Canvas ─────────────────────────────────────────────────────
 app.post('/api/canvas/push-grades/:cid/:aid', async (req, res) => {
   try {

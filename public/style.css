@@ -352,6 +352,23 @@ tbody td { padding: 7px 10px; vertical-align: middle; }
 .quiz-answer   { margin-top: 6px; padding: 6px 10px; background: #f0fdf4; border: 1px solid #86efac; border-radius: var(--radius); font-size: 12px; color: #166534; }
 .quiz-q-item   { align-items: flex-start; }
 
+/* ── Create Quiz on Canvas ───────────────────────────────────────────────────── */
+.create-quiz-card  { margin-top: 20px; }
+.create-quiz-grid  { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 14px; }
+.create-quiz-grid label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 600; color: var(--text-muted); }
+.create-quiz-grid input { padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 13px; }
+.cq-selector       { max-height: 260px; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius); padding: 8px; background: var(--bg); }
+.cq-q-label        { display: flex; align-items: flex-start; gap: 8px; padding: 5px 4px; cursor: pointer; border-radius: 4px; }
+.cq-q-label:hover  { background: var(--ai-col); }
+.cq-q-label input  { margin-top: 2px; flex-shrink: 0; }
+.cq-q-text         { font-size: 12px; line-height: 1.4; }
+.cq-actions        { display: flex; align-items: center; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+.cq-select-all     { font-size: 12px; color: var(--uw-purple); background: none; border: none; padding: 0; text-decoration: underline; cursor: pointer; }
+.quiz-result-banner   { padding: 12px 16px; border-radius: var(--radius); font-size: 13px; margin-top: 12px; }
+.quiz-result-success  { background: #dcfce7; border: 1px solid #86efac; color: #166534; }
+.quiz-result-error    { background: #fee2e2; border: 1px solid #fca5a5; color: #991b1b; }
+.quiz-result-link     { color: #166534; font-weight: 700; }
+
 /* ── Misc ────────────────────────────────────────────────────────────────────── */
 .muted   { color: var(--text-muted); font-size: 13px; }
 .padded  { padding: 12px 0; }

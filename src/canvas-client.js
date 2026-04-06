@@ -84,6 +84,42 @@ async function pushGrade(courseId, assignmentId, userId, grade) {
   return res.json();
 }
 
+// ── Canvas Quiz Creation ──────────────────────────────────────────────────────
+async function createQuiz(courseId, quizData) {
+  // quizData: { title, description, quiz_type, time_limit, allowed_attempts, points_possible, published }
+  const url = `${API_URL}/courses/${courseId}/quizzes`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ quiz: quizData }),
+  });
+  if (!res.ok) { const t = await res.text(); throw new Error(`Canvas ${res.status}: ${t}`); }
+  return res.json();
+}
+
+async function addQuizQuestion(courseId, quizId, questionData) {
+  // questionData: { question_name, question_text, question_type, points_possible, answers: [{text, weight}] }
+  const url = `${API_URL}/courses/${courseId}/quizzes/${quizId}/questions`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ question: questionData }),
+  });
+  if (!res.ok) { const t = await res.text(); throw new Error(`Canvas ${res.status}: ${t}`); }
+  return res.json();
+}
+
+async function publishQuiz(courseId, quizId) {
+  const url = `${API_URL}/courses/${courseId}/quizzes/${quizId}`;
+  const res = await fetch(url, {
+    method: 'PUT',
+    headers,
+    body: JSON.stringify({ quiz: { published: true } }),
+  });
+  if (!res.ok) { const t = await res.text(); throw new Error(`Canvas ${res.status}: ${t}`); }
+  return res.json();
+}
+
 // Push grades for all students in bulk (uses grade_data endpoint)
 async function pushGradesBulk(courseId, assignmentId, gradeData) {
   // gradeData: { userId: { posted_grade: "85" }, ... }
@@ -116,4 +152,7 @@ module.exports = {
   getFiles,
   pushGrade,
   pushGradesBulk,
+  createQuiz,
+  addQuizQuestion,
+  publishQuiz,
 };

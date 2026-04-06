@@ -130,13 +130,81 @@ async function loadCourseData() {
 }
 
 /* ── Assignment grouping ─────────────────────────────────────────────────────── */
-// Maps Canvas assignment name patterns → display group
+// Maps Canvas assignment name patterns → display group (matches syllabus exactly)
 const GROUP_RULES = [
-  { key: 'Recorded Lectures', patterns: [/recorded lecture/i, /week \d.*chapter/i, /chapter \d.*week/i, /lecture.*week/i] },
-  { key: 'Quizzes',           patterns: [/quiz/i, /chapter \d{1,2}[-–]\d{1,2}/i] },
-  { key: 'Case Studies',      patterns: [/case study/i, /case analysis/i, /case:/i] },
-  { key: 'Class Activities',  patterns: [/class activity/i, /activity/i, /in-class/i] },
-  { key: 'Class Participation', patterns: [/participation/i, /class part/i] },
+  // QUIZZES — "Quiz – Chapters X–Y" style
+  { key: 'Quizzes', patterns: [
+    /quiz/i,
+    /chapter \d{1,2}[-–]\d{1,2}/i,
+  ]},
+  // CASE DISCUSSIONS — HBS cases, case write-ups, in-class discussions, essays
+  { key: 'Case Discussions', patterns: [
+    /case/i,
+    /hbs/i,
+    /discussion/i,
+    /coffee mug/i,
+    /amazon 2025/i,
+    /lego/i,
+    /anker/i,
+    /coca.?cola/i,
+    /fitbit/i,
+    /cree/i,
+    /gillette/i,
+    /tesla.*marketing/i,
+    /chipotle/i,
+    /crossing the chasm.*essay/i,
+  ]},
+  // ACTIVITIES — simulations, AI exercises, workshops, presentations
+  { key: 'Activities', patterns: [
+    /simulation/i,
+    /workshop/i,
+    /exercise/i,
+    /food truck/i,
+    /persona/i,
+    /positioning.*(map|sim)/i,
+    /blog writing/i,
+    /slide creation/i,
+    /product of the week/i,
+    /atar/i,
+    /launch management/i,
+    /minimum viable/i,
+    /jobs to be done/i,
+    /ai.*demo/i,
+    /copilot/i,
+  ]},
+  // GROUP PROJECT — milestones and final deliverables
+  { key: 'Group Project', patterns: [
+    /milestone/i,
+    /group.*project/i,
+    /project.*group/i,
+    /peer evaluation/i,
+    /final project/i,
+    /form group/i,
+    /company selection/i,
+    /first take/i,
+    /draft outline/i,
+    /mid.project/i,
+    /forecast.*group/i,
+  ]},
+  // PARTICIPATION
+  { key: 'Participation', patterns: [
+    /participation/i,
+    /class part/i,
+  ]},
+  // FINAL EXAM
+  { key: 'Final Exam', patterns: [
+    /final exam/i,
+    /comprehensive.*exam/i,
+    /exam.*final/i,
+  ]},
+  // RECORDED LECTURES — weekly chapter videos (1 pt each)
+  { key: 'Recorded Lectures', patterns: [
+    /recorded lecture/i,
+    /week \d.*chapter/i,
+    /chapter.*week \d/i,
+    /lecture.*week/i,
+    /week \d.*lecture/i,
+  ]},
 ];
 
 function classifyAssignment(a) {
@@ -165,23 +233,27 @@ function groupAssignments() {
 
 /* ── Sidebar ─────────────────────────────────────────────────────────────────── */
 const GROUP_ICONS = {
-  'Recorded Lectures':    '▶',
-  'Quizzes':              '?',
-  'Case Studies':         '📋',
-  'Class Activities':     '✏',
-  'Class Participation':  '✦',
-  'Other Assignments':    '◉',
+  'Quizzes':            '?',
+  'Case Discussions':   '📋',
+  'Activities':         '✏',
+  'Group Project':      '◈',
+  'Participation':      '✦',
+  'Final Exam':         '★',
+  'Recorded Lectures':  '▶',
+  'Other Assignments':  '◉',
 };
 
-// Track which groups are expanded
-const expandedGroups = new Set(['Recorded Lectures', 'Quizzes', 'Case Studies', 'Class Activities', 'Class Participation', 'Other Assignments']);
+// Sidebar display order matches syllabus
+const GROUP_ORDER = ['Quizzes', 'Case Discussions', 'Activities', 'Group Project', 'Participation', 'Final Exam', 'Recorded Lectures', 'Other Assignments'];
+
+// All groups start CLOSED — click to expand
+const expandedGroups = new Set();
 
 function renderSidebar() {
   const wrap = document.getElementById('sidebar-assignments');
   if (!S.assignments.length) { wrap.innerHTML = ''; return; }
 
-  const ORDER = ['Recorded Lectures', 'Quizzes', 'Case Studies', 'Class Activities', 'Class Participation', 'Other Assignments'];
-  const keys = [...ORDER.filter(k => S.assignmentGroups[k]), ...Object.keys(S.assignmentGroups).filter(k => !ORDER.includes(k))];
+  const keys = [...GROUP_ORDER.filter(k => S.assignmentGroups[k]), ...Object.keys(S.assignmentGroups).filter(k => !GROUP_ORDER.includes(k))];
 
   wrap.innerHTML = keys.map(groupName => {
     const assignments = S.assignmentGroups[groupName] || [];
@@ -1161,7 +1233,7 @@ function renderQuizView(root) {
       </div>
       <button class="btn btn-surf-sec" style="font-size:11px;padding:3px 8px;flex-shrink:0" onclick="deleteQuestion(${i})">✕</button>
     </div>`;
-  }).join('') : '<p class="muted">No questions yet.</p>';
+  }).join('') : '<p class="muted">No questions yet. Upload a test bank to get started.</p>';
 
   root.innerHTML = `
     <div class="page-title">Quiz Question Bank
@@ -1176,10 +1248,63 @@ function renderQuizView(root) {
     <div class="card" style="padding:12px 18px;margin-bottom:12px;background:#f8f9ff">
       <div class="card-title" style="margin-bottom:6px">Accepted file formats</div>
       <div style="font-size:12px;color:var(--text-muted);line-height:1.8">
-        <strong>Plain text (.txt)</strong> — one question per line. Optionally add answer on next line starting with <code>ANSWER:</code><br>
+        <strong>Plain text (.txt)</strong> — one question per line. Add answer on next line starting with <code>ANSWER:</code><br>
         <strong>JSON (.json)</strong> — array of <code>[{"question":"...","answer":"...","choices":["A) ...","B) ..."]}]</code><br>
         <strong>Q&amp;A format</strong> — lines starting with <code>Q:</code> are questions, <code>A:</code> are answers, <code>a)</code>–<code>d)</code> are choices
       </div>
+    </div>
+
+    <!-- Create Quiz on Canvas -->
+    <div class="card create-quiz-card">
+      <div class="card-title">
+        🎓 Create Quiz on Canvas
+        <span class="card-title-hint">Builds a real Canvas quiz from selected questions in your bank</span>
+      </div>
+      <div class="create-quiz-grid">
+        <div class="field-group">
+          <label>Quiz Title</label>
+          <input id="cq-title" type="text" class="input" placeholder="e.g. Quiz – Chapters 2–3" />
+        </div>
+        <div class="field-group">
+          <label>Time Limit (min, blank = none)</label>
+          <input id="cq-time" type="number" class="input" min="1" placeholder="20" />
+        </div>
+        <div class="field-group">
+          <label>Allowed Attempts</label>
+          <input id="cq-attempts" type="number" class="input" value="1" min="1" />
+        </div>
+        <div class="field-group">
+          <label>Points per question</label>
+          <input id="cq-pts" type="number" class="input" value="1" min="1" />
+        </div>
+      </div>
+      <div class="field-group">
+        <label>Description (optional)</label>
+        <textarea id="cq-desc" class="input" rows="2" placeholder="Instructions for students…"></textarea>
+      </div>
+
+      <!-- Question selector -->
+      <div class="field-group">
+        <label>Select questions to include
+          <button class="btn btn-surf-sec" style="font-size:11px;padding:2px 8px;margin-left:8px" onclick="selectAllQuizQs(true)">All</button>
+          <button class="btn btn-surf-sec" style="font-size:11px;padding:2px 8px" onclick="selectAllQuizQs(false)">None</button>
+        </label>
+        <div id="cq-selector" class="cq-selector">
+          ${qs.length
+            ? qs.map((q, i) => `<label class="cq-q-label">
+                <input type="checkbox" class="cq-q-check" data-idx="${i}" checked />
+                <span class="cq-q-preview">${esc(qText(q).substring(0, 80))}${qText(q).length > 80 ? '…' : ''}</span>
+              </label>`).join('')
+            : '<p class="muted" style="padding:8px">No questions in bank yet.</p>'}
+        </div>
+      </div>
+
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px">
+        <button class="btn btn-surf" onclick="createCanvasQuiz(false)">Create as Draft</button>
+        <button class="btn btn-primary" onclick="createCanvasQuiz(true)">Create &amp; Publish</button>
+        <span id="cq-status" class="muted" style="font-size:12px"></span>
+      </div>
+      <div id="cq-result" style="display:none;margin-top:12px" class="quiz-result-banner"></div>
     </div>
 
     <div class="two-col-grid">
@@ -1189,15 +1314,13 @@ function renderQuizView(root) {
           <label>Topic / Focus</label>
           <input id="quiz-topic" type="text" class="input" placeholder="e.g. Customer segmentation and targeting" />
         </div>
-        <div class="field-group" style="display:flex;gap:10px">
-          <div style="flex:1">
-            <label style="font-size:12px;font-weight:600;color:var(--text-muted)"># of questions</label>
-            <input id="quiz-count" type="number" class="input" value="5" min="1" max="20" />
-          </div>
+        <div class="field-group">
+          <label># of questions</label>
+          <input id="quiz-count" type="number" class="input" value="5" min="1" max="20" style="max-width:80px" />
         </div>
         <div class="field-group">
           <label>Course content context (optional)</label>
-          <textarea id="quiz-context" class="input" rows="4" placeholder="Paste lecture notes, slides summary, or video topics…"></textarea>
+          <textarea id="quiz-context" class="input" rows="3" placeholder="Paste lecture notes, slides summary, or video topics…"></textarea>
         </div>
         <button class="btn btn-surf" onclick="suggestQuizQuestions()">✦ Suggest Questions</button>
       </div>
@@ -1212,6 +1335,70 @@ function renderQuizView(root) {
       <div class="card-title">AI Suggested Questions</div>
       <div id="quiz-suggestions"></div>
     </div>`;
+}
+
+function selectAllQuizQs(checked) {
+  document.querySelectorAll('.cq-q-check').forEach(cb => cb.checked = checked);
+}
+
+async function createCanvasQuiz(publish) {
+  if (!S.course) { toast('Select a course first.', 'warn'); return; }
+
+  const title    = document.getElementById('cq-title')?.value?.trim();
+  const desc     = document.getElementById('cq-desc')?.value?.trim();
+  const timeLimit = Number(document.getElementById('cq-time')?.value) || null;
+  const attempts  = Number(document.getElementById('cq-attempts')?.value) || 1;
+  const ptsEach   = Number(document.getElementById('cq-pts')?.value) || 1;
+
+  if (!title) { toast('Enter a quiz title.', 'warn'); return; }
+
+  // Collect selected questions
+  const checked = [...document.querySelectorAll('.cq-q-check:checked')];
+  if (!checked.length) { toast('Select at least one question.', 'warn'); return; }
+  const selected = checked.map(cb => {
+    const q = S.quizBank.questions[Number(cb.dataset.idx)];
+    return typeof q === 'string' ? { question: q, answer: '', choices: [], points: ptsEach }
+                                 : { ...q, points: ptsEach };
+  });
+
+  const statusEl  = document.getElementById('cq-status');
+  const resultEl  = document.getElementById('cq-result');
+  const btn1 = document.querySelector('[onclick="createCanvasQuiz(false)"]');
+  const btn2 = document.querySelector('[onclick="createCanvasQuiz(true)"]');
+  if (statusEl) statusEl.textContent = `Creating quiz with ${selected.length} questions…`;
+  if (btn1) btn1.disabled = true;
+  if (btn2) btn2.disabled = true;
+
+  try {
+    const res = await POST(`/api/canvas/create-quiz/${S.course.id}`, {
+      title, description: desc, timeLimit, allowedAttempts: attempts,
+      pointsPossible: selected.length * ptsEach,
+      questions: selected, publish,
+    });
+
+    if (resultEl) {
+      resultEl.style.display = 'block';
+      resultEl.className = 'quiz-result-banner quiz-result-success';
+      resultEl.innerHTML = `
+        ✓ Quiz created on Canvas with ${res.questionsAdded} questions.
+        ${publish ? ' <strong>Published!</strong>' : ' Saved as draft.'}<br>
+        <a href="${esc(res.quizUrl)}" target="_blank" class="quiz-result-link">
+          Open in Canvas ↗
+        </a>`;
+    }
+    if (statusEl) statusEl.textContent = '';
+    toast(`Quiz "${title}" created on Canvas!`, 'success');
+  } catch (e) {
+    if (resultEl) {
+      resultEl.style.display = 'block';
+      resultEl.className = 'quiz-result-banner quiz-result-error';
+      resultEl.textContent = 'Error: ' + e.message;
+    }
+    toast('Failed: ' + e.message, 'error');
+  } finally {
+    if (btn1) btn1.disabled = false;
+    if (btn2) btn2.disabled = false;
+  }
 }
 
 /* Parse uploaded test bank file into structured question objects */
