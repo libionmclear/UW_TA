@@ -411,6 +411,8 @@ async function selectAssignment(assignmentId) {
   S.rubric = null;
   S.aiInstructions = '';
   S.assignmentText = '';
+  _oboExtracted = false;
+  oboIndex = 0;
 
   // Deactivate all sidebar items, activate this one
   document.querySelectorAll('.sidebar-item').forEach(b => b.classList.remove('active'));
@@ -1392,6 +1394,11 @@ function renderAssignmentView(root) {
 
   const submitted = S.submissions.filter(s => s.workflow_state !== 'unsubmitted').length;
 
+  // AI detection average
+  const aiPcts = Object.values(S.grades).map(g => g.aiDetection?.pct ?? (g.aiDetection?.score != null ? g.aiDetection.score * 10 : null)).filter(p => p != null);
+  const aiAvg = aiPcts.length ? Math.round(aiPcts.reduce((a, b) => a + b, 0) / aiPcts.length) : null;
+  const aiAvgColor = aiAvg == null ? 'var(--text-muted)' : aiAvg >= 80 ? 'var(--danger)' : aiAvg >= 50 ? 'var(--warn)' : aiAvg >= 25 ? 'var(--info)' : 'var(--success)';
+
   // Grade distribution buckets
   const distBuckets = { 'A (90-100%)': 0, 'B (80-89%)': 0, 'C (70-79%)': 0, 'D (60-69%)': 0, 'F (<60%)': 0 };
   const distColors  = { 'A (90-100%)': '#16a34a', 'B (80-89%)': '#2563eb', 'C (70-79%)': '#d97706', 'D (60-69%)': '#ea580c', 'F (<60%)': '#dc2626' };
@@ -1460,6 +1467,11 @@ function renderAssignmentView(root) {
         <div class="asgn-stat-value">${flagged.length}</div>
         <div class="asgn-stat-label">AI Flags</div>
       </div>` : ''}
+      <div class="asgn-stat-card asgn-stat--ai-index">
+        <div class="asgn-stat-icon">🤖</div>
+        <div class="asgn-stat-value" style="color:${aiAvgColor}">${aiAvg != null ? aiAvg + '%' : '—'}</div>
+        <div class="asgn-stat-label">AI Index Avg</div>
+      </div>
     </div>
 
     <!-- Grade Distribution -->
@@ -1512,16 +1524,16 @@ function renderAssignmentView(root) {
     <!-- Tabs -->
     <div class="assign-tabs" id="assign-tabs">
       <button class="assign-tab active" data-atab="instructions" onclick="switchAssignTab('instructions')">Instructions & Rubric</button>
+      <button class="assign-tab assign-tab--grade" data-atab="oneByOne" onclick="switchAssignTab('oneByOne')">✦ Grade One-by-One</button>
       <button class="assign-tab" data-atab="students" onclick="switchAssignTab('students')">Students (${students.length})</button>
       <button class="assign-tab" data-atab="matrix" onclick="switchAssignTab('matrix')">Grading Matrix</button>
-      <button class="assign-tab" data-atab="oneByOne" onclick="switchAssignTab('oneByOne')">Grade One-by-One</button>
       <button class="assign-tab" data-atab="chat" onclick="switchAssignTab('chat')">Notes</button>
     </div>
 
     <div id="atab-instructions" class="atab-content active">${renderInstructionsTab()}</div>
+    <div id="atab-oneByOne"     class="atab-content">${renderOneByOneTab()}</div>
     <div id="atab-students"     class="atab-content">${renderStudentsTabHtml()}</div>
     <div id="atab-matrix"       class="atab-content">${renderMatrixTabHtml()}</div>
-    <div id="atab-oneByOne"     class="atab-content">${renderOneByOneTab()}</div>
     <div id="atab-chat"         class="atab-content">${renderChatTabHtml()}</div>
   `;
 }
@@ -1531,6 +1543,7 @@ function switchAssignTab(tab) {
   document.querySelectorAll('.atab-content').forEach(c => c.classList.toggle('active', c.id === `atab-${tab}`));
   if (tab === 'chat') loadComments();
   else stopChatPoll();
+  if (tab === 'oneByOne') oboEnterGrading();
 }
 
 /* ── Instructions & Rubric Tab ───────────────────────────────────────────────── */
@@ -1880,29 +1893,54 @@ function renderOneByOneTab() {
     </div>`;
   }).join('');
 
+  // AI detection data
+  const det = g?.aiDetection;
+  const aiPct = det?.pct ?? (det?.score != null ? det.score * 10 : null);
+  const aiColor = aiPct == null ? 'var(--text-muted)' : aiPct >= 80 ? '#dc2626' : aiPct >= 50 ? '#d97706' : aiPct >= 25 ? '#2563eb' : '#16a34a';
+  const aiLevel = det?.level || '';
+  const aiPhrases = det?.details?.aiPhrases?.matched || [];
+
   return `
-    <div class="obo-container">
-      <!-- Navigation bar -->
-      <div class="obo-nav">
-        <button class="btn btn-ghost" onclick="oboNavigate(-1)" ${oboIndex === 0 ? 'disabled' : ''}>← Previous</button>
+    <div class="obo-container obo-fullpage">
+      <!-- Navigation + Actions bar -->
+      <div class="obo-topbar">
+        <button class="btn btn-ghost" onclick="oboNavigate(-1)" ${oboIndex === 0 ? 'disabled' : ''}>← Prev</button>
         <div class="obo-nav-info">
-          <strong>${esc(st.name)}</strong>
-          <span class="muted">${oboIndex + 1} of ${students.length}</span>
+          <strong style="font-size:15px">${esc(st.name)}</strong>
+          <span class="obo-nav-counter">${oboIndex + 1} / ${students.length}</span>
           ${!submitted ? '<span class="status-badge status--pending">Not Submitted</span>' : sub?.late ? '<span class="status-badge status--late">Late</span>' : '<span class="status-badge status--submitted">Submitted</span>'}
-          ${g?.flagged ? '<span class="ai-badge ai-badge--flagged">⚑ AI Flagged</span>' : ''}
+        </div>
+        <div class="obo-topbar-actions">
+          <button class="btn btn-surf" id="obo-grade-ai-btn" onclick="oboGradeWithAi()">✦ Grade with AI</button>
+          <button class="btn btn-ghost" onclick="oboRunAiDetect()">🔍 AI Detect</button>
+          <button class="btn btn-primary" onclick="oboSaveAndNext()">Save & Next →</button>
         </div>
         <button class="btn btn-ghost" onclick="oboNavigate(1)" ${oboIndex >= students.length - 1 ? 'disabled' : ''}>Next →</button>
       </div>
 
+      <!-- AI Detection Banner (always visible) -->
+      <div class="obo-ai-banner" style="border-left-color:${aiColor}">
+        <div class="obo-ai-banner-gauge" style="color:${aiColor}">
+          <div class="obo-ai-banner-pct">${aiPct != null ? aiPct + '%' : '—'}</div>
+          <div class="obo-ai-banner-lbl">AI Index</div>
+        </div>
+        <div class="obo-ai-banner-meter">
+          <div class="obo-ai-banner-track"><div class="obo-ai-banner-fill" style="width:${aiPct || 0}%;background:${aiColor}"></div></div>
+          ${aiLevel ? `<span class="ai-badge ai-badge--${aiLevel.toLowerCase()}">${aiLevel}</span>` : '<span class="muted" style="font-size:11px">Not analyzed yet</span>'}
+        </div>
+        ${aiPhrases.length ? `<div class="obo-ai-banner-phrases">${aiPhrases.slice(0, 6).map(p => `<span class="ai-detect-phrase">${esc(p)}</span>`).join(' ')}</div>` : ''}
+        ${g?.flagged ? '<span class="ai-badge ai-badge--flagged" style="font-size:12px">⚑ FLAGGED</span>' : ''}
+      </div>
+
       <div class="obo-layout">
-        <!-- Left: Submission + AI Explanation -->
+        <!-- Left: Submission -->
         <div class="obo-panel obo-submission-panel">
-          <div class="card">
+          <div class="card" style="flex:1;display:flex;flex-direction:column">
             <div class="card-title">Student Submission</div>
-            <div class="obo-submission-content">${renderSubmissionContent(sub)}</div>
+            <div class="obo-submission-content" style="flex:1">${renderSubmissionContent(sub)}</div>
           </div>
 
-          <!-- AI Explanation (under submission) -->
+          <!-- AI Grading Explanation (under submission) -->
           <div class="obo-ai-explain card" ${aiFeedback ? '' : 'style="display:none"'} id="obo-ai-explain">
             <div class="card-title">AI Grading Explanation</div>
             <div class="obo-ai-explain-text" id="obo-ai-explain-text">
@@ -1910,9 +1948,9 @@ function renderOneByOneTab() {
               ${g?.criteria ? S.rubric.criteria.map(c => {
                 const cd = g.criteria[c.id];
                 if (!cd?.aiJustification) return '';
-                const score = cd.aiScore != null ? cd.aiScore : '—';
+                const sc = cd.aiScore != null ? cd.aiScore : '—';
                 return `<div class="obo-ai-crit-feedback">
-                  <div class="obo-ai-crit-hdr"><strong>${esc(c.name)}</strong> <span>${score} / ${c.maxPoints}</span></div>
+                  <div class="obo-ai-crit-hdr"><strong>${esc(c.name)}</strong> <span>${sc} / ${c.maxPoints}</span></div>
                   <p>${esc(cd.aiJustification)}</p>
                 </div>`;
               }).join('') : ''}
@@ -1920,18 +1958,8 @@ function renderOneByOneTab() {
           </div>
         </div>
 
-        <!-- Right: Grading -->
+        <!-- Right: Scoring -->
         <div class="obo-panel obo-grading-panel">
-          <!-- Grade with AI button -->
-          <div class="obo-grade-actions">
-            <button class="btn btn-surf" id="obo-grade-ai-btn" onclick="oboGradeWithAi()">✦ Grade with AI</button>
-            <button class="btn btn-ghost" onclick="oboSaveGrade()">Save Grade</button>
-            <button class="btn btn-ghost" onclick="oboRunAiDetect()">🔍 Check AI Use</button>
-          </div>
-
-          <!-- AI Detection Score -->
-          ${renderAiDetectBox(g)}
-
           <!-- Criteria scores -->
           <div class="obo-criteria">${criteriaRows}</div>
 
@@ -1946,7 +1974,7 @@ function renderOneByOneTab() {
           <!-- Grading Discussion Chat -->
           <div class="obo-chat-card card">
             <div class="card-title">Grading Discussion</div>
-            <div class="obo-chat-messages" id="obo-chat-messages">${chatHtml || '<p class="muted" style="text-align:center;padding:20px">Start a discussion about this grade...</p>'}</div>
+            <div class="obo-chat-messages" id="obo-chat-messages">${chatHtml || '<p class="muted" style="text-align:center;padding:12px">Discuss this grade...</p>'}</div>
             <div class="obo-chat-input-row">
               <input class="input obo-chat-input" id="obo-chat-input" placeholder="Type a message..." onkeydown="if(event.key==='Enter')oboSendChat()" />
               <button class="btn btn-surf" onclick="oboSendChat()">Send</button>
@@ -1955,6 +1983,66 @@ function renderOneByOneTab() {
         </div>
       </div>
     </div>`;
+}
+
+let _oboExtracted = false; // track if we've already extracted for this assignment
+
+async function oboEnterGrading() {
+  if (_oboExtracted) return; // already done for this assignment
+  _oboExtracted = true;
+
+  const students = allStudents();
+  const subsToExtract = [];
+  students.forEach(st => {
+    const sub = submissionFor(st.id);
+    if (!sub || sub._extractedText) return; // already has text
+    if (sub.body || sub._manualText) return; // has inline text
+    if (sub.attachments?.length) {
+      const att = sub.attachments[0]; // extract first attachment
+      subsToExtract.push({ sub, att, studentId: st.id });
+    }
+  });
+
+  if (!subsToExtract.length) return;
+
+  // Show loading overlay in the tab
+  const el = document.getElementById('atab-oneByOne');
+  if (!el) return;
+  el.innerHTML = `<div class="obo-loading">
+    <div class="obo-loading-spinner"></div>
+    <div class="obo-loading-text">Loading & extracting ${subsToExtract.length} submissions...</div>
+    <div class="obo-loading-sub" id="obo-loading-progress">0 / ${subsToExtract.length}</div>
+  </div>`;
+
+  let done = 0;
+  for (const { sub, att, studentId } of subsToExtract) {
+    try {
+      const res = await POST('/api/canvas/extract-text', { url: att.url, filename: att.display_name || att.filename });
+      sub._extractedText = res.text;
+    } catch { /* skip failures */ }
+    done++;
+    const prog = document.getElementById('obo-loading-progress');
+    if (prog) prog.textContent = `${done} / ${subsToExtract.length}`;
+  }
+
+  // Now run AI detection on all submissions that have text
+  const progEl = document.getElementById('obo-loading-progress');
+  if (progEl) progEl.textContent = 'Running AI detection...';
+
+  for (const st of students) {
+    const text = submissionText(submissionFor(st.id));
+    if (!text || S.grades[st.id]?.aiDetection) continue;
+    try {
+      const det = await POST('/api/ai-detect', { text });
+      if (!S.grades[st.id]) S.grades[st.id] = buildEmptyGrade(st.id);
+      S.grades[st.id].aiDetection = det;
+      S.grades[st.id].flagged = det.pct >= 80;
+    } catch { /* skip */ }
+  }
+
+  // Re-render
+  refreshOneByOneTab();
+  toast(`Extracted ${done} submissions, AI detection complete.`, 'success');
 }
 
 function oboNavigate(dir) {
@@ -2075,6 +2163,18 @@ async function oboSaveGrade() {
   S.grades[st.id].status = 'reviewed';
   await saveGrade(st.id);
   toast('Grade saved!', 'success');
+}
+
+async function oboSaveAndNext() {
+  await oboSaveGrade();
+  const students = allStudents();
+  if (oboIndex < students.length - 1) {
+    oboIndex++;
+    oboChatMessages = [];
+    refreshOneByOneTab();
+  } else {
+    toast('All students graded!', 'success');
+  }
 }
 
 function oboSendChat() {
