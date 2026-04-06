@@ -1239,7 +1239,7 @@ function renderQuizView(root) {
     <div class="page-title">Quiz Question Bank
       <div class="page-actions">
         <button class="btn btn-secondary" onclick="document.getElementById('quiz-file-input').click()">⬆ Upload Test Bank</button>
-        <input id="quiz-file-input" type="file" accept=".txt,.csv,.json,.md" style="display:none" onchange="uploadQuizFile(this)" />
+        <input id="quiz-file-input" type="file" accept=".txt,.csv,.json,.md" multiple style="display:none" onchange="uploadQuizFile(this)" />
         <button class="btn btn-ghost btn-danger" onclick="clearQuizBank()">Clear Bank</button>
       </div>
     </div>
@@ -1439,20 +1439,24 @@ function parseQuizFile(text) {
 }
 
 async function uploadQuizFile(input) {
-  const file = input.files[0]; if (!file) return;
-  const fd = new FormData(); fd.append('file', file);
-  try {
-    const resp = await fetch('/api/quiz-bank/upload', { method: 'POST', body: fd });
-    const data = await resp.json();
-    if (!resp.ok) throw new Error(data.error);
-
-    const parsed = parseQuizFile(data.text);
-    S.quizBank.questions = [...(S.quizBank.questions || []), ...parsed];
-    await PUT('/api/quiz-bank', S.quizBank);
-    const withAnswers = parsed.filter(q => q.answer).length;
-    toast(`Imported ${parsed.length} questions (${withAnswers} with answers).`, 'success');
-    showView('quiz');
-  } catch (e) { toast('Upload failed: ' + e.message, 'error'); }
+  const files = Array.from(input.files); if (!files.length) return;
+  let totalImported = 0, totalWithAnswers = 0, errors = [];
+  for (const file of files) {
+    const fd = new FormData(); fd.append('file', file);
+    try {
+      const resp = await fetch('/api/quiz-bank/upload', { method: 'POST', body: fd });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error);
+      const parsed = parseQuizFile(data.text);
+      S.quizBank.questions = [...(S.quizBank.questions || []), ...parsed];
+      totalImported += parsed.length;
+      totalWithAnswers += parsed.filter(q => q.answer).length;
+    } catch (e) { errors.push(`${file.name}: ${e.message}`); }
+  }
+  if (totalImported) await PUT('/api/quiz-bank', S.quizBank);
+  if (errors.length) toast('Some files failed:\n' + errors.join('\n'), 'error');
+  else toast(`Imported ${totalImported} questions (${totalWithAnswers} with answers) from ${files.length} file${files.length > 1 ? 's' : ''}.`, 'success');
+  showView('quiz');
   input.value = '';
 }
 
