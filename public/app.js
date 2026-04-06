@@ -956,7 +956,7 @@ function buildStudentCard(studentId) {
       <div class="sc-photo-wrap">
         <img class="sc-photo-img" id="sc-photo-${esc(studentId)}" src="${photoUrl}" alt="${esc(st.name)}"
           onerror="this.style.display='none';this.nextElementSibling.style.display='grid'" />
-        <div class="sc-avatar-lg" id="sc-avatar-${esc(studentId)}" style="display:none">${esc((st.name||'?')[0].toUpperCase())}</div>
+        <div class="sc-avatar-lg" id="sc-avatar-${esc(studentId)}" style="display:none;width:80px;height:80px;font-size:28px">${esc((st.name||'?')[0].toUpperCase())}</div>
         <button class="sc-photo-upload-btn" title="Upload photo" onclick="document.getElementById('photo-input-${esc(studentId)}').click()">+</button>
         <input type="file" id="photo-input-${esc(studentId)}" accept="image/*" style="display:none"
           onchange="uploadStudentPhoto('${esc(studentId)}', this.files[0])" />
@@ -1846,11 +1846,28 @@ function renderOneByOneTab() {
       </div>
 
       <div class="obo-layout">
-        <!-- Left: Submission -->
+        <!-- Left: Submission + AI Explanation -->
         <div class="obo-panel obo-submission-panel">
           <div class="card">
             <div class="card-title">Student Submission</div>
             <div class="obo-submission-content">${renderSubmissionContent(sub)}</div>
+          </div>
+
+          <!-- AI Explanation (under submission) -->
+          <div class="obo-ai-explain card" ${aiFeedback ? '' : 'style="display:none"'} id="obo-ai-explain">
+            <div class="card-title">AI Grading Explanation</div>
+            <div class="obo-ai-explain-text" id="obo-ai-explain-text">
+              ${aiFeedback ? `<p style="margin-bottom:10px">${esc(aiFeedback)}</p>` : ''}
+              ${g?.criteria ? S.rubric.criteria.map(c => {
+                const cd = g.criteria[c.id];
+                if (!cd?.aiJustification) return '';
+                const score = cd.aiScore != null ? cd.aiScore : '—';
+                return `<div class="obo-ai-crit-feedback">
+                  <div class="obo-ai-crit-hdr"><strong>${esc(c.name)}</strong> <span>${score} / ${c.maxPoints}</span></div>
+                  <p>${esc(cd.aiJustification)}</p>
+                </div>`;
+              }).join('') : ''}
+            </div>
           </div>
         </div>
 
@@ -1871,12 +1888,6 @@ function renderOneByOneTab() {
             <div class="obo-total-item obo-total-m1"><span>Marco</span><strong>${marcoTotal}</strong></div>
             <div class="obo-total-item obo-total-m2"><span>Marlowe</span><strong>${marloweTotal}</strong></div>
             <div class="obo-total-item obo-total-final"><span>Final</span><strong>${finalTotal}</strong></div>
-          </div>
-
-          <!-- AI Explanation -->
-          <div class="obo-ai-explain card" ${aiFeedback ? '' : 'style="display:none"'} id="obo-ai-explain">
-            <div class="card-title">AI Grading Explanation</div>
-            <p class="obo-ai-explain-text" id="obo-ai-explain-text">${esc(aiFeedback)}</p>
           </div>
 
           <!-- Grading Discussion Chat -->
@@ -3057,42 +3068,42 @@ function renderSubmissionContent(sub) {
     </div>`;
   }
 
-  // Show attachments
+  // Show attachments as file badges with auto-extract
   if (sub.attachments?.length) {
     html += '<div class="sub-attachments">';
-    sub.attachments.forEach((att, i) => {
+    sub.attachments.forEach(att => {
       const name = att.display_name || att.filename || 'file';
       const ext = name.split('.').pop().toLowerCase();
-      const isPdf = ext === 'pdf';
       const isImage = ['jpg','jpeg','png','gif','webp','bmp'].includes(ext);
-      const isDoc = ['doc','docx'].includes(ext);
       const proxyUrl = `/api/canvas/file-proxy?url=${encodeURIComponent(att.url)}`;
-      const icon = isPdf ? '📄' : isImage ? '🖼' : isDoc ? '📝' : '📎';
+      const icon = ext === 'pdf' ? '📄' : isImage ? '🖼' : ['doc','docx'].includes(ext) ? '📝' : '📎';
+      const hasText = !!sub._extractedText;
 
       html += `<div class="sub-attachment-item">
         <span class="sub-att-icon">${icon}</span>
         <span class="sub-att-name">${esc(name)}</span>
         <span class="muted" style="font-size:11px">${att.size ? (att.size / 1024).toFixed(0) + ' KB' : ''}</span>
-        <a href="${esc(proxyUrl)}" target="_blank" class="btn btn-ghost" style="font-size:11px;padding:2px 8px">View</a>
-        <button class="btn btn-ghost" style="font-size:11px;padding:2px 8px" onclick="extractAttachmentText('${esc(att.url)}','${esc(name)}','${esc(String(sub.user_id))}')">Extract Text</button>
+        ${!hasText ? `<button class="btn btn-surf" style="font-size:11px;padding:3px 10px" onclick="extractAttachmentText('${esc(att.url)}','${esc(name)}','${esc(String(sub.user_id))}')">Extract & Show Text</button>` : '<span class="status-badge status--graded">Text Extracted</span>'}
+        <a href="${esc(proxyUrl)}" target="_blank" class="btn btn-ghost" style="font-size:11px;padding:2px 8px">Download</a>
       </div>`;
 
-      // Inline preview for images
+      // Inline preview for images only
       if (isImage) {
         html += `<div class="sub-att-preview"><img src="${esc(proxyUrl)}" alt="${esc(name)}" style="max-width:100%;max-height:300px;border-radius:var(--radius)" /></div>`;
       }
-      // Inline preview for PDFs
-      if (isPdf) {
-        html += `<div class="sub-att-preview"><iframe src="${esc(proxyUrl)}" style="width:100%;height:400px;border:1px solid var(--border);border-radius:var(--radius)"></iframe></div>`;
-      }
     });
     html += '</div>';
+
+    // If attachments exist but no text extracted yet, show prompt
+    if (!sub._extractedText && !sub._manualText && !sub.body) {
+      html += '<p class="muted" style="margin-top:8px;font-style:italic">Click "Extract & Show Text" above to pull the document content for viewing and AI grading.</p>';
+    }
   }
 
-  // Show body text
+  // Show body text (extracted or original)
   const bodyText = sub._extractedText || sub._manualText || sub.body || '';
   if (bodyText) {
-    html += `<div class="submission-text" style="max-height:400px;margin-top:8px">${esc(bodyText)}</div>`;
+    html += `<div class="submission-text" style="max-height:500px;margin-top:8px">${esc(bodyText)}</div>`;
   }
 
   if (!html) html = '<p class="muted">(No submission text or attachments)</p>';

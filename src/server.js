@@ -100,6 +100,8 @@ try {
 } catch { }
 // Seed syllabus from default if never customized
 if (!store.syllabus) store.syllabus = DEFAULT_SYLLABUS;
+// Ensure store.json exists on disk at startup so data persists
+save();
 
 function save() {
   try {
