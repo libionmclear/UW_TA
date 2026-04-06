@@ -114,12 +114,26 @@ const gradesKey  = (cid, aid) => `${cid}__${aid}`;
 function ok(res, data)   { res.json(data); }
 function fail(res, e, code = 500) { res.status(code).json({ error: e.message || e }); }
 
-// ── Health ────────────────────────────────────────────────────────────────────
-app.get('/api/health', (_req, res) => {
-  ok(res, {
-    canvas: !!(process.env.CANVAS_API_TOKEN && process.env.CANVAS_BASE_URL),
-    claude: !!process.env.ANTHROPIC_API_KEY,
-  });
+// ── Health (live connectivity checks, cached 5 min) ───────────────────────────
+let _healthCache = { canvas: false, claude: false, at: 0 };
+const HEALTH_TTL = 5 * 60 * 1000;
+
+app.get('/api/health', async (_req, res) => {
+  if (Date.now() - _healthCache.at < HEALTH_TTL) {
+    return ok(res, { canvas: _healthCache.canvas, claude: _healthCache.claude });
+  }
+  let canvasOk = false, claudeOk = false;
+  try { await canvas.testConnection(); canvasOk = true; } catch { canvasOk = false; }
+  try {
+    if (process.env.ANTHROPIC_API_KEY) {
+      const Anthropic = require('@anthropic-ai/sdk');
+      const c = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+      await c.messages.create({ model: 'claude-haiku-4-5-20251001', max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] });
+      claudeOk = true;
+    }
+  } catch { claudeOk = false; }
+  _healthCache = { canvas: canvasOk, claude: claudeOk, at: Date.now() };
+  ok(res, { canvas: canvasOk, claude: claudeOk });
 });
 
 // ── Canvas ────────────────────────────────────────────────────────────────────

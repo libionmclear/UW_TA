@@ -92,10 +92,21 @@ async function init() {
 
 function renderStatusBadges() {
   const el = document.getElementById('status-badges');
-  const c = S.health?.canvas ? '<span class="badge badge--green">Canvas ✓</span>' : '<span class="badge badge--red">Canvas ✗</span>';
-  const ai = S.health?.claude ? '<span class="badge badge--green">Claude ✓</span>' : '<span class="badge badge--red">Claude ✗</span>';
+  if (!el) return;
+  const c  = S.health?.canvas ? '<span class="badge badge--green">Canvas ✓</span>' : '<span class="badge badge--red">Canvas ✗</span>';
+  const ai = S.health?.claude ? '<span class="badge badge--green">Claude ✓</span>'  : '<span class="badge badge--red">Claude ✗</span>';
   el.innerHTML = c + ai;
 }
+
+// Poll health every 60 s so badges go red if a service drops mid-session
+setInterval(async () => {
+  try {
+    const h = await fetch('/api/health').then(r => r.json());
+    const changed = h.canvas !== S.health?.canvas || h.claude !== S.health?.claude;
+    S.health = h;
+    if (changed) renderStatusBadges();
+  } catch { /* ignore network errors */ }
+}, 60_000);
 
 /* ── Courses ─────────────────────────────────────────────────────────────────── */
 async function loadCourses() {
