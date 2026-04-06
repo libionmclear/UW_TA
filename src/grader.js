@@ -161,4 +161,30 @@ Respond ONLY with valid JSON:
   return JSON.parse(match[0]);
 }
 
-module.exports = { gradeSubmission, generateRubric, suggestQuizQuestions };
+// ── Parse raw text into structured quiz questions ─────────────────────────────
+async function parseQuestionsFromText(rawText) {
+  const prompt = `You are a quiz question extractor. Given raw text that may contain multiple-choice or short-answer questions (possibly messy formatting), extract every question and return a JSON array.
+
+Each object must have:
+- "question": string (the question text, cleaned up)
+- "choices": array of strings (e.g. ["A. True", "B. False"] or ["a) choice1", "b) choice2"] — empty array if no choices)
+- "answer": string (the correct answer letter or text, empty string if not identified)
+
+Return ONLY a valid JSON array — no explanation, no markdown fences.
+
+RAW TEXT:
+${rawText.slice(0, 12000)}`;
+
+  const msg = await client().messages.create({
+    model: 'claude-opus-4-6',
+    max_tokens: 4096,
+    messages: [{ role: 'user', content: prompt }],
+  });
+  const content = msg.content[0].text.trim();
+  // Extract JSON array from response
+  const match = content.match(/\[[\s\S]*\]/);
+  if (!match) throw new Error('Claude did not return a valid JSON array');
+  return JSON.parse(match[0]);
+}
+
+module.exports = { gradeSubmission, generateRubric, suggestQuizQuestions, parseQuestionsFromText };

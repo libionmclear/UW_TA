@@ -323,6 +323,15 @@ app.post('/api/quiz-bank/upload', upload.single('file'), async (req, res) => {
     ok(res, { filename: req.file.originalname, text: stripHtml(text.substring(0, 200000)) });
   } catch (e) { fail(res, e); }
 });
+app.post('/api/quiz-bank/parse-text', async (req, res) => {
+  try {
+    const { text } = req.body;
+    if (!text?.trim()) return fail(res, { message: 'No text provided' }, 400);
+    const questions = await grader.parseQuestionsFromText(text);
+    ok(res, { questions });
+  } catch (e) { fail(res, e); }
+});
+
 app.post('/api/quiz-bank/suggest', async (req, res) => {
   try {
     const { topic, courseContent, count } = req.body;

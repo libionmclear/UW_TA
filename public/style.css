@@ -69,6 +69,11 @@ a { color: var(--uw-purple); }
 .btn-secondary { background: rgba(255,255,255,.18); color: #fff; border: 1px solid rgba(255,255,255,.3); }
 .btn-ghost     { background: transparent; color: var(--uw-purple); border: 1px solid var(--border); }
 .btn-ghost:hover:not(:disabled) { background: var(--bg); }
+/* Ghost buttons sitting on the dark purple header need white text/border */
+#header .btn-ghost { color: #fff; border-color: rgba(255,255,255,.45); }
+#header .btn-ghost:hover:not(:disabled) { background: rgba(255,255,255,.12); }
+#header .btn-primary { background: var(--uw-gold); color: var(--uw-purple2); }
+#header .hdr-user { color: rgba(255,255,255,.85); }
 .btn-danger    { color: var(--danger) !important; border-color: var(--danger) !important; }
 .btn-surf      { background: var(--uw-purple); color: #fff; }
 .btn-surf-sec  { background: transparent; border: 1px solid var(--border); color: var(--text); }

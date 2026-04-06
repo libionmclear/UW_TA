@@ -16,6 +16,26 @@ async function canvasGet(endpoint) {
   return res.json();
 }
 
+// Fetch all pages of a paginated Canvas endpoint, following Link: rel="next" headers
+async function canvasGetAll(endpoint) {
+  let url = `${API_URL}${endpoint}`;
+  let all = [];
+  while (url) {
+    const res = await fetch(url, { headers });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Canvas API error ${res.status}: ${text}`);
+    }
+    const page = await res.json();
+    all = all.concat(page);
+    // Parse Link header for next page
+    const link = res.headers.get('Link') || '';
+    const nextMatch = link.match(/<([^>]+)>;\s*rel="next"/);
+    url = nextMatch ? nextMatch[1] : null;
+  }
+  return all;
+}
+
 async function testConnection() {
   const user = await canvasGet('/users/self');
   return user;
@@ -69,9 +89,9 @@ async function getFiles(courseId) {
   return canvasGet(`/courses/${courseId}/files?per_page=50&sort=updated_at&order=desc`);
 }
 
-// Fetch all submissions for all students across all assignments in a course
+// Fetch all submissions for all students across all assignments in a course (paginated)
 async function getAllSubmissions(courseId) {
-  return canvasGet(`/courses/${courseId}/students/submissions?student_ids[]=all&per_page=100`);
+  return canvasGetAll(`/courses/${courseId}/students/submissions?student_ids[]=all&per_page=100`);
 }
 
 // Push a grade back to Canvas for a single student

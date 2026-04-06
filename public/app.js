@@ -1107,24 +1107,7 @@ function _renderLedgerHtml(root, canvasScores) {
 }
 
 async function syncLedgerFromCanvas() {
-  if (!S.course) return;
-  toast('Syncing grades from Canvas…');
-  try {
-    const canvasScores = await GET(`/api/canvas/course-submissions/${S.course.id}`);
-    // Merge canvasScore into allGrades
-    Object.entries(canvasScores).forEach(([aid, students]) => {
-      if (!S.allGrades[aid]) S.allGrades[aid] = {};
-      Object.entries(students).forEach(([uid, score]) => {
-        if (score != null) {
-          if (!S.allGrades[aid][uid]) S.allGrades[aid][uid] = {};
-          S.allGrades[aid][uid].canvasScore = score;
-          if (S.allGrades[aid][uid].finalScore == null) S.allGrades[aid][uid].finalScore = score;
-        }
-      });
-    });
-    toast('Canvas grades synced!', 'success');
-    _renderLedgerHtml(document.getElementById('view-root'), canvasScores);
-  } catch (e) { toast('Sync failed: ' + e.message, 'error'); }
+  await syncCanvasGrades(false);
 }
 
 async function saveStudentTeam(studentId, teamNum) {
@@ -2018,9 +2001,27 @@ function renderQuizView(root) {
 
     <div class="two-col-grid" style="align-items:start">
 
+      <!-- ── Paste Box (Claude parse) ── -->
+      <div class="card">
+        <div class="card-title">✦ Paste Questions — Claude will parse them</div>
+        <div class="field-group">
+          <label>Chapter / Label for this batch</label>
+          <input id="paste-chapter" type="text" class="input" placeholder="e.g. Chapter 5 or Midterm" />
+        </div>
+        <div class="field-group">
+          <label>Paste your questions below (any format — numbered, Q: style, Word copy-paste…)</label>
+          <textarea id="paste-questions-text" class="input" rows="8"
+            placeholder="1. What is marketing?&#10;a) Selling products&#10;b) Understanding customer needs&#10;c) Making ads&#10;d) All of the above&#10;Answer: B&#10;&#10;2. What is a value proposition?..."></textarea>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
+          <button class="btn btn-surf" onclick="parseAndSavePasted()">✦ Parse &amp; Save with Claude</button>
+          <span id="paste-status" class="muted" style="font-size:12px"></span>
+        </div>
+      </div>
+
       <!-- ── Upload Panel ── -->
       <div class="card">
-        <div class="card-title">⬆ Upload Test Bank</div>
+        <div class="card-title">⬆ Upload File</div>
         <div class="field-group">
           <label>Chapter / Label <span class="muted">(e.g. "Chapter 3" or "Midterm")</span></label>
           <input id="upload-chapter" type="text" class="input" placeholder="Chapter 1" />
@@ -2034,11 +2035,7 @@ function renderQuizView(root) {
           <div class="muted" style="font-size:11px;margin-top:4px">.docx · .doc · .txt · .csv · .json · .md — multiple files OK</div>
           <input id="quiz-file-input" type="file" accept=".txt,.csv,.json,.md,.doc,.docx" multiple style="display:none" onchange="uploadQuizFile(this)" />
         </label>
-        <div style="font-size:11px;color:var(--text-muted);margin-top:10px;line-height:1.7">
-          <strong>Formats:</strong> Word (.docx/.doc), plain text (one Q per line, <code>ANSWER:</code> on next line),
-          Q:/A: pairs, numbered lists with a)–d) choices, or JSON array.
-        </div>
-        <div style="margin-top:12px;font-size:12px;color:var(--text-muted)">
+        <div style="margin-top:10px;font-size:12px;color:var(--text-muted)">
           Bank: <strong>${qs.length}</strong> question${qs.length !== 1 ? 's' : ''}
           across <strong>${chapters.length}</strong> chapter${chapters.length !== 1 ? 's' : ''}
         </div>
@@ -2296,6 +2293,34 @@ async function uploadQuizFile(input) {
 async function handleQuizDrop(event) {
   const fakeInput = { files: event.dataTransfer.files, value: '' };
   await uploadQuizFile(fakeInput);
+}
+
+async function parseAndSavePasted() {
+  const text    = document.getElementById('paste-questions-text')?.value?.trim();
+  const chapter = document.getElementById('paste-chapter')?.value?.trim() || 'Pasted Questions';
+  if (!text) { toast('Paste some questions first.', 'warn'); return; }
+
+  const statusEl = document.getElementById('paste-status');
+  if (statusEl) statusEl.textContent = 'Parsing with Claude…';
+
+  try {
+    const res  = await POST('/api/quiz-bank/parse-text', { text });
+    const qs   = (res.questions || []).map(q => ({ ...q, chapter }));
+    if (!qs.length) { toast('Claude found 0 questions in that text.', 'warn'); if (statusEl) statusEl.textContent = ''; return; }
+
+    S.quizBank.questions = [...(S.quizBank.questions || []), ...qs];
+    await PUT('/api/quiz-bank', S.quizBank);
+
+    toast(`Saved ${qs.length} questions to "${chapter}".`, 'success');
+    if (statusEl) statusEl.textContent = '';
+    // Clear the textarea after successful save
+    const ta = document.getElementById('paste-questions-text');
+    if (ta) ta.value = '';
+    showView('quiz');
+  } catch (e) {
+    toast('Parse failed: ' + e.message, 'error');
+    if (statusEl) statusEl.textContent = '';
+  }
 }
 
 async function clearQuizBank() {
@@ -2580,20 +2605,41 @@ async function syncCanvasGrades(silent = false) {
   if (!silent) toast('Syncing grades from Canvas…');
   try {
     const canvasScores = await GET(`/api/canvas/course-submissions/${S.course.id}`);
-    // Merge into allGrades: canvasScore + finalScore fallback
+    const cid = S.course.id;
+
+    // Merge into allGrades + persist each assignment's grades to store.json
+    const savePromises = [];
     Object.entries(canvasScores).forEach(([aid, students]) => {
       if (!S.allGrades[aid]) S.allGrades[aid] = {};
+      let changed = false;
       Object.entries(students).forEach(([uid, score]) => {
         if (score == null) return;
-        if (!S.allGrades[aid][uid]) S.allGrades[aid][uid] = { status: 'canvas', canvasScore: score, finalScore: score };
-        else {
+        if (!S.allGrades[aid][uid]) {
+          S.allGrades[aid][uid] = { status: 'canvas', canvasScore: score, finalScore: score };
+          changed = true;
+        } else {
           S.allGrades[aid][uid].canvasScore = score;
-          if (S.allGrades[aid][uid].finalScore == null) S.allGrades[aid][uid].finalScore = score;
+          if (S.allGrades[aid][uid].finalScore == null) {
+            S.allGrades[aid][uid].finalScore = score;
+            changed = true;
+          }
         }
       });
+      // Persist to server so grades survive page refresh
+      if (changed) {
+        Object.entries(students).forEach(([uid, score]) => {
+          if (score == null) return;
+          savePromises.push(
+            PUT(`/api/grades/${cid}/${aid}/${uid}`, S.allGrades[aid][uid]).catch(() => {})
+          );
+        });
+      }
     });
-    if (!silent) toast('Canvas grades synced!', 'success');
-    // Refresh current view if it uses grade data
+    await Promise.all(savePromises);
+
+    const count = Object.values(canvasScores).reduce((n, s) => n + Object.keys(s).length, 0);
+    if (!silent) toast(`Canvas sync complete — ${count} scores imported.`, 'success');
+    // Refresh current view
     const v = currentView;
     if (v === 'gradebook') renderGradeBook();
     else if (v === 'ledger')  _renderLedgerHtml(document.getElementById('view-root'), canvasScores);
@@ -2601,6 +2647,7 @@ async function syncCanvasGrades(silent = false) {
     else if (v === 'overview') renderOverview(document.getElementById('view-root'));
   } catch (e) {
     if (!silent) toast('Sync failed: ' + e.message, 'error');
+    else console.warn('Canvas auto-sync failed:', e.message);
   }
 }
 
