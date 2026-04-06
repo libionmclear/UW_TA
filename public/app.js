@@ -167,6 +167,13 @@ async function loadCourseData() {
     renderSidebar();
     showView('overview');
     toast('Course loaded.', 'success');
+
+    // Enable Sync Canvas button now that course is loaded
+    const syncBtn = document.getElementById('btn-sync-canvas');
+    if (syncBtn) syncBtn.disabled = false;
+
+    // Auto-sync Canvas grades silently in background
+    syncCanvasGrades(true);
   } catch (e) { toast('Load error: ' + e.message, 'error'); }
 }
 
@@ -2526,6 +2533,38 @@ async function addManualStudent(gradeNow) {
     } catch (e) { toast('Grading failed: ' + e.message, 'error'); }
   }
   renderManualView();
+}
+
+/* ── Canvas Grade Sync ───────────────────────────────────────────────────────── */
+document.getElementById('btn-sync-canvas').addEventListener('click', () => syncCanvasGrades(false));
+
+async function syncCanvasGrades(silent = false) {
+  if (!S.course) return;
+  if (!silent) toast('Syncing grades from Canvas…');
+  try {
+    const canvasScores = await GET(`/api/canvas/course-submissions/${S.course.id}`);
+    // Merge into allGrades: canvasScore + finalScore fallback
+    Object.entries(canvasScores).forEach(([aid, students]) => {
+      if (!S.allGrades[aid]) S.allGrades[aid] = {};
+      Object.entries(students).forEach(([uid, score]) => {
+        if (score == null) return;
+        if (!S.allGrades[aid][uid]) S.allGrades[aid][uid] = { status: 'canvas', canvasScore: score, finalScore: score };
+        else {
+          S.allGrades[aid][uid].canvasScore = score;
+          if (S.allGrades[aid][uid].finalScore == null) S.allGrades[aid][uid].finalScore = score;
+        }
+      });
+    });
+    if (!silent) toast('Canvas grades synced!', 'success');
+    // Refresh current view if it uses grade data
+    const v = currentView;
+    if (v === 'gradebook') renderGradeBook();
+    else if (v === 'ledger')  _renderLedgerHtml(document.getElementById('view-root'), canvasScores);
+    else if (v === 'teams')   renderTeamsView();
+    else if (v === 'overview') renderOverview(document.getElementById('view-root'));
+  } catch (e) {
+    if (!silent) toast('Sync failed: ' + e.message, 'error');
+  }
 }
 
 /* ── Export ─────────────────────────────────────────────────────────────────── */

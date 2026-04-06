@@ -24,7 +24,8 @@
   </div>
   <div class="header-right">
     <button id="btn-grade-all" class="btn btn-primary" disabled>▶ Grade All with AI</button>
-    <button id="btn-export" class="btn btn-ghost" disabled>⬇ Export CSV</button>
+    <button id="btn-sync-canvas" class="btn btn-ghost" disabled title="Pull all grades from Canvas">⟳ Sync Canvas</button>
+    <button id="btn-export" class="btn btn-ghost" disabled title="Export current assignment grades as CSV">⬇ Export Grades</button>
     <div class="hdr-divider"></div>
     <span id="hdr-username" class="hdr-user"></span>
     <button id="btn-logout" class="btn btn-ghost">Sign Out</button>
@@ -36,36 +37,27 @@
 
   <!-- ── Sidebar ─────────────────────────────────────────────────────────── -->
   <nav class="sidebar" id="sidebar">
-    <button class="nav-btn active" data-view="overview">
+    <button class="nav-btn nav-btn-top active" data-view="overview">
       <span class="nav-icon">◈</span> Overview
     </button>
 
-    <div class="nav-section-label">Instructor Tools</div>
-    <button class="nav-btn" data-view="gradebook">
-      <span class="nav-icon">📊</span> Grade Book
-    </button>
-    <button class="nav-btn" data-view="teams">
-      <span class="nav-icon">👥</span> Teams
-    </button>
-    <button class="nav-btn" data-view="ledger">
-      <span class="nav-icon">🗂</span> Grade Ledger
-    </button>
-    <button class="nav-btn" data-view="quiz">
-      <span class="nav-icon">?</span> Quiz &amp; Test Bank
-    </button>
-    <button class="nav-btn" data-view="content">
-      <span class="nav-icon">▶</span> Course Content
-    </button>
-    <button class="nav-btn" data-view="syllabus">
-      <span class="nav-icon">📅</span> Instructor Syllabus
-    </button>
+    <div class="sidebar-box">
+      <div class="sidebar-box-hdr">Instructor Tools</div>
+      <div class="sidebar-box-body">
+        <button class="nav-btn" data-view="gradebook"><span class="nav-icon">📊</span> Grade Book</button>
+        <button class="nav-btn" data-view="teams"><span class="nav-icon">👥</span> Teams</button>
+        <button class="nav-btn" data-view="ledger"><span class="nav-icon">🗂</span> Grade Ledger</button>
+        <button class="nav-btn" data-view="quiz"><span class="nav-icon">?</span> Quiz &amp; Test Bank</button>
+        <button class="nav-btn" data-view="content"><span class="nav-icon">▶</span> Course Content</button>
+        <button class="nav-btn" data-view="syllabus"><span class="nav-icon">📅</span> Instructor Syllabus</button>
+        <button class="nav-btn" data-view="manual"><span class="nav-icon">+</span> Add Manual</button>
+      </div>
+    </div>
 
-    <div class="nav-section-label">Assignment Grading</div>
-    <!-- Assignment groups rendered by JS -->
-    <div id="sidebar-assignments"></div>
-    <button class="nav-btn" data-view="manual">
-      <span class="nav-icon">+</span> Add Manual
-    </button>
+    <div class="sidebar-box">
+      <div class="sidebar-box-hdr">Assignment Grading</div>
+      <div class="sidebar-box-body" id="sidebar-assignments"></div>
+    </div>
   </nav>
 
   <!-- ── Main ────────────────────────────────────────────────────────────── -->
