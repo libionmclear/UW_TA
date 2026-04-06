@@ -167,6 +167,7 @@ function analyzeText(rawText) {
   if (words.length < 30) {
     return {
       score: 0,
+      pct: 0,
       maxScore: 10,
       level: 'TOO SHORT',
       message: 'Text too short for meaningful analysis (< 30 words)',
@@ -187,14 +188,32 @@ function analyzeText(rawText) {
   const totalScore = phrasePoints + sentUnif.score + vocab.score + paraUnif.score;
   const maxScore = 10;
 
+  // Scale to 1-100 percentage with finer granularity
+  // Use weighted continuous scoring for smoother distribution
+  let pctRaw = 0;
+  // Phrase contribution (0-30): based on normalized hits
+  pctRaw += Math.min(30, normalizedPhraseHits * 3);
+  // Sentence uniformity (0-25): based on coefficient of variation
+  const sentCv = sentUnif.cv != null ? parseFloat(sentUnif.cv) : 1;
+  pctRaw += Math.max(0, 25 * (1 - sentCv / 0.5));
+  // Vocabulary diversity (0-20): based on TTR
+  const ttr = vocab.ttr ? parseFloat(vocab.ttr) : 0.6;
+  pctRaw += Math.max(0, 20 * (1 - ttr / 0.55));
+  // Paragraph uniformity (0-25): based on CV
+  const paraCv = paraUnif.cv != null ? parseFloat(paraUnif.cv) : 1;
+  pctRaw += Math.max(0, 25 * (1 - paraCv / 0.4));
+
+  const pct = Math.max(1, Math.min(100, Math.round(pctRaw)));
+
   let level;
-  if (totalScore >= 7) level = 'HIGH';
-  else if (totalScore >= 4) level = 'MEDIUM';
-  else if (totalScore >= 2) level = 'LOW';
+  if (pct >= 80) level = 'HIGH';
+  else if (pct >= 50) level = 'MEDIUM';
+  else if (pct >= 25) level = 'LOW';
   else level = 'MINIMAL';
 
   return {
     score: totalScore,
+    pct,
     maxScore,
     level,
     message: getLevelMessage(level),

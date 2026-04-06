@@ -289,6 +289,16 @@ app.delete('/api/grades/:cid/:aid', (req, res) => {
   ok(res, { ok: true });
 });
 
+// ── AI Detection (standalone) ────────────────────────────────────────────────
+app.post('/api/ai-detect', requireAuth, (req, res) => {
+  try {
+    const { text } = req.body;
+    if (!text?.trim()) return ok(res, { pct: 0, level: 'TOO SHORT', message: 'No text provided', details: {} });
+    const result = analyzeText(text);
+    ok(res, result);
+  } catch (e) { fail(res, e); }
+});
+
 // ── AI Grading ────────────────────────────────────────────────────────────────
 app.post('/api/grade/single', async (req, res) => {
   try {
@@ -297,7 +307,7 @@ app.post('/api/grade/single', async (req, res) => {
       grader.gradeSubmission(text, rubric, studentName, aiInstructions || '', !!isCaseWriteup),
       Promise.resolve(analyzeText(text)),
     ]);
-    ok(res, { grade, aiDetection: detect, flagged: !hasAiCitation && detect.score >= 7 });
+    ok(res, { grade, aiDetection: detect, flagged: !hasAiCitation && detect.pct >= 80 });
   } catch (e) { fail(res, e); }
 });
 
@@ -313,7 +323,7 @@ app.post('/api/grade/batch', async (req, res) => {
         Promise.resolve(analyzeText(sub.text || '')),
       ]);
       completed++;
-      send({ type: 'progress', completed, total: submissions.length, studentId: sub.studentId, studentName: sub.studentName, grade, aiDetection: detect, flagged: !sub.hasAiCitation && detect.score >= 7 });
+      send({ type: 'progress', completed, total: submissions.length, studentId: sub.studentId, studentName: sub.studentName, grade, aiDetection: detect, flagged: !sub.hasAiCitation && detect.pct >= 80 });
     } catch (err) {
       completed++;
       send({ type: 'error', completed, total: submissions.length, studentId: sub.studentId, error: err.message });

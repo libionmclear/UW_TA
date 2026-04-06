@@ -703,6 +703,34 @@ tbody td { padding: 7px 10px; vertical-align: middle; }
 .obo-chat-from { width: 80px; font-size: 12px; padding: 5px 6px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); font-weight: 600; }
 .obo-chat-input { flex: 1; }
 
+/* ── AI Detection Box ───────────────────────────────────────────────────────── */
+.ai-detect-box {
+  background: var(--surface); border: 1px solid var(--border); border-left: 4px solid var(--border);
+  border-radius: var(--radius); padding: 12px 14px; margin-bottom: 4px;
+}
+.ai-detect-header { display: flex; align-items: center; gap: 14px; }
+.ai-detect-gauge { text-align: center; min-width: 60px; }
+.ai-detect-pct { font-size: 28px; font-weight: 900; line-height: 1; }
+.ai-detect-label { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; color: var(--text-muted); margin-top: 2px; }
+.ai-detect-meter { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+.ai-detect-meter-track { height: 8px; background: var(--bg); border-radius: 4px; overflow: hidden; }
+.ai-detect-meter-fill { height: 100%; border-radius: 4px; transition: width .4s ease; }
+.ai-detect-phrases { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.ai-detect-phrase { font-size: 10px; background: #fee2e2; color: #991b1b; padding: 1px 6px; border-radius: 10px; font-weight: 600; }
+
+/* ── AI Flags in Overview & Assignment ──────────────────────────────────────── */
+.ai-flags-list { display: flex; flex-direction: column; gap: 6px; }
+.ai-flag-row { display: flex; align-items: center; gap: 10px; padding: 4px 0; }
+.ai-flag-meter { flex: 1; display: flex; align-items: center; gap: 6px; max-width: 160px; margin-left: auto; }
+.ai-flag-meter-track { flex: 1; height: 6px; background: var(--bg); border-radius: 3px; overflow: hidden; }
+.ai-flag-meter-fill { height: 100%; border-radius: 3px; transition: width .3s; }
+
+.ai-summary-card { margin-bottom: 16px; }
+.ai-summary-section { margin-bottom: 10px; }
+.ai-summary-hdr { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .4px; padding: 4px 0; margin-bottom: 4px; }
+.ai-summary-hdr--high { color: var(--danger); border-bottom: 2px solid var(--danger); }
+.ai-summary-hdr--med { color: var(--warn); border-bottom: 2px solid var(--warn); }
+
 /* ── Submission Attachments ──────────────────────────────────────────────────── */
 .sub-attachments { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
 .sub-attachment-item {

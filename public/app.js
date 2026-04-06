@@ -627,9 +627,11 @@ function renderOverview(root) {
   Object.entries(S.allGrades).forEach(([aid, students]) => {
     const a = S.assignments.find(x => String(x.id) === aid);
     Object.values(students).forEach(g => {
-      if (g.flagged) allFlags.push({ ...g, assignmentName: a?.name || aid });
+      const pct = g.aiDetection?.pct ?? (g.aiDetection?.score != null ? g.aiDetection.score * 10 : 0);
+      if (g.flagged || pct >= 80) allFlags.push({ ...g, assignmentName: a?.name || aid, assignmentId: aid, aiPct: pct });
     });
   });
+  allFlags.sort((a, b) => (b.aiPct || 0) - (a.aiPct || 0));
 
   let avgHtml = '—';
   if (recentlyGraded.length) {
@@ -731,15 +733,21 @@ function renderOverview(root) {
 
       <!-- AI Flags -->
       <div class="card">
-        <div class="card-title">⚑ AI Flags (${allFlags.length})</div>
-        ${allFlags.length ? `<ul class="overview-list">${allFlags.slice(0, 10).map(f => `
-          <li>
-            <strong>${esc(f.studentName)}</strong>
-            <span class="muted">${esc(f.assignmentName)}</span>
-            <span class="ai-badge ai-badge--high">${f.aiConfidence || 0}%</span>
-          </li>`).join('')}
-          ${allFlags.length > 10 ? `<li class="muted">…and ${allFlags.length - 10} more</li>` : ''}
-        </ul>` : '<p class="muted">No AI flags.</p>'}
+        <div class="card-title">⚑ AI Flags — Likelihood ≥ 80% (${allFlags.length})</div>
+        ${allFlags.length ? `<div class="ai-flags-list">${allFlags.slice(0, 15).map(f => {
+          const pct = f.aiPct || 0;
+          const color = pct >= 80 ? 'var(--danger)' : pct >= 50 ? 'var(--warn)' : 'var(--success)';
+          return `<div class="ai-flag-row">
+            <button class="link-btn" onclick="selectAssignment('${esc(f.assignmentId)}')" style="font-weight:700">${esc(f.studentName)}</button>
+            <button class="link-btn muted" onclick="selectAssignment('${esc(f.assignmentId)}')" style="font-size:11px">${esc(f.assignmentName)}</button>
+            <div class="ai-flag-meter">
+              <div class="ai-flag-meter-track"><div class="ai-flag-meter-fill" style="width:${pct}%;background:${color}"></div></div>
+              <span style="font-size:12px;font-weight:800;color:${color}">${pct}%</span>
+            </div>
+          </div>`;
+        }).join('')}
+          ${allFlags.length > 15 ? `<div class="muted" style="padding:6px 0">…and ${allFlags.length - 15} more</div>` : ''}
+        </div>` : '<p class="muted">No AI flags detected.</p>'}
       </div>
 
       <!-- Recently Graded -->
@@ -1460,6 +1468,47 @@ function renderAssignmentView(root) {
       <div class="dist-chart">${distBars}</div>
     </div>` : ''}
 
+    <!-- AI Detection Summary -->
+    ${(() => {
+      const aiStudents = students.map(st => {
+        const g = S.grades[st.id];
+        const det = g?.aiDetection;
+        const pct = det?.pct ?? (det?.score != null ? det.score * 10 : null);
+        return pct != null ? { name: st.name, id: st.id, pct, level: det.level } : null;
+      }).filter(Boolean).sort((a, b) => b.pct - a.pct);
+      if (!aiStudents.length) return '';
+      const high = aiStudents.filter(s => s.pct >= 80);
+      const med = aiStudents.filter(s => s.pct >= 50 && s.pct < 80);
+      return `<div class="card ai-summary-card">
+        <div class="card-title">🔍 AI Usage Detection — ${a.name}</div>
+        ${high.length ? `<div class="ai-summary-section">
+          <div class="ai-summary-hdr ai-summary-hdr--high">High Likelihood (≥80%) — ${high.length} student${high.length > 1 ? 's' : ''}</div>
+          ${high.map(s => {
+            return `<div class="ai-flag-row">
+              <button class="link-btn" onclick="openStudent('${esc(s.id)}')" style="font-weight:700">${esc(s.name)}</button>
+              <div class="ai-flag-meter">
+                <div class="ai-flag-meter-track"><div class="ai-flag-meter-fill" style="width:${s.pct}%;background:var(--danger)"></div></div>
+                <span style="font-size:12px;font-weight:800;color:var(--danger)">${s.pct}%</span>
+              </div>
+            </div>`;
+          }).join('')}
+        </div>` : ''}
+        ${med.length ? `<div class="ai-summary-section">
+          <div class="ai-summary-hdr ai-summary-hdr--med">Moderate (50-79%) — ${med.length} student${med.length > 1 ? 's' : ''}</div>
+          ${med.map(s => {
+            return `<div class="ai-flag-row">
+              <button class="link-btn" onclick="openStudent('${esc(s.id)}')">${esc(s.name)}</button>
+              <div class="ai-flag-meter">
+                <div class="ai-flag-meter-track"><div class="ai-flag-meter-fill" style="width:${s.pct}%;background:var(--warn)"></div></div>
+                <span style="font-size:12px;font-weight:700;color:var(--warn)">${s.pct}%</span>
+              </div>
+            </div>`;
+          }).join('')}
+        </div>` : ''}
+        ${!high.length && !med.length ? '<p class="muted" style="padding:8px 0">All students below 50% AI likelihood.</p>' : ''}
+      </div>`;
+    })()}
+
     <!-- Tabs -->
     <div class="assign-tabs" id="assign-tabs">
       <button class="assign-tab active" data-atab="instructions" onclick="switchAssignTab('instructions')">Instructions & Rubric</button>
@@ -1695,7 +1744,7 @@ function renderMatrixTabHtml() {
     let rowClass = flagged ? 'row--flagged' : g?.status === 'reviewed' ? 'row--reviewed' : '';
 
     const aiConf = g?.aiDetection
-      ? `<span class="ai-badge ai-badge--${(g.aiDetection.level || 'none').toLowerCase()}">${g.aiDetection.score * 10}%</span>`
+      ? `<span class="ai-badge ai-badge--${(g.aiDetection.level || 'none').toLowerCase()}">${g.aiDetection.pct ?? (g.aiDetection.score * 10)}%</span>`
       : '—';
 
     const statusBadge = !submitted ? '<span class="status-badge status--pending">Not Submitted</span>'
@@ -1877,7 +1926,11 @@ function renderOneByOneTab() {
           <div class="obo-grade-actions">
             <button class="btn btn-surf" id="obo-grade-ai-btn" onclick="oboGradeWithAi()">✦ Grade with AI</button>
             <button class="btn btn-ghost" onclick="oboSaveGrade()">Save Grade</button>
+            <button class="btn btn-ghost" onclick="oboRunAiDetect()">🔍 Check AI Use</button>
           </div>
+
+          <!-- AI Detection Score -->
+          ${renderAiDetectBox(g)}
 
           <!-- Criteria scores -->
           <div class="obo-criteria">${criteriaRows}</div>
@@ -1946,6 +1999,48 @@ function onOboScoreChange(input) {
       <div class="obo-total-item obo-total-m2"><span>Marlowe</span><strong>${g?.marloweTotalScore ?? '—'}</strong></div>
       <div class="obo-total-item obo-total-final"><span>Final</span><strong>${g?.finalScore ?? '—'}</strong></div>`;
   }
+}
+
+function renderAiDetectBox(g) {
+  const det = g?.aiDetection;
+  if (!det || det.level === 'TOO SHORT') return '';
+  const pct = det.pct ?? (det.score * 10);
+  const color = pct >= 80 ? 'var(--danger)' : pct >= 50 ? 'var(--warn)' : pct >= 25 ? 'var(--info)' : 'var(--success)';
+  const levelLabel = det.level || 'MINIMAL';
+  const matched = det.details?.aiPhrases?.matched || [];
+  return `<div class="ai-detect-box" style="border-left-color:${color}">
+    <div class="ai-detect-header">
+      <div class="ai-detect-gauge">
+        <div class="ai-detect-pct" style="color:${color}">${pct}%</div>
+        <div class="ai-detect-label">AI Likelihood</div>
+      </div>
+      <div class="ai-detect-meter">
+        <div class="ai-detect-meter-track"><div class="ai-detect-meter-fill" style="width:${pct}%;background:${color}"></div></div>
+        <span class="ai-badge ai-badge--${levelLabel.toLowerCase()}">${levelLabel}</span>
+      </div>
+    </div>
+    ${matched.length ? `<div class="ai-detect-phrases"><span class="muted" style="font-size:10px;font-weight:700">DETECTED PHRASES:</span> ${matched.map(p => `<span class="ai-detect-phrase">${esc(p)}</span>`).join(' ')}</div>` : ''}
+    <div class="muted" style="font-size:11px;margin-top:4px">${esc(det.message || '')}</div>
+  </div>`;
+}
+
+async function oboRunAiDetect() {
+  const students = allStudents();
+  const st = students[oboIndex];
+  if (!st) return;
+  const sub = submissionFor(st.id);
+  const text = submissionText(sub);
+  if (!text) { toast('No submission text to analyze.', 'warn'); return; }
+  toast('Analyzing for AI patterns...');
+  try {
+    const det = await POST('/api/ai-detect', { text });
+    if (!S.grades[st.id]) S.grades[st.id] = buildEmptyGrade(st.id);
+    S.grades[st.id].aiDetection = det;
+    S.grades[st.id].flagged = det.pct >= 80;
+    await saveGrade(st.id);
+    refreshOneByOneTab();
+    toast(`AI detection: ${det.pct}% likelihood (${det.level})`, det.pct >= 80 ? 'error' : 'success');
+  } catch (e) { toast('Detection failed: ' + e.message, 'error'); }
 }
 
 async function oboGradeWithAi() {
