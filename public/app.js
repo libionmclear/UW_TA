@@ -1,21 +1,32 @@
-/* ── State ────────────────────────────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════════════════
+   TA Companion — app.js
+   4-grader model: AI (auto) | Marco | Marlowe | Final
+   Sidebar: collapsible groups by assignment type from Canvas
+   Default course: B BUS 464 (auto-selected on login)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── State ─────────────────────────────────────────────────────────────────── */
 const S = {
   health: null,
   courses: [],
-  course: null,          // { id, name }
-  assignments: [],
-  assignment: null,      // { id, name, points_possible, due_at }
-  students: [],          // canvas enrollments
-  submissions: [],       // canvas submissions
-  rubric: null,          // active rubric object
-  rubrics: [],           // all saved rubrics
-  grades: {},            // studentId → grade object
+  course: null,
+  assignments: [],           // all Canvas assignments for current course
+  assignmentGroups: {},      // { groupName: [assignment, ...] }
+  currentAssignment: null,   // assignment currently open
+  students: [],
+  submissions: [],
+  grades: {},                // studentId → grade  (for current assignment)
+  allGrades: {},             // assignmentId → { studentId → grade }
+  rubric: null,              // active rubric for current assignment
+  rubrics: [],
+  aiInstructions: '',
   manualStudents: [],
-  aiInstructions: '',    // per-assignment AI grading instructions
   quizBank: { questions: [] },
 };
 
-/* ── API helpers ──────────────────────────────────────────────────────────── */
+const DEFAULT_COURSE_NAME = 'B BUS 464';
+
+/* ── API helpers ────────────────────────────────────────────────────────────── */
 async function api(method, path, body) {
   const opts = { method, headers: { 'Content-Type': 'application/json' } };
   if (body) opts.body = JSON.stringify(body);
@@ -24,361 +35,795 @@ async function api(method, path, body) {
   if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
   return data;
 }
-const GET  = p       => api('GET',    p);
-const POST = (p, b)  => api('POST',   p, b);
-const PUT  = (p, b)  => api('PUT',    p, b);
-const DEL  = p       => api('DELETE', p);
+const GET  = p      => api('GET',    p);
+const POST = (p, b) => api('POST',   p, b);
+const PUT  = (p, b) => api('PUT',    p, b);
+const DEL  = p      => api('DELETE', p);
 
-/* ── Toast ────────────────────────────────────────────────────────────────── */
+/* ── Toast ─────────────────────────────────────────────────────────────────── */
 let toastTimer;
 function toast(msg, type = '') {
   const el = document.getElementById('toast');
   el.textContent = msg;
   el.className = `toast ${type}`;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.add('hidden'), 3000);
+  toastTimer = setTimeout(() => el.classList.add('hidden'), 3500);
 }
 
-/* ── Tab navigation ───────────────────────────────────────────────────────── */
-document.querySelectorAll('.nav-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
-    const tab = btn.dataset.tab;
-    document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
-    document.querySelectorAll('.tab-content').forEach(s => s.classList.remove('active'));
-    btn.classList.add('active');
-    document.getElementById(`tab-${tab}`)?.classList.add('active');
-    if (tab === 'grades') renderGradesTable();
-    if (tab === 'students') renderStudentsTable();
-    if (tab === 'rubric') { renderSavedRubrics(); renderAiInstructionsPanel(); }
-    if (tab === 'overview') renderOverview();
-    if (tab === 'quiz') renderQuizBank();
-  });
-});
+/* ── Escape HTML ────────────────────────────────────────────────────────────── */
+function esc(str) {
+  return String(str ?? '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
 
-/* ── Startup ──────────────────────────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════════════════
+   BOOT
+   ═══════════════════════════════════════════════════════════════════════════ */
 async function init() {
-  try {
-    S.health = await GET('/api/health');
-    renderStatusBadges();
-  } catch { /* offline */ }
+  // Check health
+  try { S.health = await GET('/api/health'); renderStatusBadges(); } catch { }
 
-  await loadRubrics();
-  await loadQuizBank();
-  renderSavedRubrics();
-  renderRubricBuilder();
-  renderQuizBank();
+  // Load quiz bank
+  try { S.quizBank = await GET('/api/quiz-bank'); } catch { S.quizBank = { questions: [] }; }
 
+  // Load courses then auto-select B BUS 464
   if (S.health?.canvas) {
     await loadCourses();
+    autoSelectCourse();
   } else {
     document.getElementById('sel-course').innerHTML = '<option value="">Canvas not configured</option>';
+    showView('overview');
   }
 }
 
 function renderStatusBadges() {
   const el = document.getElementById('status-badges');
-  const canvas = S.health?.canvas
-    ? '<span class="badge badge--green">Canvas ✓</span>'
-    : '<span class="badge badge--red">Canvas ✗</span>';
-  const claude = S.health?.claude
-    ? '<span class="badge badge--green">Claude ✓</span>'
-    : '<span class="badge badge--red">Claude ✗</span>';
-  el.innerHTML = canvas + claude;
+  const c = S.health?.canvas ? '<span class="badge badge--green">Canvas ✓</span>' : '<span class="badge badge--red">Canvas ✗</span>';
+  const ai = S.health?.claude ? '<span class="badge badge--green">Claude ✓</span>' : '<span class="badge badge--red">Claude ✗</span>';
+  el.innerHTML = c + ai;
 }
 
-/* ── Courses ──────────────────────────────────────────────────────────────── */
+/* ── Courses ─────────────────────────────────────────────────────────────────── */
 async function loadCourses() {
   try {
     S.courses = await GET('/api/courses');
     const sel = document.getElementById('sel-course');
     sel.innerHTML = '<option value="">— Select Course —</option>' +
       S.courses.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
-  } catch (e) {
-    toast('Failed to load courses: ' + e.message, 'error');
+  } catch (e) { toast('Failed to load courses: ' + e.message, 'error'); }
+}
+
+function autoSelectCourse() {
+  const match = S.courses.find(c => c.name && c.name.toUpperCase().includes(DEFAULT_COURSE_NAME.toUpperCase()));
+  if (match) {
+    const sel = document.getElementById('sel-course');
+    sel.value = String(match.id);
+    sel.dispatchEvent(new Event('change'));
+  } else {
+    showView('overview');
   }
 }
 
 document.getElementById('sel-course').addEventListener('change', async function () {
   const id = this.value;
-  if (!id) { S.course = null; S.assignment = null; resetAssignment(); return; }
+  if (!id) { S.course = null; S.assignments = []; renderSidebar(); showView('overview'); return; }
   S.course = S.courses.find(c => String(c.id) === id) || { id, name: this.options[this.selectedIndex].text };
-  await loadAssignments(id);
+  await loadCourseData();
 });
 
-async function loadAssignments(courseId) {
+async function loadCourseData() {
+  if (!S.course) return;
+  toast('Loading course data…');
   try {
-    S.assignments = await GET(`/api/courses/${courseId}/assignments`);
-    const sel = document.getElementById('sel-assignment');
-    sel.disabled = false;
-    sel.innerHTML = '<option value="">— Select Assignment —</option>' +
-      S.assignments.map(a => {
-        const pts = a.points_possible ? ` (${a.points_possible} pts)` : '';
-        return `<option value="${a.id}">${esc(a.name)}${pts}</option>`;
-      }).join('');
-  } catch (e) {
-    toast('Failed to load assignments: ' + e.message, 'error');
+    const [assignments, allGradesRaw] = await Promise.all([
+      GET(`/api/courses/${S.course.id}/assignments`),
+      GET(`/api/grades/${S.course.id}/all`).catch(() => ({})),
+    ]);
+    S.assignments = assignments;
+    S.allGrades = allGradesRaw;
+    groupAssignments();
+    renderSidebar();
+    showView('overview');
+    toast('Course loaded.', 'success');
+  } catch (e) { toast('Load error: ' + e.message, 'error'); }
+}
+
+/* ── Assignment grouping ─────────────────────────────────────────────────────── */
+// Maps Canvas assignment name patterns → display group
+const GROUP_RULES = [
+  { key: 'Recorded Lectures', patterns: [/recorded lecture/i, /week \d.*chapter/i, /chapter \d.*week/i, /lecture.*week/i] },
+  { key: 'Quizzes',           patterns: [/quiz/i, /chapter \d{1,2}[-–]\d{1,2}/i] },
+  { key: 'Case Studies',      patterns: [/case study/i, /case analysis/i, /case:/i] },
+  { key: 'Class Activities',  patterns: [/class activity/i, /activity/i, /in-class/i] },
+  { key: 'Class Participation', patterns: [/participation/i, /class part/i] },
+];
+
+function classifyAssignment(a) {
+  const name = a.name || '';
+  for (const rule of GROUP_RULES) {
+    if (rule.patterns.some(p => p.test(name))) return rule.key;
   }
+  return 'Other Assignments';
 }
 
-document.getElementById('sel-assignment').addEventListener('change', async function () {
-  const id = this.value;
-  if (!id) { S.assignment = null; resetAssignment(); return; }
-  S.assignment = S.assignments.find(a => String(a.id) === id) ||
-    { id, name: this.options[this.selectedIndex].text };
-  await loadSubmissions();
-  await loadGrades();
-  await loadAssignmentSettings();
-  updateButtons();
-  renderOverview();
-  renderAiInstructionsPanel();
+function groupAssignments() {
+  const groups = {};
+  S.assignments.forEach(a => {
+    const g = classifyAssignment(a);
+    if (!groups[g]) groups[g] = [];
+    groups[g].push(a);
+  });
+  // Sort each group by due date
+  Object.values(groups).forEach(arr => arr.sort((a, b) => {
+    if (!a.due_at) return 1;
+    if (!b.due_at) return -1;
+    return new Date(a.due_at) - new Date(b.due_at);
+  }));
+  S.assignmentGroups = groups;
+}
+
+/* ── Sidebar ─────────────────────────────────────────────────────────────────── */
+const GROUP_ICONS = {
+  'Recorded Lectures':    '▶',
+  'Quizzes':              '?',
+  'Case Studies':         '📋',
+  'Class Activities':     '✏',
+  'Class Participation':  '✦',
+  'Other Assignments':    '◉',
+};
+
+// Track which groups are expanded
+const expandedGroups = new Set(['Recorded Lectures', 'Quizzes', 'Case Studies', 'Class Activities', 'Class Participation', 'Other Assignments']);
+
+function renderSidebar() {
+  const wrap = document.getElementById('sidebar-assignments');
+  if (!S.assignments.length) { wrap.innerHTML = ''; return; }
+
+  const ORDER = ['Recorded Lectures', 'Quizzes', 'Case Studies', 'Class Activities', 'Class Participation', 'Other Assignments'];
+  const keys = [...ORDER.filter(k => S.assignmentGroups[k]), ...Object.keys(S.assignmentGroups).filter(k => !ORDER.includes(k))];
+
+  wrap.innerHTML = keys.map(groupName => {
+    const assignments = S.assignmentGroups[groupName] || [];
+    const isOpen = expandedGroups.has(groupName);
+    const icon = GROUP_ICONS[groupName] || '◉';
+
+    // Count how many need grading in this group
+    const needsGrading = assignments.filter(a => assignmentNeedsGrading(a)).length;
+    const badge = needsGrading > 0 ? `<span class="sidebar-badge">${needsGrading}</span>` : '';
+
+    const items = assignments.map(a => {
+      const isActive = S.currentAssignment && String(S.currentAssignment.id) === String(a.id);
+      const pts = a.points_possible ? ` · ${a.points_possible}pt` : '';
+      const flag = assignmentNeedsGrading(a) ? '<span class="sidebar-dot"></span>' : '';
+      return `<button class="sidebar-item ${isActive ? 'active' : ''}" onclick="selectAssignment('${a.id}')" title="${esc(a.name)}">
+        ${flag}${esc(shortName(a.name))}${pts}
+      </button>`;
+    }).join('');
+
+    return `<div class="sidebar-group">
+      <button class="sidebar-group-header" onclick="toggleGroup('${esc(groupName)}')">
+        <span class="nav-icon">${icon}</span>
+        <span class="sidebar-group-name">${esc(groupName)}</span>
+        ${badge}
+        <span class="sidebar-chevron">${isOpen ? '▾' : '▸'}</span>
+      </button>
+      <div class="sidebar-group-items ${isOpen ? 'open' : ''}" id="grp-${esc(groupName)}">${items}</div>
+    </div>`;
+  }).join('');
+}
+
+function shortName(name) {
+  return name.length > 28 ? name.substring(0, 27) + '…' : name;
+}
+
+function toggleGroup(name) {
+  if (expandedGroups.has(name)) expandedGroups.delete(name);
+  else expandedGroups.add(name);
+  renderSidebar();
+}
+
+function assignmentNeedsGrading(a) {
+  const gradeData = S.allGrades[String(a.id)] || {};
+  const anyUnreviewed = Object.values(gradeData).some(g => g.status !== 'reviewed');
+  return anyUnreviewed; // simplistic — also true if no grades yet but has submissions
+}
+
+/* ── Sidebar nav buttons (non-assignment views) ──────────────────────────────── */
+document.querySelectorAll('.nav-btn[data-view]').forEach(btn => {
+  btn.addEventListener('click', () => showView(btn.dataset.view));
 });
 
-function resetAssignment() {
-  S.students = []; S.submissions = []; S.grades = {}; S.aiInstructions = '';
-  updateButtons(); renderOverview(); renderAiInstructionsPanel();
+function setActiveSidebarBtn(view) {
+  document.querySelectorAll('.nav-btn[data-view]').forEach(b => {
+    b.classList.toggle('active', b.dataset.view === view);
+  });
+  // Deactivate all assignment items if a static view is selected
+  document.querySelectorAll('.sidebar-item').forEach(b => b.classList.remove('active'));
 }
 
-/* ── Students & Submissions ───────────────────────────────────────────────── */
-async function loadSubmissions() {
-  if (!S.course || !S.assignment) return;
+/* ── Select assignment ───────────────────────────────────────────────────────── */
+async function selectAssignment(assignmentId) {
+  const a = S.assignments.find(x => String(x.id) === String(assignmentId));
+  if (!a) return;
+  S.currentAssignment = a;
+  S.students = [];
+  S.submissions = [];
+  S.grades = {};
+  S.rubric = null;
+  S.aiInstructions = '';
+
+  // Deactivate all sidebar items, activate this one
+  document.querySelectorAll('.sidebar-item').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.sidebar-item').forEach(b => {
+    if (b.onclick?.toString().includes(String(assignmentId))) b.classList.add('active');
+  });
+  setActiveSidebarBtn(null);
+
+  // Update header buttons
+  document.getElementById('btn-export').disabled = false;
+  document.getElementById('btn-grade-all').disabled = false;
+
+  showView('assignment');
+
+  // Load data in background
+  loadAssignmentData(assignmentId);
+}
+
+async function loadAssignmentData(assignmentId) {
+  if (!S.course) return;
+  const cid = S.course.id;
+  const aid = assignmentId;
+
   try {
-    const [enrollments, subs] = await Promise.all([
-      GET(`/api/courses/${S.course.id}/students`),
-      GET(`/api/courses/${S.course.id}/assignments/${S.assignment.id}/submissions`),
+    const [enrollments, subs, grades, settings, savedRubric] = await Promise.all([
+      GET(`/api/courses/${cid}/students`),
+      GET(`/api/courses/${cid}/assignments/${aid}/submissions`),
+      GET(`/api/grades/${cid}/${aid}`),
+      GET(`/api/assignment-settings/${cid}/${aid}`).catch(() => ({})),
+      GET(`/api/assignment-rubric/${cid}/${aid}`).catch(() => null),
+      GET('/api/rubrics').then(r => { S.rubrics = r; }).catch(() => {}),
     ]);
     S.students = enrollments;
     S.submissions = subs;
-    toast('Students and submissions loaded.', 'success');
-  } catch (e) {
-    toast('Canvas load error: ' + e.message, 'error');
-  }
-}
-
-async function loadGrades() {
-  if (!S.course || !S.assignment) return;
-  try {
-    S.grades = await GET(`/api/grades/${S.course.id}/${S.assignment.id}`);
-  } catch { S.grades = {}; }
-}
-
-document.getElementById('btn-refresh-students').addEventListener('click', async () => {
-  if (!S.course || !S.assignment) { toast('Select a course and assignment first.', 'warn'); return; }
-  await loadSubmissions();
-  renderStudentsTable();
-});
-
-/* ── Assignment Settings (AI Instructions) ────────────────────────────────── */
-async function loadAssignmentSettings() {
-  if (!S.course || !S.assignment) { S.aiInstructions = ''; return; }
-  try {
-    const settings = await GET(`/api/assignment-settings/${S.course.id}/${S.assignment.id}`);
+    S.grades = grades;
     S.aiInstructions = settings.aiInstructions || '';
-  } catch { S.aiInstructions = ''; }
-}
+    if (savedRubric) S.rubric = savedRubric;
+    else S.rubric = defaultRubricForAssignment(S.currentAssignment);
 
-function renderAiInstructionsPanel() {
-  const ta = document.getElementById('ai-instructions-text');
-  const status = document.getElementById('ai-instructions-status');
-  if (ta) ta.value = S.aiInstructions || '';
-  if (status) status.textContent = S.assignment ? `Assignment: ${S.assignment.name}` : 'No assignment selected';
-}
+    // Update allGrades cache
+    S.allGrades[String(aid)] = grades;
 
-document.getElementById('btn-save-ai-instructions').addEventListener('click', async () => {
-  if (!S.course || !S.assignment) { toast('Select an assignment first.', 'warn'); return; }
-  const text = document.getElementById('ai-instructions-text').value.trim();
-  S.aiInstructions = text;
-  try {
-    await PUT(`/api/assignment-settings/${S.course.id}/${S.assignment.id}`, { aiInstructions: text });
-    document.getElementById('ai-instructions-status').textContent = 'Saved!';
-    toast('AI instructions saved.', 'success');
-    setTimeout(() => {
-      const el = document.getElementById('ai-instructions-status');
-      if (el) el.textContent = `Assignment: ${S.assignment.name}`;
-    }, 2000);
+    renderAssignmentView();
+    renderSidebar();
+    toast('Assignment data loaded.', 'success');
   } catch (e) {
-    toast('Save failed: ' + e.message, 'error');
+    toast('Load error: ' + e.message, 'error');
+    renderAssignmentView();
   }
-});
+}
 
-/* ── Merge students + manual ──────────────────────────────────────────────── */
-function allStudents() {
-  const canvas = S.students.map(e => ({
-    id: String(e.user_id || e.user?.id || e.id),
-    name: e.user?.name || e.user?.sortable_name || `Student ${e.user_id}`,
-    source: 'canvas',
-  }));
-  const manual = S.manualStudents.map(s => ({ ...s, source: 'manual' }));
-  const seen = new Set();
-  return [...canvas, ...manual].filter(s => {
-    if (seen.has(s.id)) return false;
-    seen.add(s.id); return true;
+/* ── Default rubric based on assignment type ─────────────────────────────────── */
+function defaultRubricForAssignment(a) {
+  if (!a) return defaultRubric();
+  const group = classifyAssignment(a);
+  const pts = a.points_possible || 15;
+
+  if (group === 'Recorded Lectures') {
+    return {
+      name: a.name, totalPoints: pts,
+      criteria: [
+        { id: 'c1', name: 'Lecture Viewed', maxPoints: pts, description: 'Student has watched all required lecture videos for this week.', autoGrant: false },
+      ],
+    };
+  }
+  if (group === 'Quizzes') {
+    return {
+      name: a.name, totalPoints: pts,
+      criteria: [
+        { id: 'c1', name: 'Quiz Score', maxPoints: pts, description: 'Automatically graded quiz score (5 pts).', autoGrant: false },
+      ],
+    };
+  }
+  if (group === 'Case Studies') {
+    return {
+      name: a.name, totalPoints: pts,
+      description: '',
+      criteria: [
+        { id: 'c1', name: 'Submission', maxPoints: 5, description: 'Student submitted any work.', autoGrant: true },
+        { id: 'c2', name: 'Executive Summary & Recommendations', maxPoints: 4, description: 'Clear executive summary with specific, actionable recommendations presented upfront.', autoGrant: false },
+        { id: 'c3', name: 'Supporting Points & Evidence', maxPoints: 3, description: 'Recommendations backed with data, evidence, and analysis.', autoGrant: false },
+        { id: 'c4', name: 'Conclusion / Alternatives', maxPoints: 2, description: 'Thoughtful conclusion with alternatives considered or other insights.', autoGrant: false },
+        { id: 'c5', name: 'Writing Quality', maxPoints: 1, description: 'Well-organized, clearly written, and professional.', autoGrant: false },
+      ],
+    };
+  }
+  return defaultRubric();
+}
+
+function defaultRubric() {
+  return {
+    name: '', totalPoints: 15,
+    criteria: [
+      { id: 'c1', name: 'Submission', maxPoints: 5, description: 'Student submitted any work.', autoGrant: true },
+      { id: 'c2', name: 'Executive Summary & Recommendations', maxPoints: 3, description: 'Clear executive summary with specific, actionable recommendations upfront.', autoGrant: false },
+      { id: 'c3', name: 'Supporting Points & Evidence', maxPoints: 3, description: 'Claims backed with specific evidence, data, or analysis.', autoGrant: false },
+      { id: 'c4', name: 'Conclusion / Alternatives', maxPoints: 3, description: 'Thoughtful conclusion, alternatives considered, additional insights.', autoGrant: false },
+      { id: 'c5', name: 'Writing Quality', maxPoints: 1, description: 'Well-organized, clearly written, professional.', autoGrant: false },
+    ],
+  };
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   VIEWS — rendered into #view-root
+   ═══════════════════════════════════════════════════════════════════════════ */
+let currentView = null;
+
+function showView(name) {
+  currentView = name;
+  if (name !== 'assignment') setActiveSidebarBtn(name);
+  const root = document.getElementById('view-root');
+  switch (name) {
+    case 'overview':    renderOverview(root); break;
+    case 'assignment':  renderAssignmentView(root); break;
+    case 'quiz':        renderQuizView(root); break;
+    case 'content':     renderContentView(root); break;
+    case 'manual':      renderManualView(root); break;
+    default:            renderOverview(root);
+  }
+}
+
+/* ── OVERVIEW VIEW ───────────────────────────────────────────────────────────── */
+function renderOverview(root) {
+  root = root || document.getElementById('view-root');
+
+  // Compute stats across all assignments
+  const now = new Date();
+  const upcoming = S.assignments
+    .filter(a => a.due_at && new Date(a.due_at) > now)
+    .sort((a, b) => new Date(a.due_at) - new Date(b.due_at))
+    .slice(0, 8);
+
+  const needsGrading = S.assignments.filter(a => {
+    const g = S.allGrades[String(a.id)] || {};
+    return Object.values(g).some(gr => gr.status !== 'reviewed');
   });
-}
 
-function submissionFor(studentId) {
-  return S.submissions.find(s => String(s.user_id) === String(studentId)) || null;
-}
+  // Recent graded — last assignment with all reviewed
+  const recentlyGraded = S.assignments.filter(a => {
+    const g = S.allGrades[String(a.id)] || {};
+    const vals = Object.values(g);
+    return vals.length > 0 && vals.every(gr => gr.status === 'reviewed');
+  }).slice(-3);
 
-function submissionText(sub) {
-  if (!sub) return '';
-  if (sub._manualText) return sub._manualText;
-  if (sub.body) return sub.body;
-  return '';
-}
+  // AI flags across all assignments
+  const allFlags = [];
+  Object.entries(S.allGrades).forEach(([aid, students]) => {
+    const a = S.assignments.find(x => String(x.id) === aid);
+    Object.values(students).forEach(g => {
+      if (g.flagged) allFlags.push({ ...g, assignmentName: a?.name || aid });
+    });
+  });
 
-/* ── Students Table ───────────────────────────────────────────────────────── */
-function renderStudentsTable() {
-  const wrap = document.getElementById('students-table-wrap');
-  const students = allStudents();
-  if (!students.length) {
-    wrap.innerHTML = '<p class="muted padded">No students loaded. Select an assignment or add manually.</p>';
-    return;
+  // Avg score of most recent reviewed assignment
+  let avgHtml = '—';
+  if (recentlyGraded.length) {
+    const last = recentlyGraded[recentlyGraded.length - 1];
+    const grades = Object.values(S.allGrades[String(last.id)] || {});
+    const scores = grades.map(g => g.finalScore).filter(s => s != null);
+    if (scores.length) {
+      const avg = (scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1);
+      avgHtml = `${avg} / ${last.points_possible || '?'} <span class="muted" style="font-size:12px">(${esc(last.name)})</span>`;
+    }
   }
+
+  root.innerHTML = `
+    <div class="page-title">Overview — ${esc(S.course?.name || 'No course selected')}</div>
+
+    <!-- Stat strip -->
+    <div class="stat-cards">
+      <div class="stat-card">
+        <div class="stat-value">${S.assignments.length || '—'}</div>
+        <div class="stat-label">Assignments</div>
+      </div>
+      <div class="stat-card stat-card--warn">
+        <div class="stat-value">${needsGrading.length || '0'}</div>
+        <div class="stat-label">Need Grading</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value">${allFlags.length || '0'}</div>
+        <div class="stat-label">AI Flags</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" style="font-size:18px">${avgHtml}</div>
+        <div class="stat-label">Last Avg Score</div>
+      </div>
+    </div>
+
+    <div class="overview-grid">
+
+      <!-- Needs Grading -->
+      <div class="card card-full">
+        <div class="card-title">🔴 Needs Grading (${needsGrading.length})</div>
+        ${needsGrading.length ? `<table class="overview-table">
+          <thead><tr><th>Assignment</th><th>Type</th><th>Due</th><th>Points</th><th>Pending</th><th></th></tr></thead>
+          <tbody>${needsGrading.map(a => {
+            const g = S.allGrades[String(a.id)] || {};
+            const pending = Object.values(g).filter(gr => gr.status !== 'reviewed').length;
+            const due = a.due_at ? new Date(a.due_at).toLocaleDateString() : '—';
+            return `<tr>
+              <td><button class="link-btn" onclick="selectAssignment('${a.id}')">${esc(a.name)}</button></td>
+              <td><span class="type-badge">${esc(classifyAssignment(a))}</span></td>
+              <td>${due}</td>
+              <td>${a.points_possible || '—'}</td>
+              <td><span class="status-badge status--warn">${pending} pending</span></td>
+              <td><button class="btn btn-surf" style="font-size:11px;padding:4px 10px" onclick="selectAssignment('${a.id}')">Open</button></td>
+            </tr>`;
+          }).join('')}</tbody>
+        </table>` : '<p class="muted">All assignments reviewed! 🎉</p>'}
+      </div>
+
+      <!-- Upcoming Due -->
+      <div class="card">
+        <div class="card-title">📅 Upcoming Due Dates</div>
+        ${upcoming.length ? `<ul class="overview-list">${upcoming.map(a => {
+          const due = new Date(a.due_at);
+          const diff = Math.ceil((due - now) / (1000 * 60 * 60 * 24));
+          const urgency = diff <= 2 ? 'color:var(--danger);font-weight:700' : diff <= 7 ? 'color:var(--warn)' : '';
+          return `<li>
+            <button class="link-btn" onclick="selectAssignment('${a.id}')">${esc(a.name)}</button>
+            <span style="${urgency}">${due.toLocaleDateString()} (${diff}d)</span>
+          </li>`;
+        }).join('')}</ul>` : '<p class="muted">No upcoming due dates.</p>'}
+      </div>
+
+      <!-- AI Flags -->
+      <div class="card">
+        <div class="card-title">⚑ AI Flags (${allFlags.length})</div>
+        ${allFlags.length ? `<ul class="overview-list">${allFlags.slice(0, 10).map(f => `
+          <li>
+            <strong>${esc(f.studentName)}</strong>
+            <span class="muted">${esc(f.assignmentName)}</span>
+            <span class="ai-badge ai-badge--high">${f.aiConfidence || 0}%</span>
+          </li>`).join('')}
+          ${allFlags.length > 10 ? `<li class="muted">…and ${allFlags.length - 10} more</li>` : ''}
+        </ul>` : '<p class="muted">No AI flags.</p>'}
+      </div>
+
+      <!-- Recently Graded -->
+      <div class="card">
+        <div class="card-title">✅ Recently Completed</div>
+        ${recentlyGraded.length ? `<ul class="overview-list">${recentlyGraded.map(a => {
+          const grades = Object.values(S.allGrades[String(a.id)] || {});
+          const scores = grades.map(g => g.finalScore).filter(s => s != null);
+          const avg = scores.length ? (scores.reduce((x, y) => x + y, 0) / scores.length).toFixed(1) : '—';
+          return `<li>
+            <button class="link-btn" onclick="selectAssignment('${a.id}')">${esc(a.name)}</button>
+            <span>Avg: <strong>${avg}</strong> / ${a.points_possible || '?'}</span>
+          </li>`;
+        }).join('')}</ul>` : '<p class="muted">No completed assignments yet.</p>'}
+      </div>
+
+    </div>`;
+}
+
+/* ── ASSIGNMENT VIEW ─────────────────────────────────────────────────────────── */
+function renderAssignmentView(root) {
+  root = root || document.getElementById('view-root');
+  const a = S.currentAssignment;
+  if (!a) { root.innerHTML = '<p class="muted padded">Select an assignment from the sidebar.</p>'; return; }
+
+  const group = classifyAssignment(a);
+  const due = a.due_at ? new Date(a.due_at).toLocaleDateString() : 'No due date';
+  const students = allStudents();
+  const graded  = Object.values(S.grades).filter(g => g.status !== 'pending');
+  const flagged = Object.values(S.grades).filter(g => g.flagged);
+  const scores  = Object.values(S.grades).map(g => g.finalScore).filter(s => s != null);
+  const avg     = scores.length ? (scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1) : '—';
+
+  root.innerHTML = `
+    <div class="page-title">
+      ${esc(a.name)}
+      <span class="type-badge" style="font-size:13px">${esc(group)}</span>
+      <div class="page-actions">
+        <button class="btn btn-ghost" onclick="selectAssignment('${a.id}')">⟳ Refresh</button>
+      </div>
+    </div>
+
+    <!-- Assignment meta + stats -->
+    <div class="assignment-meta-bar">
+      <span>Due: <strong>${due}</strong></span>
+      <span>Points: <strong>${a.points_possible || '?'}</strong></span>
+      <span>Students: <strong>${students.length}</strong></span>
+      <span>Graded: <strong>${graded.length}</strong></span>
+      <span>Avg: <strong>${avg}</strong></span>
+      ${flagged.length ? `<span class="ai-badge ai-badge--high">⚑ ${flagged.length} AI flags</span>` : ''}
+    </div>
+
+    <!-- Tabs -->
+    <div class="assign-tabs" id="assign-tabs">
+      <button class="assign-tab active" data-atab="instructions" onclick="switchAssignTab('instructions')">Instructions & Rubric</button>
+      <button class="assign-tab" data-atab="students" onclick="switchAssignTab('students')">Students (${students.length})</button>
+      <button class="assign-tab" data-atab="matrix" onclick="switchAssignTab('matrix')">Grading Matrix</button>
+    </div>
+
+    <div id="atab-instructions" class="atab-content active">${renderInstructionsTab()}</div>
+    <div id="atab-students"     class="atab-content">${renderStudentsTabHtml()}</div>
+    <div id="atab-matrix"       class="atab-content">${renderMatrixTabHtml()}</div>
+  `;
+}
+
+function switchAssignTab(tab) {
+  document.querySelectorAll('.assign-tab').forEach(b => b.classList.toggle('active', b.dataset.atab === tab));
+  document.querySelectorAll('.atab-content').forEach(c => c.classList.toggle('active', c.id === `atab-${tab}`));
+}
+
+/* ── Instructions & Rubric Tab ───────────────────────────────────────────────── */
+function renderInstructionsTab() {
+  const rubric = S.rubric || defaultRubricForAssignment(S.currentAssignment);
+  const criteriaHtml = (rubric.criteria || []).map((c, i) => `
+    <div class="criterion-row ${c.autoGrant ? 'auto-grant' : ''}" id="cr-${esc(c.id)}">
+      <div class="criterion-inner">
+        <input class="input" type="text" placeholder="Criterion name" value="${esc(c.name)}"
+          oninput="updateCriterion('${esc(c.id)}','name',this.value)" />
+        <textarea class="input" rows="2" placeholder="Description — what earns full points?"
+          oninput="updateCriterion('${esc(c.id)}','description',this.value)">${esc(c.description)}</textarea>
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--text-muted)">Max Pts</label>
+        <input class="input criterion-pts" type="number" min="0" value="${c.maxPoints}"
+          oninput="updateCriterion('${esc(c.id)}','maxPoints',Number(this.value))" />
+      </div>
+      <div class="criterion-autogrant">
+        <label>Auto</label>
+        <input type="checkbox" ${c.autoGrant ? 'checked' : ''}
+          onchange="updateCriterion('${esc(c.id)}','autoGrant',this.checked)" />
+      </div>
+      <button class="criterion-delete" onclick="deleteCriterion('${esc(c.id)}')" title="Remove">✕</button>
+    </div>`).join('');
+
+  return `
+    <div class="two-col-grid">
+
+      <!-- AI Grading Instructions -->
+      <div class="card">
+        <div class="card-title">AI Grading Instructions
+          <span class="card-title-hint">Injected into every AI grading prompt for this assignment</span>
+        </div>
+        <textarea id="ai-instructions-text" class="input" rows="5"
+          placeholder="Enter specific grading instructions for the AI…
+
+Example: 'This is a case write-up. Students MUST have an executive summary with recommendations, supporting points, and a conclusion with alternatives. Penalize missing sections heavily.'"
+        >${esc(S.aiInstructions)}</textarea>
+        <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
+          <button class="btn btn-surf" onclick="saveAiInstructions()">Save Instructions</button>
+          <span id="ai-instr-status" class="muted" style="font-size:12px"></span>
+        </div>
+        <div class="case-reminder">
+          <strong>Case Write-up Format:</strong>
+          ① Executive Summary + Recommendations &nbsp;·&nbsp;
+          ② Supporting Points &amp; Evidence &nbsp;·&nbsp;
+          ③ Conclusion / Alternatives / Other Thoughts
+        </div>
+      </div>
+
+      <!-- Rubric -->
+      <div class="card">
+        <div class="card-title">
+          Rubric
+          <div class="page-actions" style="margin-left:auto">
+            <button class="btn btn-ghost" style="font-size:12px" onclick="generateRubricAi()">✦ AI Generate</button>
+            <button class="btn btn-surf" style="font-size:12px" onclick="saveAssignmentRubric()">Save Rubric</button>
+          </div>
+        </div>
+        <div class="rubric-meta-row" style="margin-bottom:12px">
+          <div class="field-group field-group--sm">
+            <label>Total Points</label>
+            <input id="rubric-total" type="number" class="input" value="${rubric.totalPoints || 15}" min="1"
+              oninput="if(S.rubric)S.rubric.totalPoints=Number(this.value)" />
+          </div>
+          <div class="field-group" style="flex:1">
+            <label>Description (for AI generation)</label>
+            <input id="rubric-desc" type="text" class="input" placeholder="Describe the assignment…"
+              value="${esc(rubric.description || '')}"
+              oninput="if(S.rubric)S.rubric.description=this.value" />
+          </div>
+        </div>
+        <div id="rubric-criteria-list">${criteriaHtml}</div>
+        <button class="btn btn-ghost btn-add-row" onclick="addCriterion()">+ Add Criterion</button>
+      </div>
+
+    </div>`;
+}
+
+function updateCriterion(id, field, value) {
+  if (!S.rubric) return;
+  const c = S.rubric.criteria.find(x => x.id === id);
+  if (c) c[field] = value;
+  if (field === 'autoGrant') document.getElementById(`cr-${id}`)?.classList.toggle('auto-grant', value);
+}
+
+function deleteCriterion(id) {
+  if (!S.rubric) return;
+  S.rubric.criteria = S.rubric.criteria.filter(c => c.id !== id);
+  refreshInstructionsTab();
+}
+
+function addCriterion() {
+  if (!S.rubric) S.rubric = defaultRubricForAssignment(S.currentAssignment);
+  S.rubric.criteria.push({ id: 'c' + Date.now(), name: '', maxPoints: 3, description: '', autoGrant: false });
+  refreshInstructionsTab();
+}
+
+function refreshInstructionsTab() {
+  const el = document.getElementById('atab-instructions');
+  if (el) el.innerHTML = renderInstructionsTab();
+}
+
+async function saveAiInstructions() {
+  if (!S.course || !S.currentAssignment) { toast('No assignment selected.', 'warn'); return; }
+  S.aiInstructions = document.getElementById('ai-instructions-text')?.value?.trim() || '';
+  try {
+    await PUT(`/api/assignment-settings/${S.course.id}/${S.currentAssignment.id}`, { aiInstructions: S.aiInstructions });
+    const el = document.getElementById('ai-instr-status');
+    if (el) { el.textContent = 'Saved!'; setTimeout(() => { el.textContent = ''; }, 2000); }
+    toast('Instructions saved.', 'success');
+  } catch (e) { toast('Save failed: ' + e.message, 'error'); }
+}
+
+async function saveAssignmentRubric() {
+  if (!S.course || !S.currentAssignment || !S.rubric) { toast('No rubric to save.', 'warn'); return; }
+  try {
+    await PUT(`/api/assignment-rubric/${S.course.id}/${S.currentAssignment.id}`, S.rubric);
+    toast('Rubric saved.', 'success');
+  } catch (e) { toast('Save failed: ' + e.message, 'error'); }
+}
+
+async function generateRubricAi() {
+  const desc = document.getElementById('rubric-desc')?.value || S.currentAssignment?.name || '';
+  const pts  = Number(document.getElementById('rubric-total')?.value) || 15;
+  if (!desc) { toast('Enter a description first.', 'warn'); return; }
+  if (!S.health?.claude) { toast('Claude not configured.', 'error'); return; }
+  toast('Generating rubric…');
+  try {
+    const gen = await POST('/api/rubrics/generate', { description: desc, totalPoints: pts });
+    S.rubric = { ...gen, id: S.rubric?.id };
+    refreshInstructionsTab();
+    toast('Rubric generated! Save it when ready.', 'success');
+  } catch (e) { toast('Generation failed: ' + e.message, 'error'); }
+}
+
+/* ── Students Tab ────────────────────────────────────────────────────────────── */
+function renderStudentsTabHtml() {
+  const students = allStudents();
+  if (!students.length) return '<p class="muted padded">No students loaded yet. Data loads automatically.</p>';
 
   const rows = students.map(st => {
     const sub = submissionFor(st.id);
     const g = S.grades[st.id];
     const submitted = sub && sub.workflow_state !== 'unsubmitted' ? '✓' : '—';
-    const isLate = sub?.late ? '<span class="status-badge status--late">LATE</span>' : '';
-    const gradeStatus = g
-      ? `<span class="status-badge status--graded">${g.status === 'reviewed' ? 'Reviewed' : 'AI Graded'}</span>`
+    const late = sub?.late ? '<span class="status-badge status--late">LATE</span>' : '';
+    const status = g
+      ? `<span class="status-badge status--${g.status === 'reviewed' ? 'reviewed' : 'graded'}">${g.status === 'reviewed' ? 'Reviewed' : 'AI Graded'}</span>`
       : '<span class="status-badge status--pending">Pending</span>';
-    const flagged = g?.flagged ? '<span class="ai-badge ai-badge--flagged">⚑ AI Flag</span>' : '';
-    const finalPts = g?.finalScore != null ? `<strong>${g.finalScore}</strong>` : '—';
+    const flag = g?.flagged ? '<span class="ai-badge ai-badge--flagged">⚑ AI</span>' : '';
+    const final = g?.finalScore != null ? `<strong>${g.finalScore}</strong>` : '—';
 
     return `<tr>
-      <td class="col-sticky"><button class="link-btn" onclick="openStudent('${esc(st.id)}')">${esc(st.name)}</button></td>
+      <td><button class="link-btn" onclick="openStudent('${esc(st.id)}')">${esc(st.name)}</button></td>
       <td style="text-align:center">${submitted}</td>
-      <td>${isLate}</td>
-      <td>${gradeStatus} ${flagged}</td>
-      <td style="text-align:center">${finalPts} ${S.rubric ? '/ ' + S.rubric.totalPoints : ''}</td>
-      <td>
-        <button class="btn btn-surf-sec" style="font-size:11px;padding:4px 8px"
-          onclick="openStudent('${esc(st.id)}')">View/Grade</button>
-      </td>
+      <td>${late}</td>
+      <td>${status} ${flag}</td>
+      <td style="text-align:center">${final} ${S.rubric ? '/ ' + S.rubric.totalPoints : ''}</td>
+      <td><button class="btn btn-surf-sec" style="font-size:11px;padding:4px 8px" onclick="openStudent('${esc(st.id)}')">View/Grade</button></td>
     </tr>`;
   }).join('');
 
-  wrap.innerHTML = `<table>
-    <thead><tr>
-      <th>Student</th><th>Submitted</th><th>Status</th><th>Grade Status</th><th>Score</th><th></th>
-    </tr></thead>
+  return `<table>
+    <thead><tr><th>Student</th><th>Submitted</th><th>Status</th><th>Grade Status</th><th>Score</th><th></th></tr></thead>
     <tbody>${rows}</tbody>
   </table>`;
 }
 
-/* ── Grading Matrix ───────────────────────────────────────────────────────── */
-function renderGradesTable() {
-  const wrap = document.getElementById('grades-table-wrap');
+/* ── Grading Matrix Tab ──────────────────────────────────────────────────────── */
+function renderMatrixTabHtml() {
   const students = allStudents();
-  if (!students.length) {
-    wrap.innerHTML = '<p class="muted padded">No students. Select an assignment or add manually.</p>';
-    return;
-  }
-  if (!S.rubric) {
-    wrap.innerHTML = '<p class="muted padded">No rubric active. Build one in the Rubric tab first.</p>';
-    return;
-  }
+  if (!students.length) return '<p class="muted padded">No students loaded.</p>';
+  if (!S.rubric) return '<p class="muted padded">No rubric set. Configure it in the Instructions & Rubric tab.</p>';
 
   const criteria = S.rubric.criteria;
 
   const headerCols = criteria.map(c =>
-    `<th colspan="3" title="${esc(c.description)}" style="text-align:center">${esc(c.name)}<br><small style="opacity:.7">/ ${c.maxPoints}</small></th>`
+    `<th colspan="3" style="text-align:center" title="${esc(c.description)}">${esc(c.name)}<br><small>/ ${c.maxPoints}</small></th>`
   ).join('');
 
-  const subHeaderCols = criteria.map(() =>
-    `<th class="sub-th sub-th-ai">AI</th><th class="sub-th sub-th-h1">TA</th><th class="sub-th sub-th-h2">Instr.</th>`
+  const subHeaders = criteria.map(() =>
+    `<th class="sub-th sub-th-ai">AI</th><th class="sub-th sub-th-m1">Marco</th><th class="sub-th sub-th-m2">Marlowe</th>`
   ).join('');
 
   const rows = students.map(st => {
     const g = S.grades[st.id];
     const sub = submissionFor(st.id);
     const submitted = sub && sub.workflow_state !== 'unsubmitted';
-    const isLate = sub?.late;
     const flagged = g?.flagged;
 
-    let rowClass = '';
-    if (flagged) rowClass = 'row--flagged';
-    else if (g?.status === 'reviewed') rowClass = 'row--reviewed';
+    let rowClass = flagged ? 'row--flagged' : g?.status === 'reviewed' ? 'row--reviewed' : '';
 
     const aiConf = g?.aiDetection
-      ? `<span class="ai-badge ai-badge--${g.aiDetection.level?.toLowerCase() || 'none'}">${g.aiDetection.score * 10}%</span>`
+      ? `<span class="ai-badge ai-badge--${(g.aiDetection.level || 'none').toLowerCase()}">${g.aiDetection.score * 10}%</span>`
       : '—';
 
-    const statusBadge = !submitted
-      ? '<span class="status-badge status--pending">Not Submitted</span>'
-      : isLate
-        ? '<span class="status-badge status--late">Late</span>'
-        : g
-          ? `<span class="status-badge status--${g.status === 'reviewed' ? 'reviewed' : 'graded'}">${g.status === 'reviewed' ? 'Reviewed' : 'Graded'}</span>`
-          : '<span class="status-badge status--submitted">Submitted</span>';
-
-    const flagBadge = flagged ? '<span class="ai-badge ai-badge--flagged">⚑ AI</span>' : '';
+    const statusBadge = !submitted ? '<span class="status-badge status--pending">Not Submitted</span>'
+      : sub?.late ? '<span class="status-badge status--late">Late</span>'
+      : g ? `<span class="status-badge status--${g.status === 'reviewed' ? 'reviewed' : 'graded'}">${g.status === 'reviewed' ? 'Reviewed' : 'Graded'}</span>`
+      : '<span class="status-badge status--submitted">Submitted</span>';
 
     const scoreCols = criteria.map(c => {
       const cd = g?.criteria?.[c.id];
-      const aiS = cd?.aiScore != null ? cd.aiScore : '—';
-      const h1Val = cd?.humanScore != null ? cd.humanScore : '';
-      const h2Val = cd?.humanScore2 != null ? cd.humanScore2 : '';
-      return `<td class="score-td score-td-ai"><span class="score-ai">${aiS}</span></td>
-        <td class="score-td score-td-h1">
-          <input class="score-human-input ${h1Val !== '' ? 'changed' : ''}"
-            type="number" min="0" max="${c.maxPoints}" placeholder="—"
-            value="${h1Val}"
-            data-student="${esc(st.id)}" data-criterion="${esc(c.id)}" data-max="${c.maxPoints}" data-grade="1"
-            onchange="onHumanScoreChange(this)" />
+      const aiS   = cd?.aiScore    != null ? cd.aiScore    : '—';
+      const marV  = cd?.marcoScore != null ? cd.marcoScore : '';
+      const mrlV  = cd?.marlowScore != null ? cd.marlowScore : '';
+      return `
+        <td class="score-td score-td-ai"><span class="score-ai">${aiS}</span></td>
+        <td class="score-td score-td-m1">
+          <input class="score-human-input ${marV !== '' ? 'changed' : ''}" type="number" min="0" max="${c.maxPoints}"
+            placeholder="—" value="${marV}"
+            data-student="${esc(st.id)}" data-criterion="${esc(c.id)}" data-max="${c.maxPoints}" data-grader="marco"
+            onchange="onScoreChange(this)" />
         </td>
-        <td class="score-td score-td-h2">
-          <input class="score-human-input score-h2-input ${h2Val !== '' ? 'changed' : ''}"
-            type="number" min="0" max="${c.maxPoints}" placeholder="—"
-            value="${h2Val}"
-            data-student="${esc(st.id)}" data-criterion="${esc(c.id)}" data-max="${c.maxPoints}" data-grade="2"
-            onchange="onHumanScoreChange(this)" />
+        <td class="score-td score-td-m2">
+          <input class="score-human-input score-m2-input ${mrlV !== '' ? 'changed' : ''}" type="number" min="0" max="${c.maxPoints}"
+            placeholder="—" value="${mrlV}"
+            data-student="${esc(st.id)}" data-criterion="${esc(c.id)}" data-max="${c.maxPoints}" data-grader="marlowe"
+            onchange="onScoreChange(this)" />
         </td>`;
     }).join('');
 
-    const aiTotal   = g?.aiTotalScore != null ? g.aiTotalScore : '—';
-    const h1Total   = g?.humanTotalScore != null ? g.humanTotalScore : '—';
-    const h2Total   = g?.humanTotalScore2 != null ? g.humanTotalScore2 : '—';
-    const finalScore = g?.finalScore != null ? `<strong>${g.finalScore}</strong>` : '—';
+    const aiT  = g?.aiTotalScore     != null ? g.aiTotalScore     : '—';
+    const marT = g?.marcoTotalScore  != null ? g.marcoTotalScore  : '—';
+    const mrlT = g?.marloweTotalScore != null ? g.marloweTotalScore : '—';
+    const fin  = g?.finalScore       != null ? `<strong>${g.finalScore}</strong>` : '—';
 
     return `<tr class="${rowClass}" id="row-${esc(st.id)}">
-      <td class="col-sticky">
-        <button class="link-btn" onclick="openStudent('${esc(st.id)}')">${esc(st.name)}</button>
-      </td>
-      <td>${statusBadge} ${flagBadge}</td>
+      <td class="col-sticky"><button class="link-btn" onclick="openStudent('${esc(st.id)}')">${esc(st.name)}</button></td>
+      <td>${statusBadge} ${flagged ? '<span class="ai-badge ai-badge--flagged">⚑</span>' : ''}</td>
       <td>${aiConf}</td>
       ${scoreCols}
-      <td class="score-td score-td-ai" style="text-align:center">${aiTotal}</td>
-      <td class="score-td score-td-h1" style="text-align:center">${h1Total}</td>
-      <td class="score-td score-td-h2" style="text-align:center">${h2Total}</td>
-      <td style="text-align:center">${finalScore}</td>
+      <td class="score-td score-td-ai">${aiT}</td>
+      <td class="score-td score-td-m1">${marT}</td>
+      <td class="score-td score-td-m2">${mrlT}</td>
+      <td><strong>${fin}</strong></td>
     </tr>`;
   }).join('');
 
-  wrap.innerHTML = `<table>
+  return `<div class="grade-col-legend">
+    <span class="legend-item legend-ai">AI (auto)</span>
+    <span class="legend-item legend-m1">Marco</span>
+    <span class="legend-item legend-m2">Marlowe</span>
+    <span class="muted" style="font-size:11px">Final = last human grade entered (Marlowe → Marco → AI)</span>
+  </div>
+  <div class="table-wrap"><table>
     <thead>
       <tr>
-        <th rowspan="2">Student</th>
-        <th rowspan="2">Status</th>
-        <th rowspan="2">AI Conf.</th>
+        <th rowspan="2">Student</th><th rowspan="2">Status</th><th rowspan="2">AI Conf.</th>
         ${headerCols}
         <th rowspan="2" class="sub-th-ai">AI Total</th>
-        <th rowspan="2" class="sub-th-h1">TA Total</th>
-        <th rowspan="2" class="sub-th-h2">Instr. Total</th>
+        <th rowspan="2" class="sub-th-m1">Marco</th>
+        <th rowspan="2" class="sub-th-m2">Marlowe</th>
         <th rowspan="2">Final</th>
       </tr>
-      <tr>${subHeaderCols}</tr>
+      <tr>${subHeaders}</tr>
     </thead>
     <tbody>${rows}</tbody>
-  </table>`;
+  </table></div>`;
 }
 
-async function onHumanScoreChange(input) {
-  const studentId = input.dataset.student;
+/* ── Score change handler ────────────────────────────────────────────────────── */
+async function onScoreChange(input) {
+  const studentId  = input.dataset.student;
   const criterionId = input.dataset.criterion;
-  const max = Number(input.dataset.max);
-  const gradeNum = input.dataset.grade; // '1' or '2'
+  const max    = Number(input.dataset.max);
+  const grader = input.dataset.grader; // 'marco' or 'marlowe'
   let val = input.value.trim() === '' ? null : Number(input.value);
   if (val !== null) val = Math.max(0, Math.min(max, val));
 
@@ -386,93 +831,57 @@ async function onHumanScoreChange(input) {
   if (!S.grades[studentId].criteria) S.grades[studentId].criteria = {};
   if (!S.grades[studentId].criteria[criterionId]) S.grades[studentId].criteria[criterionId] = {};
 
-  if (gradeNum === '2') {
-    S.grades[studentId].criteria[criterionId].humanScore2 = val;
-  } else {
-    S.grades[studentId].criteria[criterionId].humanScore = val;
-  }
+  if (grader === 'marlowe') S.grades[studentId].criteria[criterionId].marlowScore = val;
+  else                       S.grades[studentId].criteria[criterionId].marcoScore  = val;
 
   recalcTotals(studentId);
   S.grades[studentId].status = 'reviewed';
   input.classList.toggle('changed', val !== null);
-
   await saveGrade(studentId);
-}
-
-function buildEmptyGrade(studentId) {
-  const st = allStudents().find(s => s.id === studentId);
-  const sub = submissionFor(studentId);
-  return {
-    studentId,
-    studentName: st?.name || studentId,
-    submitted: !!(sub && sub.workflow_state !== 'unsubmitted'),
-    isLate: sub?.late || false,
-    rubric: S.rubric,
-    criteria: {},
-    status: 'pending',
-  };
 }
 
 function recalcTotals(studentId) {
   const g = S.grades[studentId];
   if (!g || !S.rubric) return;
-  let aiTotal = 0, h1Total = 0, h2Total = 0, hasH1 = false, hasH2 = false;
+  let aiT = 0, marT = 0, mrlT = 0, hasMarco = false, hasMarlow = false;
   S.rubric.criteria.forEach(c => {
     const cd = g.criteria?.[c.id] || {};
-    if (cd.aiScore != null) aiTotal += cd.aiScore;
-    if (cd.humanScore != null) { h1Total += cd.humanScore; hasH1 = true; }
-    else if (cd.aiScore != null) h1Total += cd.aiScore;
-    if (cd.humanScore2 != null) { h2Total += cd.humanScore2; hasH2 = true; }
-    else if (cd.humanScore != null) h2Total += cd.humanScore;
-    else if (cd.aiScore != null) h2Total += cd.aiScore;
+    if (cd.aiScore    != null) aiT  += cd.aiScore;
+    if (cd.marcoScore != null) { marT += cd.marcoScore; hasMarco = true; }
+    else if (cd.aiScore != null) marT += cd.aiScore;
+    if (cd.marlowScore != null) { mrlT += cd.marlowScore; hasMarlow = true; }
+    else if (cd.marcoScore != null) mrlT += cd.marcoScore;
+    else if (cd.aiScore != null) mrlT += cd.aiScore;
   });
-  g.aiTotalScore = aiTotal;
-  g.humanTotalScore = hasH1 ? h1Total : null;
-  g.humanTotalScore2 = hasH2 ? h2Total : null;
-  // Final = Instructor grade → TA grade → AI grade (in priority order)
-  g.finalScore = g.humanTotalScore2 != null ? g.humanTotalScore2
-               : g.humanTotalScore != null ? g.humanTotalScore
+  g.aiTotalScore      = aiT;
+  g.marcoTotalScore   = hasMarco  ? marT : null;
+  g.marloweTotalScore = hasMarlow ? mrlT : null;
+  // Final priority: Marlowe → Marco → AI
+  g.finalScore = g.marloweTotalScore != null ? g.marloweTotalScore
+               : g.marcoTotalScore   != null ? g.marcoTotalScore
                : g.aiTotalScore;
 }
 
-async function saveGrade(studentId) {
-  if (!S.course || !S.assignment) return;
-  try {
-    await PUT(`/api/grades/${S.course.id}/${S.assignment.id}/${studentId}`, S.grades[studentId]);
-  } catch (e) {
-    toast('Save failed: ' + e.message, 'error');
-  }
-}
-
-/* ── Grade All with AI ────────────────────────────────────────────────────── */
+/* ── Grade All with AI ───────────────────────────────────────────────────────── */
 document.getElementById('btn-grade-all').addEventListener('click', gradeAll);
 
 async function gradeAll() {
-  if (!S.rubric) { toast('Build a rubric first!', 'warn'); return; }
+  if (!S.rubric) { toast('No rubric configured.', 'warn'); return; }
   const students = allStudents();
   if (!students.length) { toast('No students loaded.', 'warn'); return; }
   if (!S.health?.claude) { toast('Claude API key not configured.', 'error'); return; }
 
-  const submissions = students.map(st => {
-    const sub = submissionFor(st.id);
-    const text = submissionText(sub);
-    const manualCite = sub?._hasAiCitation || false;
-    return {
-      studentId: st.id,
-      studentName: st.name,
-      text: text || '',
-      hasAiCitation: manualCite,
-    };
-  });
+  const submissions = students.map(st => ({
+    studentId: st.id, studentName: st.name,
+    text: submissionText(submissionFor(st.id)) || '',
+    hasAiCitation: submissionFor(st.id)?._hasAiCitation || false,
+  }));
 
-  const btn = document.getElementById('btn-grade-all');
-  btn.disabled = true;
-  btn.textContent = '⏳ Grading…';
-
-  const progressWrap = document.getElementById('grades-progress');
-  const progressLabel = document.getElementById('progress-label');
-  const progressFill  = document.getElementById('progress-fill');
-  progressWrap.style.display = 'block';
+  const overlay = document.getElementById('grade-progress-overlay');
+  const label   = document.getElementById('progress-label');
+  const fill    = document.getElementById('progress-fill');
+  const sub     = document.getElementById('progress-sub');
+  overlay.classList.remove('hidden');
 
   try {
     const resp = await fetch('/api/grade/batch', {
@@ -487,120 +896,88 @@ async function gradeAll() {
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      const chunk = decoder.decode(value, { stream: true });
-      chunk.split('\n').forEach(line => {
+      decoder.decode(value, { stream: true }).split('\n').forEach(line => {
         if (!line.startsWith('data: ')) return;
         const msg = JSON.parse(line.slice(6));
         if (msg.type === 'progress' || msg.type === 'error') {
           const pct = Math.round((msg.completed / msg.total) * 100);
-          progressFill.style.width = pct + '%';
-          progressLabel.textContent = `Grading ${msg.completed} / ${msg.total}…`;
-          if (msg.type === 'progress') {
-            applyAiGrade(msg.studentId, msg.grade, msg.aiDetection, msg.flagged);
-          }
+          fill.style.width = pct + '%';
+          label.textContent = `Grading ${msg.completed} / ${msg.total}`;
+          sub.textContent = msg.studentName || '';
+          if (msg.type === 'progress') applyAiGrade(msg.studentId, msg.grade, msg.aiDetection, msg.flagged);
         }
         if (msg.type === 'complete') {
-          progressLabel.textContent = `Done! ${msg.total} students graded.`;
+          label.textContent = `Done! ${msg.total} students graded.`;
           toast(`Graded ${msg.total} submissions.`, 'success');
         }
       });
     }
 
-    renderGradesTable();
-    renderStudentsTable();
-    renderOverview();
+    // Persist all
+    await Promise.all(allStudents().map(st => S.grades[st.id] ? saveGrade(st.id) : Promise.resolve()));
+    S.allGrades[String(S.currentAssignment?.id)] = { ...S.grades };
+    renderSidebar();
+    showView('assignment');
 
-    if (S.course && S.assignment) {
-      await Promise.all(
-        allStudents().map(st => S.grades[st.id] ? saveGrade(st.id) : Promise.resolve())
-      );
-    }
   } catch (e) {
     toast('Grading error: ' + e.message, 'error');
   } finally {
-    btn.disabled = false;
-    btn.textContent = '▶ Grade All with AI';
-    setTimeout(() => { progressWrap.style.display = 'none'; }, 4000);
+    setTimeout(() => overlay.classList.add('hidden'), 2500);
   }
 }
 
 function applyAiGrade(studentId, grade, aiDetection, flagged) {
-  const st = allStudents().find(s => s.id === studentId);
-  if (!st || !S.rubric) return;
-
+  if (!S.rubric) return;
   if (!S.grades[studentId]) S.grades[studentId] = buildEmptyGrade(studentId);
   const g = S.grades[studentId];
-
   g.aiDetection = aiDetection;
   g.flagged = flagged;
   g.aiOverallFeedback = grade.overallFeedback;
   g.aiConfidence = grade.aiConfidence;
   g.aiSignals = grade.aiSignals;
   g.rubric = S.rubric;
-
   S.rubric.criteria.forEach(c => {
     if (!g.criteria[c.id]) g.criteria[c.id] = {};
     const ai = grade.criteria?.[c.id];
     g.criteria[c.id].aiScore = ai?.score != null ? ai.score : (c.autoGrant ? c.maxPoints : 0);
     g.criteria[c.id].aiJustification = ai?.justification || '';
   });
-
   recalcTotals(studentId);
   g.status = 'ai_graded';
 }
 
-/* ── Student Detail Modal ─────────────────────────────────────────────────── */
+/* ── Student Modal ───────────────────────────────────────────────────────────── */
 let modalStudentId = null;
 
 function openStudent(studentId) {
   modalStudentId = studentId;
-  const st = allStudents().find(s => s.id === studentId);
+  const st  = allStudents().find(s => s.id === studentId);
   const sub = submissionFor(studentId);
-  const g = S.grades[studentId];
+  const g   = S.grades[studentId];
 
   document.getElementById('modal-student-name').textContent = st?.name || studentId;
-
-  let meta = [];
-  if (sub?.late) meta.push('LATE');
-  if (g?.flagged) meta.push('⚑ AI Flagged');
-  if (g?.status) meta.push(g.status.replace('_', ' ').toUpperCase());
+  const meta = [sub?.late && 'LATE', g?.flagged && '⚑ AI Flagged', g?.status?.replace('_', ' ').toUpperCase()].filter(Boolean);
   document.getElementById('modal-student-meta').textContent = meta.join(' · ');
-
-  const text = submissionText(sub);
-  document.getElementById('modal-submission-text').textContent =
-    text || '(No submission text available)';
+  document.getElementById('modal-submission-text').textContent = submissionText(sub) || '(No submission text)';
 
   const flagBanner = document.getElementById('modal-ai-flag');
-  if (g?.flagged && g.aiDetection) {
+  if (g?.flagged) {
     flagBanner.style.display = 'block';
-    const signals = (g.aiSignals || g.aiDetection?.details?.aiPhrases?.matched || []).slice(0, 3);
-    flagBanner.innerHTML = `<strong>⚑ Potential AI Use — ${g.aiConfidence || g.aiDetection.score * 10}% confidence</strong>
-      ${signals.length ? '<br>Signals: ' + signals.map(s => `<em>"${esc(s)}"</em>`).join(', ') : ''}`;
+    const signals = (g.aiSignals || []).slice(0, 3);
+    flagBanner.innerHTML = `<strong>⚑ ${g.aiConfidence || 0}% AI confidence</strong>${signals.length ? '<br>Signals: ' + signals.map(s => `<em>"${esc(s)}"</em>`).join(', ') : ''}`;
   } else {
     flagBanner.style.display = 'none';
   }
 
   renderModalCriteria(studentId);
-
-  document.getElementById('modal-ai-total').textContent =
-    g?.aiTotalScore != null ? g.aiTotalScore : '—';
-  document.getElementById('modal-human-total').textContent =
-    g?.humanTotalScore != null ? g.humanTotalScore : '—';
-  document.getElementById('modal-human-total2').textContent =
-    g?.humanTotalScore2 != null ? g.humanTotalScore2 : '—';
-  document.getElementById('modal-final').textContent =
-    g?.finalScore != null ? g.finalScore : '—';
+  renderModalTotals(studentId);
 
   document.getElementById('modal-notes').value = g?.notes || '';
 
-  const fbBox = document.getElementById('modal-ai-feedback');
+  const fbBox  = document.getElementById('modal-ai-feedback');
   const fbText = document.getElementById('modal-ai-feedback-text');
-  if (g?.aiOverallFeedback) {
-    fbBox.style.display = 'block';
-    fbText.textContent = g.aiOverallFeedback;
-  } else {
-    fbBox.style.display = 'none';
-  }
+  if (g?.aiOverallFeedback) { fbBox.style.display = 'block'; fbText.textContent = g.aiOverallFeedback; }
+  else fbBox.style.display = 'none';
 
   document.getElementById('modal-backdrop').classList.remove('hidden');
 }
@@ -608,19 +985,14 @@ function openStudent(studentId) {
 function renderModalCriteria(studentId) {
   const wrap = document.getElementById('modal-criteria-scores');
   const g = S.grades[studentId];
-
-  if (!S.rubric) {
-    wrap.innerHTML = '<p class="muted">No rubric set.</p>';
-    return;
-  }
+  if (!S.rubric) { wrap.innerHTML = '<p class="muted">No rubric.</p>'; return; }
 
   wrap.innerHTML = S.rubric.criteria.map(c => {
-    const cd = g?.criteria?.[c.id] || {};
-    const aiS = cd.aiScore != null ? cd.aiScore : '—';
-    const h1Val = cd.humanScore != null ? cd.humanScore : '';
-    const h2Val = cd.humanScore2 != null ? cd.humanScore2 : '';
+    const cd  = g?.criteria?.[c.id] || {};
+    const aiS = cd.aiScore    != null ? cd.aiScore    : '—';
+    const marV = cd.marcoScore != null ? cd.marcoScore : '';
+    const mrlV = cd.marlowScore != null ? cd.marlowScore : '';
     const justif = cd.aiJustification ? `<div class="crit-score-sub">${esc(cd.aiJustification)}</div>` : '';
-
     return `<div class="criterion-score-row">
       <div style="flex:1">
         <div class="crit-score-name">${esc(c.name)}</div>
@@ -632,46 +1004,47 @@ function renderModalCriteria(studentId) {
         <div class="crit-score-val">${aiS}</div>
       </div>
       <div class="crit-score-col">
-        <div class="crit-score-lbl score-lbl-h1">TA</div>
+        <div class="crit-score-lbl score-lbl-m1">Marco</div>
         <input class="crit-score-input" type="number" min="0" max="${c.maxPoints}"
-          placeholder="${aiS}" value="${h1Val}"
-          data-criterion="${esc(c.id)}" data-max="${c.maxPoints}" data-grade="1"
+          placeholder="${aiS}" value="${marV}"
+          data-criterion="${esc(c.id)}" data-max="${c.maxPoints}" data-grader="marco"
           onchange="onModalScoreChange(this)" />
       </div>
       <div class="crit-score-col">
-        <div class="crit-score-lbl score-lbl-h2">Instr.</div>
-        <input class="crit-score-input crit-score-instr" type="number" min="0" max="${c.maxPoints}"
-          placeholder="${h1Val || aiS}" value="${h2Val}"
-          data-criterion="${esc(c.id)}" data-max="${c.maxPoints}" data-grade="2"
+        <div class="crit-score-lbl score-lbl-m2">Marlowe</div>
+        <input class="crit-score-input crit-score-m2" type="number" min="0" max="${c.maxPoints}"
+          placeholder="${marV || aiS}" value="${mrlV}"
+          data-criterion="${esc(c.id)}" data-max="${c.maxPoints}" data-grader="marlowe"
           onchange="onModalScoreChange(this)" />
       </div>
     </div>`;
   }).join('');
 }
 
+function renderModalTotals(studentId) {
+  const g = S.grades[studentId];
+  document.getElementById('modal-score-totals').innerHTML = `
+    <div>AI: <strong>${g?.aiTotalScore ?? '—'}</strong></div>
+    <div>Marco: <strong>${g?.marcoTotalScore ?? '—'}</strong></div>
+    <div>Marlowe: <strong>${g?.marloweTotalScore ?? '—'}</strong></div>
+    <div class="final-score">Final: <strong>${g?.finalScore ?? '—'}</strong></div>`;
+}
+
 function onModalScoreChange(input) {
   if (!modalStudentId) return;
   const criterionId = input.dataset.criterion;
-  const max = Number(input.dataset.max);
-  const gradeNum = input.dataset.grade;
+  const max    = Number(input.dataset.max);
+  const grader = input.dataset.grader;
   let val = input.value.trim() === '' ? null : Number(input.value);
   if (val !== null) val = Math.max(0, Math.min(max, val));
 
   if (!S.grades[modalStudentId]) S.grades[modalStudentId] = buildEmptyGrade(modalStudentId);
-  if (!S.grades[modalStudentId].criteria) S.grades[modalStudentId].criteria = {};
   if (!S.grades[modalStudentId].criteria[criterionId]) S.grades[modalStudentId].criteria[criterionId] = {};
-
-  if (gradeNum === '2') {
-    S.grades[modalStudentId].criteria[criterionId].humanScore2 = val;
-  } else {
-    S.grades[modalStudentId].criteria[criterionId].humanScore = val;
-  }
+  if (grader === 'marlowe') S.grades[modalStudentId].criteria[criterionId].marlowScore = val;
+  else                       S.grades[modalStudentId].criteria[criterionId].marcoScore  = val;
 
   recalcTotals(modalStudentId);
-  const g = S.grades[modalStudentId];
-  document.getElementById('modal-human-total').textContent = g.humanTotalScore != null ? g.humanTotalScore : '—';
-  document.getElementById('modal-human-total2').textContent = g.humanTotalScore2 != null ? g.humanTotalScore2 : '—';
-  document.getElementById('modal-final').textContent = g.finalScore != null ? g.finalScore : '—';
+  renderModalTotals(modalStudentId);
 }
 
 document.getElementById('modal-save').addEventListener('click', async () => {
@@ -682,573 +1055,294 @@ document.getElementById('modal-save').addEventListener('click', async () => {
   await saveGrade(modalStudentId);
   toast('Saved!', 'success');
   closeModal();
-  renderGradesTable();
-  renderStudentsTable();
-  renderOverview();
+  showView('assignment');
 });
 
 document.getElementById('modal-grade-ai').addEventListener('click', async () => {
   if (!modalStudentId || !S.rubric) return;
   if (!S.health?.claude) { toast('Claude not configured.', 'error'); return; }
-  const st = allStudents().find(s => s.id === modalStudentId);
+  const st  = allStudents().find(s => s.id === modalStudentId);
   const sub = submissionFor(modalStudentId);
-  const text = submissionText(sub);
-
-  document.getElementById('modal-grade-ai').textContent = '⏳ Grading…';
-  document.getElementById('modal-grade-ai').disabled = true;
-
+  const btn = document.getElementById('modal-grade-ai');
+  btn.disabled = true; btn.textContent = '⏳ Grading…';
   try {
     const res = await POST('/api/grade/single', {
-      text: text || '',
-      rubric: S.rubric,
+      text: submissionText(sub) || '', rubric: S.rubric,
       studentName: st?.name || modalStudentId,
       hasAiCitation: sub?._hasAiCitation || false,
       aiInstructions: S.aiInstructions,
     });
     applyAiGrade(modalStudentId, res.grade, res.aiDetection, res.flagged);
     renderModalCriteria(modalStudentId);
+    renderModalTotals(modalStudentId);
     const g = S.grades[modalStudentId];
-    document.getElementById('modal-ai-total').textContent = g?.aiTotalScore ?? '—';
-    document.getElementById('modal-final').textContent = g?.finalScore ?? '—';
     if (g?.aiOverallFeedback) {
       document.getElementById('modal-ai-feedback').style.display = 'block';
       document.getElementById('modal-ai-feedback-text').textContent = g.aiOverallFeedback;
     }
     toast('Re-graded!', 'success');
-  } catch (e) {
-    toast('Grading error: ' + e.message, 'error');
-  } finally {
-    document.getElementById('modal-grade-ai').textContent = '⟳ Re-grade with AI';
-    document.getElementById('modal-grade-ai').disabled = false;
-  }
+  } catch (e) { toast('Grading error: ' + e.message, 'error'); }
+  finally { btn.disabled = false; btn.textContent = '⟳ Re-grade with AI'; }
 });
 
 document.getElementById('modal-close').addEventListener('click', closeModal);
 document.getElementById('modal-backdrop').addEventListener('click', e => {
   if (e.target === document.getElementById('modal-backdrop')) closeModal();
 });
-
 function closeModal() {
   document.getElementById('modal-backdrop').classList.add('hidden');
   modalStudentId = null;
 }
 
-/* ── Rubric Builder ───────────────────────────────────────────────────────── */
-function defaultRubric() {
-  return {
-    name: '',
-    totalPoints: 15,
-    description: '',
-    criteria: [
-      { id: 'c1', name: 'Submission', maxPoints: 5, description: 'Student submitted any work.', autoGrant: true },
-      { id: 'c2', name: 'Executive Summary & Recommendations', maxPoints: 3, description: 'Student provides a clear executive summary with specific, actionable recommendations upfront.', autoGrant: false },
-      { id: 'c3', name: 'Supporting Points & Evidence', maxPoints: 3, description: 'Claims and recommendations are backed with specific evidence, data, or analysis.', autoGrant: false },
-      { id: 'c4', name: 'Conclusion / Alternatives', maxPoints: 3, description: 'Student includes a thoughtful conclusion, discusses alternatives, or provides additional insights.', autoGrant: false },
-      { id: 'c5', name: 'Writing Quality & Clarity', maxPoints: 1, description: 'Submission is well-organized, clearly written, and professional.', autoGrant: false },
-    ],
-  };
-}
-
-if (!S.rubric) S.rubric = defaultRubric();
-
-function renderRubricBuilder() {
-  const rubric = S.rubric;
-  document.getElementById('rubric-name').value = rubric.name || '';
-  document.getElementById('rubric-total').value = rubric.totalPoints || 15;
-  document.getElementById('rubric-description').value = rubric.description || '';
-
-  const list = document.getElementById('rubric-criteria-list');
-  list.innerHTML = rubric.criteria.map((c, i) => renderCriterionRow(c, i)).join('');
-}
-
-function renderCriterionRow(c, i) {
-  return `<div class="criterion-row ${c.autoGrant ? 'auto-grant' : ''}" id="cr-${esc(c.id)}">
-    <div class="criterion-inner">
-      <div class="criterion-name-row">
-        <input class="input" type="text" placeholder="Criterion name" value="${esc(c.name)}"
-          oninput="updateCriterion('${esc(c.id)}','name',this.value)" />
-      </div>
-      <textarea class="input" rows="2" placeholder="Description — what earns full points?"
-        oninput="updateCriterion('${esc(c.id)}','description',this.value)">${esc(c.description)}</textarea>
-    </div>
-    <div>
-      <label style="font-size:11px;color:var(--text-muted)">Max Pts</label>
-      <input class="input criterion-pts" type="number" min="0" value="${c.maxPoints}"
-        oninput="updateCriterion('${esc(c.id)}','maxPoints',Number(this.value))" />
-    </div>
-    <div class="criterion-autogrant">
-      <label>Auto<br>Grant</label>
-      <input type="checkbox" ${c.autoGrant ? 'checked' : ''}
-        onchange="updateCriterion('${esc(c.id)}','autoGrant',this.checked)" />
-    </div>
-    <button class="criterion-delete" onclick="deleteCriterion('${esc(c.id)}')" title="Remove">✕</button>
-  </div>`;
-}
-
-function updateCriterion(id, field, value) {
-  const c = S.rubric.criteria.find(x => x.id === id);
-  if (c) { c[field] = value; }
-  if (field === 'autoGrant') {
-    const row = document.getElementById(`cr-${id}`);
-    row?.classList.toggle('auto-grant', value);
-  }
-}
-
-function deleteCriterion(id) {
-  S.rubric.criteria = S.rubric.criteria.filter(c => c.id !== id);
-  renderRubricBuilder();
-}
-
-document.getElementById('btn-add-criterion').addEventListener('click', () => {
-  const id = 'c' + Date.now();
-  S.rubric.criteria.push({ id, name: '', maxPoints: 3, description: '', autoGrant: false });
-  renderRubricBuilder();
-});
-
-document.getElementById('rubric-name').addEventListener('input', function () { S.rubric.name = this.value; });
-document.getElementById('rubric-total').addEventListener('input', function () { S.rubric.totalPoints = Number(this.value); });
-document.getElementById('rubric-description').addEventListener('input', function () { S.rubric.description = this.value; });
-
-document.getElementById('btn-save-rubric').addEventListener('click', async () => {
-  S.rubric.name = document.getElementById('rubric-name').value;
-  S.rubric.totalPoints = Number(document.getElementById('rubric-total').value);
-  if (!S.rubric.name) { toast('Give the rubric a name.', 'warn'); return; }
-  try {
-    const saved = S.rubric.id
-      ? await PUT(`/api/rubrics/${S.rubric.id}`, S.rubric)
-      : await POST('/api/rubrics', S.rubric);
-    S.rubric = saved;
-    await loadRubrics();
-    renderSavedRubrics();
-    toast('Rubric saved!', 'success');
-    updateButtons();
-  } catch (e) {
-    toast('Save failed: ' + e.message, 'error');
-  }
-});
-
-document.getElementById('btn-generate-rubric').addEventListener('click', async () => {
-  const description = document.getElementById('rubric-description').value;
-  const totalPoints = Number(document.getElementById('rubric-total').value);
-  if (!description) { toast('Enter an assignment description first.', 'warn'); return; }
-  if (!S.health?.claude) { toast('Claude not configured.', 'error'); return; }
-
-  const btn = document.getElementById('btn-generate-rubric');
-  btn.disabled = true; btn.textContent = '⏳ Generating…';
-  try {
-    const generated = await POST('/api/rubrics/generate', { description, totalPoints });
-    S.rubric = { ...generated, id: S.rubric?.id };
-    renderRubricBuilder();
-
-    if (generated.clarifyingQuestions?.length) {
-      const section = document.getElementById('rubric-clarifying');
-      const list = document.getElementById('clarifying-list');
-      list.innerHTML = generated.clarifyingQuestions.map(q => `<li>${esc(q)}</li>`).join('');
-      section.style.display = 'block';
-    }
-    toast('Rubric generated! Review and save.', 'success');
-  } catch (e) {
-    toast('Generation failed: ' + e.message, 'error');
-  } finally {
-    btn.disabled = false; btn.textContent = '✦ Generate with AI';
-  }
-});
-
-async function loadRubrics() {
-  try { S.rubrics = await GET('/api/rubrics'); } catch { S.rubrics = []; }
-}
-
-function renderSavedRubrics() {
-  const wrap = document.getElementById('saved-rubrics-list');
-  if (!S.rubrics.length) {
-    wrap.innerHTML = '<p class="muted">No saved rubrics yet.</p>';
-    return;
-  }
-  wrap.innerHTML = S.rubrics.map(r =>
-    `<div class="saved-rubric-item" onclick="loadRubric('${esc(r.id)}')">
-      <div>
-        <div class="rub-name">${esc(r.name)}</div>
-        <div class="rub-pts">${(r.criteria || []).length} criteria · ${r.totalPoints} pts</div>
-      </div>
-      <button class="btn btn-surf-sec" style="font-size:11px;padding:4px 8px"
-        onclick="event.stopPropagation();deleteRubric('${esc(r.id)}')">Delete</button>
-    </div>`
-  ).join('');
-}
-
-function loadRubric(id) {
-  const r = S.rubrics.find(x => x.id === id);
-  if (!r) return;
-  S.rubric = JSON.parse(JSON.stringify(r));
-  renderRubricBuilder();
-  toast(`Loaded: ${r.name}`, 'success');
-  updateButtons();
-}
-
-async function deleteRubric(id) {
-  if (!confirm('Delete this rubric?')) return;
-  await DEL(`/api/rubrics/${id}`);
-  await loadRubrics();
-  renderSavedRubrics();
-  toast('Rubric deleted.');
-}
-
-/* ── Quiz Bank ────────────────────────────────────────────────────────────── */
-async function loadQuizBank() {
-  try { S.quizBank = await GET('/api/quiz-bank'); } catch { S.quizBank = { questions: [] }; }
-}
-
-function renderQuizBank() {
-  const list = document.getElementById('quiz-bank-list');
-  const countEl = document.getElementById('quiz-bank-count');
+/* ── Quiz View ───────────────────────────────────────────────────────────────── */
+function renderQuizView(root) {
+  root = root || document.getElementById('view-root');
   const qs = S.quizBank?.questions || [];
-  if (countEl) countEl.textContent = `${qs.length} question${qs.length !== 1 ? 's' : ''}`;
-  if (!list) return;
-  if (!qs.length) {
-    list.innerHTML = '<p class="muted">No questions in the bank. Upload a test bank file to get started.</p>';
-    return;
-  }
-  list.innerHTML = `<div class="quiz-list">` +
-    qs.map((q, i) => {
-      const text = typeof q === 'string' ? q : q.question || JSON.stringify(q);
-      return `<div class="quiz-q-item">
-        <span class="quiz-q-num">${i + 1}.</span>
-        <span class="quiz-q-text">${esc(text)}</span>
-        <button class="btn btn-surf-sec" style="font-size:11px;padding:3px 8px;margin-left:auto;flex-shrink:0"
-          onclick="deleteQuestion(${i})">Remove</button>
-      </div>`;
-    }).join('') + `</div>`;
+  root.innerHTML = `
+    <div class="page-title">Quiz Question Bank
+      <div class="page-actions">
+        <button class="btn btn-secondary" onclick="document.getElementById('quiz-file-input').click()">⬆ Upload Test Bank</button>
+        <input id="quiz-file-input" type="file" accept=".txt,.csv,.json,.md" style="display:none" onchange="uploadQuizFile(this)" />
+        <button class="btn btn-ghost btn-danger" onclick="clearQuizBank()">Clear Bank</button>
+      </div>
+    </div>
+
+    <div class="two-col-grid">
+      <div class="card">
+        <div class="card-title">Suggest Questions with AI</div>
+        <div class="field-group">
+          <label>Topic / Focus</label>
+          <input id="quiz-topic" type="text" class="input" placeholder="e.g. Customer segmentation and targeting" />
+        </div>
+        <div class="field-group">
+          <label># of questions</label>
+          <input id="quiz-count" type="number" class="input" value="5" min="1" max="20" style="max-width:80px" />
+        </div>
+        <div class="field-group">
+          <label>Course content context (optional)</label>
+          <textarea id="quiz-context" class="input" rows="4" placeholder="Paste lecture notes, slides summary…"></textarea>
+        </div>
+        <button class="btn btn-surf" onclick="suggestQuizQuestions()">✦ Suggest Questions</button>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Bank <span class="card-title-hint">${qs.length} question${qs.length !== 1 ? 's' : ''}</span></div>
+        <div id="quiz-bank-list">
+          ${qs.length
+            ? qs.map((q, i) => `<div class="quiz-q-item"><span class="quiz-q-num">${i + 1}.</span><span class="quiz-q-text">${esc(typeof q === 'string' ? q : q.question)}</span><button class="btn btn-surf-sec" style="font-size:11px;padding:3px 8px;margin-left:auto" onclick="deleteQuestion(${i})">✕</button></div>`).join('')
+            : '<p class="muted">No questions yet.</p>'}
+        </div>
+      </div>
+    </div>
+
+    <div id="quiz-suggestions-wrap" style="display:none" class="card">
+      <div class="card-title">AI Suggested Questions</div>
+      <div id="quiz-suggestions"></div>
+    </div>`;
+}
+
+async function uploadQuizFile(input) {
+  const file = input.files[0]; if (!file) return;
+  const fd = new FormData(); fd.append('file', file);
+  try {
+    const resp = await fetch('/api/quiz-bank/upload', { method: 'POST', body: fd });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error);
+    const lines = data.text.split('\n').map(l => l.trim()).filter(l => l.length > 5);
+    S.quizBank.questions = [...(S.quizBank.questions || []), ...lines];
+    await PUT('/api/quiz-bank', S.quizBank);
+    toast(`Imported ${lines.length} questions.`, 'success');
+    showView('quiz');
+  } catch (e) { toast('Upload failed: ' + e.message, 'error'); }
+  input.value = '';
+}
+
+async function clearQuizBank() {
+  if (!confirm('Clear the entire question bank?')) return;
+  await DEL('/api/quiz-bank');
+  S.quizBank = { questions: [] };
+  showView('quiz');
 }
 
 async function deleteQuestion(index) {
   S.quizBank.questions.splice(index, 1);
   await PUT('/api/quiz-bank', S.quizBank);
-  renderQuizBank();
+  showView('quiz');
 }
 
-// Upload test bank file
-document.getElementById('btn-quiz-upload').addEventListener('click', () => {
-  document.getElementById('quiz-file-input').click();
-});
-
-document.getElementById('quiz-file-input').addEventListener('change', async function () {
-  const file = this.files[0];
-  if (!file) return;
-  const formData = new FormData();
-  formData.append('file', file);
-
-  try {
-    const resp = await fetch('/api/quiz-bank/upload', { method: 'POST', body: formData });
-    const data = await resp.json();
-    if (!resp.ok) throw new Error(data.error);
-
-    // Parse questions: one per line, skip blanks
-    const lines = data.text.split('\n')
-      .map(l => l.trim())
-      .filter(l => l.length > 5); // skip very short lines
-
-    S.quizBank.questions = [...(S.quizBank.questions || []), ...lines];
-    await PUT('/api/quiz-bank', S.quizBank);
-    renderQuizBank();
-    toast(`Imported ${lines.length} questions from ${data.filename}.`, 'success');
-  } catch (e) {
-    toast('Upload failed: ' + e.message, 'error');
-  }
-  this.value = '';
-});
-
-document.getElementById('btn-quiz-clear').addEventListener('click', async () => {
-  if (!confirm('Clear the entire question bank?')) return;
-  await DEL('/api/quiz-bank');
-  S.quizBank = { questions: [] };
-  renderQuizBank();
-  toast('Question bank cleared.');
-});
-
-document.getElementById('btn-quiz-suggest').addEventListener('click', async () => {
+async function suggestQuizQuestions() {
   if (!S.health?.claude) { toast('Claude not configured.', 'error'); return; }
-  const topic = document.getElementById('quiz-topic').value.trim();
-  const count = Number(document.getElementById('quiz-count').value) || 5;
-  const courseContent = document.getElementById('quiz-context').value.trim();
-
-  const btn = document.getElementById('btn-quiz-suggest');
-  btn.disabled = true; btn.textContent = '⏳ Thinking…';
-
+  const topic   = document.getElementById('quiz-topic')?.value?.trim();
+  const count   = Number(document.getElementById('quiz-count')?.value) || 5;
+  const context = document.getElementById('quiz-context')?.value?.trim();
+  toast('Thinking…');
   try {
-    const result = await POST('/api/quiz-bank/suggest', {
-      topic,
-      courseContent,
-      count,
-    });
-
+    const result = await POST('/api/quiz-bank/suggest', { topic, courseContent: context, count });
     const wrap = document.getElementById('quiz-suggestions-wrap');
     const inner = document.getElementById('quiz-suggestions');
     wrap.style.display = 'block';
-
-    if (result.notes) {
-      inner.innerHTML = `<p class="muted" style="margin-bottom:12px;font-style:italic">${esc(result.notes)}</p>`;
-    } else {
-      inner.innerHTML = '';
-    }
-
-    inner.innerHTML += (result.selectedQuestions || []).map((q, i) =>
+    inner.innerHTML = (result.selectedQuestions || []).map((q, i) =>
       `<div class="quiz-suggestion-item">
-        <div class="quiz-q-header">
-          <span class="quiz-source-badge ${q.source === 'suggested' ? 'badge-suggested' : 'badge-bank'}">
-            ${q.source === 'suggested' ? '✦ AI Suggested' : `Bank #${(q.originalIndex || 0) + 1}`}
-          </span>
-        </div>
+        <span class="quiz-source-badge ${q.source === 'suggested' ? 'badge-suggested' : 'badge-bank'}">${q.source === 'suggested' ? '✦ AI Suggested' : `Bank #${(q.originalIndex || 0) + 1}`}</span>
         <div class="quiz-q-body">${esc(q.question)}</div>
         <div class="quiz-q-rationale muted">${esc(q.rationale || '')}</div>
-        ${q.source === 'suggested' ? `<button class="btn btn-surf-sec" style="font-size:11px;padding:3px 8px;margin-top:6px"
-          onclick="addSuggestedQuestion('${esc(q.question.replace(/'/g, "\\'"))}')">+ Add to Bank</button>` : ''}
+        ${q.source === 'suggested' ? `<button class="btn btn-surf-sec" style="font-size:11px;padding:3px 8px;margin-top:4px" onclick="addSuggestedQ('${esc(q.question.replace(/'/g, "\\'"))}')">+ Add to Bank</button>` : ''}
       </div>`
     ).join('');
-
-    toast('Questions suggested!', 'success');
-  } catch (e) {
-    toast('Suggestion failed: ' + e.message, 'error');
-  } finally {
-    btn.disabled = false; btn.textContent = '✦ Suggest Questions';
-  }
-});
-
-async function addSuggestedQuestion(questionText) {
-  S.quizBank.questions.push(questionText);
-  await PUT('/api/quiz-bank', S.quizBank);
-  renderQuizBank();
-  toast('Question added to bank.', 'success');
+    if (result.notes) inner.innerHTML = `<p class="muted" style="font-style:italic;margin-bottom:12px">${esc(result.notes)}</p>` + inner.innerHTML;
+    toast('Done!', 'success');
+  } catch (e) { toast('Failed: ' + e.message, 'error'); }
 }
 
-/* ── Course Content & Videos ──────────────────────────────────────────────── */
-document.getElementById('btn-load-content').addEventListener('click', loadCourseContent);
+async function addSuggestedQ(q) {
+  S.quizBank.questions.push(q);
+  await PUT('/api/quiz-bank', S.quizBank);
+  toast('Added to bank.', 'success');
+  showView('quiz');
+}
+
+/* ── Course Content View ─────────────────────────────────────────────────────── */
+function renderContentView(root) {
+  root = root || document.getElementById('view-root');
+  root.innerHTML = `
+    <div class="page-title">Course Content &amp; Videos
+      <div class="page-actions">
+        <button class="btn btn-secondary" onclick="loadCourseContent()">⟳ Load from Canvas</button>
+      </div>
+    </div>
+    <div class="two-col-grid">
+      <div class="card"><div class="card-title">Modules</div><div id="content-modules"><p class="muted">Click Load from Canvas.</p></div></div>
+      <div class="card"><div class="card-title">Pages</div><div id="content-pages"><p class="muted">Click Load from Canvas.</p></div></div>
+    </div>
+    <div class="card" style="margin-top:16px"><div class="card-title">Page Viewer</div><div id="content-viewer"><p class="muted">Click a page to view.</p></div></div>`;
+}
 
 async function loadCourseContent() {
   if (!S.course) { toast('Select a course first.', 'warn'); return; }
-  const btn = document.getElementById('btn-load-content');
-  btn.disabled = true; btn.textContent = '⏳ Loading…';
-
+  toast('Loading…');
   try {
     const [modules, pages] = await Promise.all([
       GET(`/api/courses/${S.course.id}/modules`).catch(() => []),
       GET(`/api/courses/${S.course.id}/pages`).catch(() => []),
     ]);
-
-    renderModules(modules);
-    renderPages(pages);
-    toast('Content loaded.', 'success');
-  } catch (e) {
-    toast('Load error: ' + e.message, 'error');
-  } finally {
-    btn.disabled = false; btn.textContent = '⟳ Load from Canvas';
-  }
+    const mWrap = document.getElementById('content-modules');
+    const pWrap = document.getElementById('content-pages');
+    if (mWrap) mWrap.innerHTML = modules.length ? modules.map(m => `
+      <div class="module-block">
+        <div class="module-title">${esc(m.name)} <span class="muted">(${(m.items||[]).length} items)</span></div>
+        <ul class="module-items">${(m.items||[]).map(item => {
+          const icon = {ExternalUrl:'🔗',File:'📄',Page:'📝',Quiz:'❓',Assignment:'✏'}[item.type] || '▸';
+          const link = item.external_url || item.html_url || '#';
+          return `<li class="module-item">${icon} <a href="${esc(link)}" target="_blank">${esc(item.title)}</a> <span class="muted" style="font-size:10px">${item.type||''}</span></li>`;
+        }).join('')}</ul>
+      </div>`).join('') : '<p class="muted">No modules.</p>';
+    if (pWrap) pWrap.innerHTML = pages.length ? `<ul class="page-list">${pages.map(p =>
+      `<li><button class="link-btn" onclick="viewPage('${esc(p.url)}')">${esc(p.title)}</button></li>`
+    ).join('')}</ul>` : '<p class="muted">No pages.</p>';
+    toast('Loaded.', 'success');
+  } catch (e) { toast('Error: ' + e.message, 'error'); }
 }
 
-function renderModules(modules) {
-  const wrap = document.getElementById('content-modules');
-  if (!modules.length) {
-    wrap.innerHTML = '<p class="muted">No modules found.</p>';
-    return;
-  }
-  wrap.innerHTML = modules.map(m => {
-    const items = (m.items || []).map(item => {
-      const icon = item.type === 'ExternalUrl' ? '🔗'
-        : item.type === 'File' ? '📄'
-        : item.type === 'Page' ? '📝'
-        : item.type === 'Quiz' ? '❓'
-        : item.type === 'Assignment' ? '✏'
-        : '▸';
-      const link = item.url || item.html_url || item.external_url || '#';
-      return `<li class="module-item">
-        <span>${icon}</span>
-        <a href="${esc(link)}" target="_blank" rel="noopener">${esc(item.title)}</a>
-        <span class="muted" style="font-size:10px">${esc(item.type || '')}</span>
-      </li>`;
-    }).join('');
-    return `<div class="module-block">
-      <div class="module-title">${esc(m.name)} <span class="muted" style="font-size:11px">(${(m.items || []).length} items)</span></div>
-      ${items ? `<ul class="module-items">${items}</ul>` : ''}
-    </div>`;
-  }).join('');
-}
-
-function renderPages(pages) {
-  const wrap = document.getElementById('content-pages');
-  if (!pages.length) {
-    wrap.innerHTML = '<p class="muted">No pages found.</p>';
-    return;
-  }
-  wrap.innerHTML = `<ul class="page-list">` +
-    pages.map(p =>
-      `<li><button class="link-btn" onclick="viewPage('${esc(p.url)}')">${esc(p.title)}</button>
-       <span class="muted" style="font-size:10px;margin-left:6px">${p.updated_at ? new Date(p.updated_at).toLocaleDateString() : ''}</span>
-       </li>`
-    ).join('') + `</ul>`;
-}
-
-async function viewPage(pageUrl) {
-  if (!S.course) return;
+async function viewPage(url) {
   const wrap = document.getElementById('content-viewer');
+  if (!wrap || !S.course) return;
   wrap.innerHTML = '<p class="muted">Loading…</p>';
   try {
-    const page = await GET(`/api/courses/${S.course.id}/pages/${encodeURIComponent(pageUrl)}`);
-    const body = page.body || '(No content)';
-    wrap.innerHTML = `<div class="page-title-sm">${esc(page.title)}</div>
-      <div class="page-content">${body}</div>`;
-  } catch (e) {
-    wrap.innerHTML = `<p class="muted">Failed to load page: ${esc(e.message)}</p>`;
-  }
+    const page = await GET(`/api/courses/${S.course.id}/pages/${encodeURIComponent(url)}`);
+    wrap.innerHTML = `<div class="page-title-sm">${esc(page.title)}</div><div class="page-content">${page.body || '(No content)'}</div>`;
+  } catch (e) { wrap.innerHTML = `<p class="muted">Failed: ${esc(e.message)}</p>`; }
 }
 
-/* ── Overview ─────────────────────────────────────────────────────────────── */
-function renderOverview() {
-  const students = allStudents();
-  const subs = students.filter(st => {
-    const sub = submissionFor(st.id);
-    return sub && sub.workflow_state !== 'unsubmitted';
-  });
-  const graded = Object.values(S.grades).filter(g => g.status !== 'pending');
-  const flagged = Object.values(S.grades).filter(g => g.flagged);
-
-  const scores = Object.values(S.grades)
-    .map(g => g.finalScore)
-    .filter(s => s != null);
-  const avg = scores.length ? (scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1) : '—';
-
-  document.getElementById('stat-students').textContent = students.length || '—';
-  document.getElementById('stat-submitted').textContent = subs.length || '—';
-  document.getElementById('stat-graded').textContent = graded.length || '—';
-  document.getElementById('stat-flagged').textContent = flagged.length || '—';
-  document.getElementById('stat-avg').textContent = avg;
-
-  const aWrap = document.getElementById('overview-assignment');
-  if (S.assignment) {
-    const due = S.assignment.due_at ? new Date(S.assignment.due_at).toLocaleDateString() : 'No due date';
-    const instrNote = S.aiInstructions ? `<p style="font-size:12px;color:var(--success);margin-top:4px">✓ AI instructions set</p>` : '';
-    aWrap.innerHTML = `
-      <p><strong>${esc(S.assignment.name)}</strong></p>
-      <p class="muted">Due: ${due} · ${S.assignment.points_possible || '?'} pts</p>
-      <p class="muted">Course: ${esc(S.course?.name || '—')}</p>
-      ${instrNote}`;
-  } else {
-    aWrap.innerHTML = '<p class="muted">No assignment selected.</p>';
-  }
-
-  const rWrap = document.getElementById('overview-rubric');
-  if (S.rubric?.criteria?.length) {
-    rWrap.innerHTML = `<p><strong>${esc(S.rubric.name || 'Untitled Rubric')}</strong> · ${S.rubric.totalPoints} pts</p>
-      <ul style="padding-left:18px;margin-top:8px">
-        ${S.rubric.criteria.map(c =>
-          `<li>${esc(c.name)} — ${c.maxPoints} pts${c.autoGrant ? ' (auto)' : ''}</li>`
-        ).join('')}
-      </ul>`;
-  } else {
-    rWrap.innerHTML = '<p class="muted">No rubric set.</p>';
-  }
-
-  const fWrap = document.getElementById('overview-flags');
-  if (flagged.length) {
-    fWrap.innerHTML = `<ul style="padding-left:18px">
-      ${flagged.slice(0, 8).map(g => {
-        const conf = g.aiConfidence || (g.aiDetection?.score * 10) || 0;
-        return `<li><strong>${esc(g.studentName)}</strong> — ${conf}% AI confidence</li>`;
-      }).join('')}
-      ${flagged.length > 8 ? `<li class="muted">…and ${flagged.length - 8} more</li>` : ''}
-    </ul>`;
-  } else {
-    fWrap.innerHTML = '<p class="muted">No flags yet.</p>';
-  }
+/* ── Manual Entry View ───────────────────────────────────────────────────────── */
+function renderManualView(root) {
+  root = root || document.getElementById('view-root');
+  root.innerHTML = `
+    <div class="page-title">Add Student Manually</div>
+    <div class="card" style="max-width:600px">
+      <div class="field-group"><label>Student Name</label><input id="manual-name" type="text" class="input" placeholder="First Last" /></div>
+      <div class="field-group"><label>Student ID (optional)</label><input id="manual-id" type="text" class="input" placeholder="e.g. 2034567" /></div>
+      <div class="field-group"><label>Paste Submission Text</label><textarea id="manual-text" class="input" rows="10" placeholder="Paste the student's submission here…"></textarea></div>
+      <div class="field-row">
+        <label class="checkbox-label"><input id="manual-late" type="checkbox" /> Late submission</label>
+        <label class="checkbox-label"><input id="manual-ai-cite" type="checkbox" /> Student disclosed AI use</label>
+      </div>
+      <div class="card-actions">
+        <button class="btn btn-primary" onclick="addManualStudent(true)">Add &amp; Grade with AI</button>
+        <button class="btn btn-secondary" onclick="addManualStudent(false)">Add Without Grading</button>
+      </div>
+    </div>`;
 }
 
-/* ── Manual Add ───────────────────────────────────────────────────────────── */
 async function addManualStudent(gradeNow) {
-  const name = document.getElementById('manual-name').value.trim();
-  const id = document.getElementById('manual-id').value.trim() || `manual_${Date.now()}`;
-  const text = document.getElementById('manual-text').value.trim();
-  const isLate = document.getElementById('manual-late').checked;
-  const hasAiCitation = document.getElementById('manual-ai-cite').checked;
-
+  const name = document.getElementById('manual-name')?.value?.trim();
+  const id   = document.getElementById('manual-id')?.value?.trim() || `manual_${Date.now()}`;
+  const text = document.getElementById('manual-text')?.value?.trim();
+  const isLate = document.getElementById('manual-late')?.checked;
+  const hasAiCitation = document.getElementById('manual-ai-cite')?.checked;
   if (!name) { toast('Enter a student name.', 'warn'); return; }
-
   S.manualStudents.push({ id, name });
-
-  S.submissions.push({
-    user_id: id,
-    workflow_state: text ? 'submitted' : 'unsubmitted',
-    body: text,
-    late: isLate,
-    _manualText: text,
-    _hasAiCitation: hasAiCitation,
-  });
-
-  document.getElementById('manual-name').value = '';
-  document.getElementById('manual-id').value = '';
-  document.getElementById('manual-text').value = '';
-  document.getElementById('manual-late').checked = false;
-  document.getElementById('manual-ai-cite').checked = false;
-
+  S.submissions.push({ user_id: id, workflow_state: text ? 'submitted' : 'unsubmitted', body: text, late: isLate, _manualText: text, _hasAiCitation: hasAiCitation });
   toast(`Added ${name}.`, 'success');
-
   if (gradeNow && S.rubric && text && S.health?.claude) {
     try {
-      const res = await POST('/api/grade/single', {
-        text, rubric: S.rubric, studentName: name, hasAiCitation,
-        aiInstructions: S.aiInstructions,
-      });
+      const res = await POST('/api/grade/single', { text, rubric: S.rubric, studentName: name, hasAiCitation, aiInstructions: S.aiInstructions });
       applyAiGrade(id, res.grade, res.aiDetection, res.flagged);
       await saveGrade(id);
       toast(`${name} graded!`, 'success');
-    } catch (e) {
-      toast('Grading failed: ' + e.message, 'error');
-    }
+    } catch (e) { toast('Grading failed: ' + e.message, 'error'); }
   }
-
-  renderStudentsTable();
-  renderGradesTable();
-  renderOverview();
+  renderManualView();
 }
 
-document.getElementById('btn-manual-add').addEventListener('click', () => addManualStudent(true));
-document.getElementById('btn-manual-add-only').addEventListener('click', () => addManualStudent(false));
-
-/* ── Export ───────────────────────────────────────────────────────────────── */
+/* ── Export ─────────────────────────────────────────────────────────────────── */
 document.getElementById('btn-export').addEventListener('click', () => {
-  if (!S.course || !S.assignment) { toast('Select a course and assignment.', 'warn'); return; }
-  window.location.href = `/api/grades/${S.course.id}/${S.assignment.id}/export.csv`;
+  if (!S.course || !S.currentAssignment) { toast('Open an assignment first.', 'warn'); return; }
+  window.location.href = `/api/grades/${S.course.id}/${S.currentAssignment.id}/export.csv`;
 });
 
-/* ── Clear Grades ──────────────────────────────────────────────────────────── */
-document.getElementById('btn-clear-grades').addEventListener('click', async () => {
-  if (!confirm('Clear all grades for this assignment? This cannot be undone.')) return;
-  if (S.course && S.assignment) {
-    await DEL(`/api/grades/${S.course.id}/${S.assignment.id}`);
-  }
-  S.grades = {};
-  renderGradesTable();
-  renderStudentsTable();
-  renderOverview();
-  toast('Grades cleared.');
-});
-
-/* ── Buttons state ────────────────────────────────────────────────────────── */
-function updateButtons() {
-  const hasAssignment = !!(S.assignment);
-  const hasRubric = !!(S.rubric?.criteria?.length);
-  document.getElementById('btn-grade-all').disabled = !(hasAssignment || S.manualStudents.length) || !hasRubric;
-  document.getElementById('btn-export').disabled = !hasAssignment;
+/* ── Helpers ─────────────────────────────────────────────────────────────────── */
+function allStudents() {
+  const canvas = S.students.map(e => ({
+    id: String(e.user_id || e.user?.id || e.id),
+    name: e.user?.name || e.user?.sortable_name || `Student ${e.user_id}`,
+    source: 'canvas',
+  }));
+  const manual = S.manualStudents.map(s => ({ ...s, source: 'manual' }));
+  const seen = new Set();
+  return [...canvas, ...manual].filter(s => { if (seen.has(s.id)) return false; seen.add(s.id); return true; });
 }
 
-/* ── Utility ──────────────────────────────────────────────────────────────── */
-function esc(str) {
-  return String(str ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
+function submissionFor(studentId) {
+  return S.submissions.find(s => String(s.user_id) === String(studentId)) || null;
 }
 
-/* ── Auth ─────────────────────────────────────────────────────────────────── */
+function submissionText(sub) {
+  if (!sub) return '';
+  return sub._manualText || sub.body || '';
+}
+
+function buildEmptyGrade(studentId) {
+  const st  = allStudents().find(s => s.id === studentId);
+  const sub = submissionFor(studentId);
+  return {
+    studentId,
+    studentName: st?.name || studentId,
+    submitted: !!(sub && sub.workflow_state !== 'unsubmitted'),
+    isLate: sub?.late || false,
+    rubric: S.rubric,
+    criteria: {},
+    status: 'pending',
+  };
+}
+
+async function saveGrade(studentId) {
+  if (!S.course || !S.currentAssignment) return;
+  try {
+    await PUT(`/api/grades/${S.course.id}/${S.currentAssignment.id}/${studentId}`, S.grades[studentId]);
+  } catch (e) { toast('Save failed: ' + e.message, 'error'); }
+}
+
+/* ── Auth ────────────────────────────────────────────────────────────────────── */
 document.getElementById('btn-logout').addEventListener('click', async () => {
   await fetch('/auth/logout', { method: 'POST' });
   window.location.href = '/login.html';
@@ -1262,5 +1356,5 @@ async function loadCurrentUser() {
   } catch { window.location.href = '/login.html'; }
 }
 
-/* ── Boot ─────────────────────────────────────────────────────────────────── */
+/* ── Boot ────────────────────────────────────────────────────────────────────── */
 loadCurrentUser().then(() => init()).catch(console.error);

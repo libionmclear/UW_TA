@@ -19,15 +19,12 @@
   </div>
   <div class="header-center">
     <select id="sel-course" class="hdr-select">
-      <option value="">— Select Course —</option>
-    </select>
-    <select id="sel-assignment" class="hdr-select" disabled>
-      <option value="">— Select Assignment —</option>
+      <option value="">— Loading courses… —</option>
     </select>
   </div>
   <div class="header-right">
-    <button id="btn-export" class="btn btn-ghost" disabled>⬇ Export CSV</button>
     <button id="btn-grade-all" class="btn btn-primary" disabled>▶ Grade All with AI</button>
+    <button id="btn-export" class="btn btn-ghost" disabled>⬇ Export CSV</button>
     <div class="hdr-divider"></div>
     <span id="hdr-username" class="hdr-user"></span>
     <button id="btn-logout" class="btn btn-ghost">Sign Out</button>
@@ -37,321 +34,39 @@
 <!-- ── Layout ──────────────────────────────────────────────────────────────── -->
 <div class="layout">
 
-  <!-- Sidebar -->
-  <nav class="sidebar">
-    <button class="nav-btn active" data-tab="overview">
+  <!-- ── Sidebar ─────────────────────────────────────────────────────────── -->
+  <nav class="sidebar" id="sidebar">
+    <!-- Overview always on top -->
+    <button class="nav-btn active" data-view="overview">
       <span class="nav-icon">◈</span> Overview
     </button>
-    <button class="nav-btn" data-tab="rubric">
-      <span class="nav-icon">✦</span> Rubric
-    </button>
-    <button class="nav-btn" data-tab="students">
-      <span class="nav-icon">◉</span> Students
-    </button>
-    <button class="nav-btn" data-tab="grades">
-      <span class="nav-icon">▦</span> Grading Matrix
-    </button>
+
+    <!-- Assignment groups rendered by JS -->
+    <div id="sidebar-assignments"></div>
+
     <hr class="nav-divider" />
-    <button class="nav-btn" data-tab="quiz">
+    <button class="nav-btn" data-view="quiz">
       <span class="nav-icon">?</span> Quiz Bank
     </button>
-    <button class="nav-btn" data-tab="content">
+    <button class="nav-btn" data-view="content">
       <span class="nav-icon">▶</span> Course Content
     </button>
     <hr class="nav-divider" />
-    <button class="nav-btn" data-tab="manual">
+    <button class="nav-btn" data-view="manual">
       <span class="nav-icon">+</span> Add Manual
     </button>
   </nav>
 
-  <!-- Main Content -->
-  <main class="main">
-
-    <!-- ── Overview ──────────────────────────────────────────────────────── -->
-    <section id="tab-overview" class="tab-content active">
-      <div class="page-title">Overview</div>
-      <div id="overview-cards" class="stat-cards">
-        <div class="stat-card">
-          <div class="stat-value" id="stat-students">—</div>
-          <div class="stat-label">Students</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-value" id="stat-submitted">—</div>
-          <div class="stat-label">Submitted</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-value" id="stat-graded">—</div>
-          <div class="stat-label">AI Graded</div>
-        </div>
-        <div class="stat-card stat-card--warn">
-          <div class="stat-value" id="stat-flagged">—</div>
-          <div class="stat-label">AI Flagged</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-value" id="stat-avg">—</div>
-          <div class="stat-label">Avg Score</div>
-        </div>
-      </div>
-
-      <div class="overview-grid">
-        <div class="card">
-          <div class="card-title">Assignment Info</div>
-          <div id="overview-assignment">
-            <p class="muted">Select a course and assignment to begin.</p>
-          </div>
-        </div>
-        <div class="card">
-          <div class="card-title">Active Rubric</div>
-          <div id="overview-rubric">
-            <p class="muted">No rubric set. Go to the Rubric tab to create one.</p>
-          </div>
-        </div>
-        <div class="card">
-          <div class="card-title">Recent AI Flags</div>
-          <div id="overview-flags">
-            <p class="muted">No flags yet.</p>
-          </div>
-        </div>
-        <div class="card">
-          <div class="card-title">Quick Start</div>
-          <ol class="quickstart-list">
-            <li>Select a course &amp; assignment above</li>
-            <li>Build or generate a rubric in the <strong>Rubric</strong> tab (add AI grading instructions)</li>
-            <li>Load students &amp; submissions in <strong>Students</strong></li>
-            <li>Click <strong>Grade All with AI</strong> in the header</li>
-            <li>Review &amp; override scores in <strong>Grading Matrix</strong> (TA Grade + Instructor Grade)</li>
-            <li>Export CSV when done</li>
-          </ol>
-        </div>
-      </div>
-    </section>
-
-    <!-- ── Rubric Builder ─────────────────────────────────────────────────── -->
-    <section id="tab-rubric" class="tab-content">
-      <div class="page-title">
-        Rubric Builder
-        <div class="page-actions">
-          <button id="btn-generate-rubric" class="btn btn-secondary">✦ Generate with AI</button>
-          <button id="btn-save-rubric" class="btn btn-primary">Save Rubric</button>
-        </div>
-      </div>
-
-      <div class="card rubric-meta-card">
-        <div class="rubric-meta-row">
-          <div class="field-group">
-            <label>Rubric Name</label>
-            <input id="rubric-name" type="text" class="input" placeholder="e.g. Coffee Mug Design — Week 4" />
-          </div>
-          <div class="field-group field-group--sm">
-            <label>Total Points</label>
-            <input id="rubric-total" type="number" class="input" value="15" min="1" />
-          </div>
-          <div class="field-group">
-            <label>Assignment Description (for AI generation)</label>
-            <textarea id="rubric-description" class="input" rows="2" placeholder="Describe the assignment..."></textarea>
-          </div>
-        </div>
-      </div>
-
-      <!-- AI Grading Instructions (per assignment) -->
-      <div class="card" id="card-ai-instructions">
-        <div class="card-title">
-          AI Grading Instructions
-          <span class="card-title-hint">Saved per assignment — included in every AI grading prompt</span>
-        </div>
-        <div class="field-group" style="margin-bottom:8px">
-          <textarea id="ai-instructions-text" class="input" rows="4"
-            placeholder="Enter specific instructions for the AI when grading this assignment.
-
-Example: 'This is a case write-up. Students must have an executive summary with recommendations, supporting points, and a conclusion with alternatives. Heavily penalize submissions that are missing the executive summary or have no concrete recommendations.'"></textarea>
-        </div>
-        <div style="display:flex;gap:8px;align-items:center">
-          <button id="btn-save-ai-instructions" class="btn btn-surf" style="font-size:12px;padding:5px 12px">Save Instructions</button>
-          <span id="ai-instructions-status" class="muted" style="font-size:12px"></span>
-        </div>
-        <div class="card-hint" style="margin-top:10px;padding:8px 12px;background:var(--bg);border-radius:var(--radius);font-size:12px;color:var(--text-muted)">
-          <strong>Case Write-up Format Reminder:</strong> For any business/case write-up, students should include:
-          <strong>① Executive Summary + Recommendations</strong> &nbsp;·&nbsp;
-          <strong>② Supporting Points &amp; Evidence</strong> &nbsp;·&nbsp;
-          <strong>③ Conclusion / Alternatives / Other Thoughts</strong>
-        </div>
-      </div>
-
-      <div id="rubric-criteria-list" class="rubric-criteria-list"></div>
-
-      <button id="btn-add-criterion" class="btn btn-ghost btn-add-row">+ Add Criterion</button>
-
-      <div id="rubric-clarifying" class="card" style="display:none">
-        <div class="card-title">Clarifying Questions from AI</div>
-        <ul id="clarifying-list"></ul>
-      </div>
-
-      <div class="card">
-        <div class="card-title">Saved Rubrics</div>
-        <div id="saved-rubrics-list">
-          <p class="muted">No saved rubrics yet.</p>
-        </div>
-      </div>
-    </section>
-
-    <!-- ── Students ───────────────────────────────────────────────────────── -->
-    <section id="tab-students" class="tab-content">
-      <div class="page-title">
-        Students &amp; Submissions
-        <div class="page-actions">
-          <button id="btn-refresh-students" class="btn btn-secondary">⟳ Refresh from Canvas</button>
-        </div>
-      </div>
-
-      <div id="students-table-wrap">
-        <p class="muted padded">Select a course and assignment to load students.</p>
-      </div>
-    </section>
-
-    <!-- ── Grading Matrix ─────────────────────────────────────────────────── -->
-    <section id="tab-grades" class="tab-content">
-      <div class="page-title">
-        Grading Matrix
-        <div class="page-actions">
-          <button id="btn-clear-grades" class="btn btn-ghost btn-danger">Clear All</button>
-        </div>
-      </div>
-
-      <div id="grades-progress" style="display:none" class="progress-bar-wrap">
-        <div class="progress-label" id="progress-label">Grading 0 / 0…</div>
-        <div class="progress-track"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
-      </div>
-
-      <div class="grade-col-legend">
-        <span class="legend-item legend-ai">AI</span>
-        <span class="legend-item legend-h1">TA</span>
-        <span class="legend-item legend-h2">Instr.</span>
-        <span class="muted" style="font-size:11px">per criterion</span>
-      </div>
-
-      <div id="grades-table-wrap" class="table-wrap">
-        <p class="muted padded">Grade all with AI or manually fill in scores.</p>
-      </div>
-    </section>
-
-    <!-- ── Quiz Bank ─────────────────────────────────────────────────────── -->
-    <section id="tab-quiz" class="tab-content">
-      <div class="page-title">
-        Quiz Question Bank
-        <div class="page-actions">
-          <button id="btn-quiz-upload" class="btn btn-secondary">⬆ Upload Test Bank</button>
-          <input id="quiz-file-input" type="file" accept=".txt,.csv,.json,.md" style="display:none" />
-          <button id="btn-quiz-clear" class="btn btn-ghost btn-danger">Clear Bank</button>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-title">Suggest Quiz Questions with AI</div>
-        <div class="rubric-meta-row">
-          <div class="field-group">
-            <label>Topic / Focus for this quiz</label>
-            <input id="quiz-topic" type="text" class="input" placeholder="e.g. Customer segmentation and targeting" />
-          </div>
-          <div class="field-group field-group--sm">
-            <label># of questions</label>
-            <input id="quiz-count" type="number" class="input" value="5" min="1" max="20" />
-          </div>
-        </div>
-        <div class="field-group">
-          <label>Course content context (optional — paste notes, slides summary, or video transcript)</label>
-          <textarea id="quiz-context" class="input" rows="4"
-            placeholder="Paste relevant course content, lecture notes, or video summaries here to help AI select the most relevant questions..."></textarea>
-        </div>
-        <div style="display:flex;gap:8px;margin-top:8px">
-          <button id="btn-quiz-suggest" class="btn btn-surf">✦ Suggest Questions</button>
-        </div>
-      </div>
-
-      <div id="quiz-suggestions-wrap" style="display:none" class="card">
-        <div class="card-title">AI Suggested Questions</div>
-        <div id="quiz-suggestions"></div>
-      </div>
-
-      <div class="card">
-        <div class="card-title">
-          Question Bank
-          <span id="quiz-bank-count" class="card-title-hint"></span>
-        </div>
-        <div id="quiz-bank-list">
-          <p class="muted">No questions in the bank. Upload a test bank file to get started.</p>
-        </div>
-      </div>
-    </section>
-
-    <!-- ── Course Content / Videos ───────────────────────────────────────── -->
-    <section id="tab-content" class="tab-content">
-      <div class="page-title">
-        Course Content &amp; Videos
-        <div class="page-actions">
-          <button id="btn-load-content" class="btn btn-secondary">⟳ Load from Canvas</button>
-        </div>
-      </div>
-
-      <div class="overview-grid" style="grid-template-columns: 1fr 1fr">
-        <div class="card">
-          <div class="card-title">Course Modules</div>
-          <div id="content-modules">
-            <p class="muted">Select a course and click Load from Canvas.</p>
-          </div>
-        </div>
-        <div class="card">
-          <div class="card-title">Pages &amp; Files</div>
-          <div id="content-pages">
-            <p class="muted">Select a course and click Load from Canvas.</p>
-          </div>
-        </div>
-      </div>
-
-      <div class="card" style="margin-top:16px">
-        <div class="card-title">Page Content Viewer</div>
-        <div id="content-viewer">
-          <p class="muted">Click a page to view its content here.</p>
-        </div>
-      </div>
-    </section>
-
-    <!-- ── Manual Entry ───────────────────────────────────────────────────── -->
-    <section id="tab-manual" class="tab-content">
-      <div class="page-title">Add Student Manually</div>
-      <div class="card" style="max-width:600px">
-        <div class="field-group">
-          <label>Student Name</label>
-          <input id="manual-name" type="text" class="input" placeholder="First Last" />
-        </div>
-        <div class="field-group">
-          <label>Student ID (optional)</label>
-          <input id="manual-id" type="text" class="input" placeholder="e.g. 2034567" />
-        </div>
-        <div class="field-group">
-          <label>Paste Submission Text</label>
-          <textarea id="manual-text" class="input" rows="10" placeholder="Paste the student's submission here…"></textarea>
-        </div>
-        <div class="field-row">
-          <label class="checkbox-label">
-            <input id="manual-late" type="checkbox" /> Late submission
-          </label>
-          <label class="checkbox-label">
-            <input id="manual-ai-cite" type="checkbox" /> Student disclosed AI use
-          </label>
-        </div>
-        <div class="card-actions">
-          <button id="btn-manual-add" class="btn btn-primary">Add &amp; Grade with AI</button>
-          <button id="btn-manual-add-only" class="btn btn-secondary">Add Without Grading</button>
-        </div>
-      </div>
-    </section>
-
+  <!-- ── Main ────────────────────────────────────────────────────────────── -->
+  <main class="main" id="main-content">
+    <!-- All views rendered by JS into here -->
+    <div id="view-root"></div>
   </main>
 </div>
 
 <!-- ── Student Detail Modal ───────────────────────────────────────────────── -->
 <div id="modal-backdrop" class="modal-backdrop hidden" role="dialog" aria-modal="true">
-  <div class="modal">
+  <div class="modal modal-wide">
     <div class="modal-header">
       <div>
         <div class="modal-title" id="modal-student-name">Student Name</div>
@@ -361,22 +76,15 @@ Example: 'This is a case write-up. Students must have an executive summary with 
     </div>
     <div class="modal-body">
       <div class="modal-cols">
-        <!-- Left: Submission -->
         <div class="modal-col">
           <div class="col-title">Submission</div>
           <div id="modal-submission-text" class="submission-text"></div>
         </div>
-        <!-- Right: Scoring -->
         <div class="modal-col">
           <div class="col-title">Scores</div>
           <div id="modal-ai-flag" class="ai-flag-banner" style="display:none"></div>
           <div id="modal-criteria-scores" class="criteria-scores"></div>
-          <div class="score-totals">
-            <div>AI Total: <strong id="modal-ai-total">—</strong></div>
-            <div>TA Grade: <strong id="modal-human-total">—</strong></div>
-            <div>Instructor Grade: <strong id="modal-human-total2">—</strong></div>
-            <div class="final-score">Final: <strong id="modal-final">—</strong></div>
-          </div>
+          <div class="score-totals" id="modal-score-totals"></div>
           <div class="field-group mt-1">
             <label>Notes / Feedback</label>
             <textarea id="modal-notes" class="input" rows="3" placeholder="Add notes for this student…"></textarea>
@@ -392,6 +100,15 @@ Example: 'This is a case write-up. Students must have an executive summary with 
       <button id="modal-grade-ai" class="btn btn-secondary">⟳ Re-grade with AI</button>
       <button id="modal-save" class="btn btn-primary">Save</button>
     </div>
+  </div>
+</div>
+
+<!-- ── Progress overlay ───────────────────────────────────────────────────── -->
+<div id="grade-progress-overlay" class="progress-overlay hidden">
+  <div class="progress-card">
+    <div class="progress-label" id="progress-label">Grading…</div>
+    <div class="progress-track"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
+    <div class="progress-sub" id="progress-sub"></div>
   </div>
 </div>
 
