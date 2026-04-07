@@ -87,7 +87,7 @@ const DEFAULT_TEAM_META = {
   '8': { name: 'GoPro',             memberNames: ['Makylie Bean','Kha-vy Bui','Caden Chiong','Noah Graetzer','Hailey Granvold'] },
 };
 
-const store = { rubrics: {}, grades: {}, assignmentSettings: {}, assignmentRubrics: {}, quizBank: { questions: [] }, syllabus: null, teams: {}, teamMeta: {}, dismissed: {} };
+const store = { rubrics: {}, grades: {}, assignmentSettings: {}, assignmentRubrics: {}, quizBank: { questions: [] }, syllabus: null, teams: {}, teamMeta: {}, dismissed: {}, notifications: [] };
 
 try {
   if (fs.existsSync(DATA_FILE)) {
@@ -117,6 +117,22 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 
 const gradesKey  = (cid, aid) => `${cid}__${aid}`;
 function ok(res, data)   { res.json(data); }
 function fail(res, e, code = 500) { res.status(code).json({ error: e.message || e }); }
+
+function addNotification(req, action, detail) {
+  if (!store.notifications) store.notifications = [];
+  const user = req.session?.username || 'unknown';
+  store.notifications.push({
+    id: Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+    user,
+    action,
+    detail,
+    time: new Date().toISOString(),
+    readBy: [],
+  });
+  // Keep last 200 notifications
+  if (store.notifications.length > 200) store.notifications = store.notifications.slice(-200);
+  save();
+}
 
 // ── Health (live connectivity checks, cached 5 min) ───────────────────────────
 let _healthCache = { canvas: false, claude: false, at: 0 };
@@ -210,9 +226,10 @@ app.get('/api/assignment-rubric/:cid/:aid', (req, res) => {
   ok(res, store.assignmentRubrics[gradesKey(req.params.cid, req.params.aid)] || null);
 });
 
-app.put('/api/assignment-rubric/:cid/:aid', (req, res) => {
+app.put('/api/assignment-rubric/:cid/:aid', requireAuth, (req, res) => {
   const key = gradesKey(req.params.cid, req.params.aid);
   store.assignmentRubrics[key] = { ...req.body, updatedAt: new Date().toISOString() };
+  addNotification(req, 'rubric_changed', `Rubric updated for assignment ${req.params.aid}`);
   save();
   ok(res, store.assignmentRubrics[key]);
 });
@@ -278,7 +295,12 @@ app.get('/api/grades/:cid/:aid', (req, res) => {
 app.put('/api/grades/:cid/:aid/:studentId', (req, res) => {
   const key = gradesKey(req.params.cid, req.params.aid);
   if (!store.grades[key]) store.grades[key] = {};
+  const prev = store.grades[key][req.params.studentId];
   store.grades[key][req.params.studentId] = { ...req.body, updatedAt: new Date().toISOString() };
+  // Log notification if finalScore changed
+  if (req.body.finalScore != null && (!prev || prev.finalScore !== req.body.finalScore)) {
+    addNotification(req, 'grade_changed', `Graded ${req.body.studentName || req.params.studentId}: ${req.body.finalScore}pts (assignment ${req.params.aid})`);
+  }
   save();
   ok(res, store.grades[key][req.params.studentId]);
 });
@@ -609,6 +631,7 @@ app.post('/api/comments/:cid/:aid', requireAuth, (req, res) => {
   if (!text?.trim()) return fail(res, { message: 'Empty comment' }, 400);
   const comment = { author: req.session.username, text: text.trim(), ts: new Date().toISOString() };
   store.comments[key].push(comment);
+  addNotification(req, 'comment', `New note on assignment: "${text.trim().substring(0, 60)}${text.length > 60 ? '…' : ''}"`);
   save();
   ok(res, comment);
 });
@@ -626,8 +649,20 @@ app.get('/api/team-meta/:cid', (req, res) => {
   if (!store.teamMeta[req.params.cid]) store.teamMeta[req.params.cid] = DEFAULT_TEAM_META;
   ok(res, store.teamMeta[req.params.cid]);
 });
-app.put('/api/team-meta/:cid', (req, res) => {
+app.put('/api/team-meta/:cid', requireAuth, (req, res) => {
+  const prev = store.teamMeta[req.params.cid];
   store.teamMeta[req.params.cid] = req.body;
+  // Detect new team notes
+  if (req.body && prev) {
+    Object.entries(req.body).forEach(([tNum, tData]) => {
+      const prevNotes = prev[tNum]?.notes?.length || 0;
+      const newNotes = tData?.notes?.length || 0;
+      if (newNotes > prevNotes) {
+        const latest = tData.notes[tData.notes.length - 1];
+        addNotification(req, 'team_note', `Team ${tNum} note: "${(latest?.text || '').substring(0, 60)}${(latest?.text || '').length > 60 ? '…' : ''}"`);
+      }
+    });
+  }
   save();
   ok(res, store.teamMeta[req.params.cid]);
 });
@@ -764,6 +799,35 @@ app.delete('/api/student-photo/:studentId', requireAuth, (req, res) => {
     const fp = path.join(PHOTOS_DIR, sid + e);
     if (fs.existsSync(fp)) fs.unlinkSync(fp);
   }
+  ok(res, { ok: true });
+});
+
+// ── Notifications ────────────────────────────────────────────────────────────
+app.get('/api/notifications', requireAuth, (req, res) => {
+  const user = req.session.username;
+  const all = store.notifications || [];
+  // Return notifications from OTHER users, with read status for current user
+  const forUser = all
+    .filter(n => n.user !== user)
+    .map(n => ({ ...n, read: (n.readBy || []).includes(user) }));
+  ok(res, forUser);
+});
+
+app.get('/api/notifications/unread-count', requireAuth, (req, res) => {
+  const user = req.session.username;
+  const count = (store.notifications || [])
+    .filter(n => n.user !== user && !(n.readBy || []).includes(user))
+    .length;
+  ok(res, { count });
+});
+
+app.post('/api/notifications/mark-read', requireAuth, (req, res) => {
+  const user = req.session.username;
+  (store.notifications || []).forEach(n => {
+    if (!n.readBy) n.readBy = [];
+    if (!n.readBy.includes(user)) n.readBy.push(user);
+  });
+  save();
   ok(res, { ok: true });
 });
 

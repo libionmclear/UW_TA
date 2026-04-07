@@ -602,6 +602,7 @@ function showView(name) {
     case 'content':     renderContentView(root); loadCourseContent(); break;
     case 'syllabus':    renderSyllabusView(root); break;
     case 'manual':      renderManualView(root); break;
+    case 'notifications': renderNotificationsView(root); break;
     default:            renderOverview(root);
   }
 }
@@ -4146,5 +4147,72 @@ async function loadCurrentUser() {
   } catch { window.location.href = '/login.html'; }
 }
 
+/* ── Notifications ─────────────────────────────────────────────────────────── */
+let _notifPollTimer = null;
+
+async function pollNotifications() {
+  try {
+    const { count } = await GET('/api/notifications/unread-count');
+    const badge = document.getElementById('notif-badge');
+    if (badge) {
+      badge.textContent = count;
+      badge.style.display = count > 0 ? '' : 'none';
+    }
+  } catch { /* silent */ }
+}
+
+function startNotifPoll() {
+  pollNotifications();
+  _notifPollTimer = setInterval(pollNotifications, 30000); // every 30s
+}
+
+async function renderNotificationsView(root) {
+  root = root || document.getElementById('view-root');
+  root.innerHTML = '<div class="loading-splash"><div class="loading-bounce"></div><div class="loading-text">Loading notifications<span class="loading-dots"></span></div></div>';
+
+  try {
+    const notifications = await GET('/api/notifications');
+
+    // Mark all as read
+    await POST('/api/notifications/mark-read', {});
+    pollNotifications(); // update badge
+
+    const unread = notifications.filter(n => !n.read);
+
+    function renderList(items) {
+      if (!items.length) return '<p class="muted" style="padding:10px 0">No notifications.</p>';
+      return items.map(n => {
+        const icon = n.action === 'grade_changed' ? '📝' : n.action === 'comment' ? '💬' : n.action === 'team_note' ? '👥' : n.action === 'rubric_changed' ? '📋' : '🔔';
+        const time = new Date(n.time).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+        return `<div class="notif-item ${n.read ? 'notif-read' : 'notif-unread'}">
+          <span class="notif-icon">${icon}</span>
+          <div class="notif-content">
+            <div class="notif-user">${esc(n.user)}</div>
+            <div class="notif-detail">${esc(n.detail)}</div>
+          </div>
+          <span class="notif-time">${time}</span>
+        </div>`;
+      }).join('');
+    }
+
+    root.innerHTML = `
+      <div class="page-title">🔔 Notifications
+        <div class="page-actions">
+          <button class="btn btn-ghost" onclick="renderNotificationsView()">⟳ Refresh</button>
+        </div>
+      </div>
+      ${unread.length ? `<div class="card" style="margin-bottom:12px">
+        <div class="card-title">New (${unread.length})</div>
+        <div class="notif-list">${renderList(unread)}</div>
+      </div>` : ''}
+      <div class="card">
+        <div class="card-title">All Activity (${notifications.length})</div>
+        <div class="notif-list">${renderList(notifications)}</div>
+      </div>`;
+  } catch (e) {
+    root.innerHTML = `<p class="muted padded">Failed to load notifications: ${esc(e.message)}</p>`;
+  }
+}
+
 /* ── Boot ────────────────────────────────────────────────────────────────────── */
-loadCurrentUser().then(() => init()).catch(console.error);
+loadCurrentUser().then(() => { init(); startNotifPoll(); }).catch(console.error);
