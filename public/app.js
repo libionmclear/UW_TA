@@ -1211,10 +1211,26 @@ async function renderLedgerView(root) {
 }
 
 let _ledgerHideNotDue = false;
+let _ledgerSortCol = 'name'; // 'name','total','pct','grade', or assignment id
+let _ledgerSortDir = 1; // 1=asc, -1=desc
+let _ledgerCanvasScores = null; // cache for canvas scores
+
+function ldgSort(col) {
+  if (_ledgerSortCol === col) _ledgerSortDir *= -1;
+  else { _ledgerSortCol = col; _ledgerSortDir = 1; }
+  _renderLedgerHtml(null, _ledgerCanvasScores);
+}
+
+function ldgSortArrow(col) {
+  if (_ledgerSortCol !== col) return '<span class="ldg-sort">⇅</span>';
+  return _ledgerSortDir === 1 ? '<span class="ldg-sort ldg-sort-active">▲</span>' : '<span class="ldg-sort ldg-sort-active">▼</span>';
+}
 
 function _renderLedgerHtml(root, canvasScores) {
   root = root || document.getElementById('view-root');
-  const students   = S.allStudentsList;
+  if (canvasScores) _ledgerCanvasScores = canvasScores;
+  const cvs = _ledgerCanvasScores;
+  const students = S.allStudentsList;
   const now = new Date();
   const allAssignments = [...S.assignments].sort((a, b) => new Date(a.due_at||0) - new Date(b.due_at||0));
   const assignments = _ledgerHideNotDue
@@ -1225,7 +1241,7 @@ function _renderLedgerHtml(root, canvasScores) {
     return;
   }
 
-  // Build header columns (group by category, show category label spanning)
+  // Build header columns (group by category)
   const grouped = {};
   assignments.forEach(a => {
     const g = classifyAssignment(a);
@@ -1233,38 +1249,71 @@ function _renderLedgerHtml(root, canvasScores) {
     grouped[g].push(a);
   });
   const orderedGroups = [...GROUP_ORDER.filter(g => grouped[g]), ...Object.keys(grouped).filter(g => !GROUP_ORDER.includes(g))];
+  const flatAssignments = orderedGroups.flatMap(g => grouped[g]);
 
   // Group header row
   const groupHeaderCells = orderedGroups.map(g =>
     `<th class="ldg-group-hdr" colspan="${grouped[g].length}">${esc(g)}</th>`
   ).join('');
 
-  // Assignment header row
-  const asgHeaderCells = orderedGroups.flatMap(g => grouped[g].map(a =>
-    `<th class="ldg-asg-hdr" title="${esc(a.name)}">${esc(a.name.length > 18 ? a.name.slice(0,16)+'…' : a.name)}<div class="ldg-pts">${a.points_possible || '?'}pt</div></th>`
-  )).join('');
+  // Assignment header row with sort arrows
+  const asgHeaderCells = flatAssignments.map(a =>
+    `<th class="ldg-asg-hdr ldg-sortable" title="${esc(a.name)}" onclick="ldgSort('a_${a.id}')">
+      ${esc(a.name.length > 18 ? a.name.slice(0,16)+'…' : a.name)}
+      <div class="ldg-pts">${a.points_possible || '?'}pt</div>
+      ${ldgSortArrow('a_' + a.id)}
+    </th>`
+  ).join('');
 
-  // Student rows
-  const rows = students.map(st => {
+  // Compute per-student data
+  function getScore(st, a) {
+    const localGrade = (S.allGrades[String(a.id)] || {})[st.id];
+    const cvScore = cvs?.[String(a.id)]?.[st.id];
+    return localGrade?.finalScore ?? localGrade?.canvasScore ?? cvScore ?? null;
+  }
+
+  const studentData = students.map(st => {
     let earned = 0, possible = 0;
-    const cells = orderedGroups.flatMap(g => grouped[g].map(a => {
-      const localGrade = (S.allGrades[String(a.id)] || {})[st.id];
-      const cvScore    = canvasScores?.[String(a.id)]?.[st.id];
-      const score = localGrade?.finalScore ?? localGrade?.canvasScore ?? cvScore ?? null;
+    const scores = {};
+    flatAssignments.forEach(a => {
+      const score = getScore(st, a);
+      scores[a.id] = score;
       if (score != null && a.points_possible) { earned += score; possible += a.points_possible; }
-      const pct  = (score != null && a.points_possible) ? score / a.points_possible : null;
-      const bg   = pct == null ? '' : pct >= 0.9 ? 'ldg-cell-a' : pct >= 0.8 ? 'ldg-cell-b' : pct >= 0.7 ? 'ldg-cell-c' : 'ldg-cell-f';
-      const src  = localGrade?.finalScore != null ? '' : localGrade?.canvasScore != null ? ' title="Canvas"' : cvScore != null ? ' title="Canvas sync"' : '';
-      return `<td class="ldg-cell ${bg}"${src}>${score != null ? score : '<span class="ldg-empty">—</span>'}</td>`;
-    }));
+    });
     const pct = possible ? Math.round(earned / possible * 100) : null;
     const letter = pct == null ? '—' : pct>=93?'A':pct>=90?'A-':pct>=87?'B+':pct>=83?'B':pct>=80?'B-':pct>=77?'C+':pct>=73?'C':pct>=70?'C-':pct>=67?'D+':pct>=60?'D':'F';
+    return { st, earned, possible, pct, letter, scores };
+  });
+
+  // Sort
+  const letterVal = l => ({ 'A':12,'A-':11,'B+':10,'B':9,'B-':8,'C+':7,'C':6,'C-':5,'D+':4,'D':3,'F':1 }[l] || 0);
+  studentData.sort((a, b) => {
+    let cmp = 0;
+    if (_ledgerSortCol === 'name') cmp = a.st.name.localeCompare(b.st.name);
+    else if (_ledgerSortCol === 'total') cmp = (a.earned || 0) - (b.earned || 0);
+    else if (_ledgerSortCol === 'pct') cmp = (a.pct || 0) - (b.pct || 0);
+    else if (_ledgerSortCol === 'grade') cmp = letterVal(a.letter) - letterVal(b.letter);
+    else if (_ledgerSortCol.startsWith('a_')) {
+      const aid = _ledgerSortCol.slice(2);
+      cmp = (a.scores[aid] ?? -1) - (b.scores[aid] ?? -1);
+    }
+    return cmp * _ledgerSortDir;
+  });
+
+  // Render rows
+  const rows = studentData.map(({ st, earned, possible, pct, letter, scores }) => {
+    const cells = flatAssignments.map(a => {
+      const score = scores[a.id];
+      const p = (score != null && a.points_possible) ? score / a.points_possible : null;
+      const bg = p == null ? '' : p >= 0.9 ? 'ldg-cell-a' : p >= 0.8 ? 'ldg-cell-b' : p >= 0.7 ? 'ldg-cell-c' : 'ldg-cell-f';
+      return `<td class="ldg-cell ${bg}">${score != null ? score : '<span class="ldg-empty">—</span>'}</td>`;
+    }).join('');
     return `<tr>
       <td class="ldg-name">${esc(st.name)}</td>
       <td class="ldg-total">${possible ? `${earned}/${possible}` : '—'}</td>
       <td class="ldg-pct-cell ${pct != null && pct < 70 ? 'grade-low' : ''}">${pct != null ? pct + '%' : '—'}</td>
       <td class="ldg-letter ${pct != null && pct < 70 ? 'grade-low' : ''}">${letter}</td>
-      ${cells.join('')}
+      ${cells}
     </tr>`;
   }).join('');
 
@@ -1283,10 +1332,10 @@ function _renderLedgerHtml(root, canvasScores) {
       <table class="ldg-table">
         <thead>
           <tr>
-            <th class="ldg-name-hdr" rowspan="2">Student</th>
-            <th class="ldg-total-hdr" rowspan="2">Total</th>
-            <th class="ldg-pct-hdr" rowspan="2">%</th>
-            <th class="ldg-letter-hdr" rowspan="2">Grade</th>
+            <th class="ldg-name-hdr ldg-sortable" rowspan="2" onclick="ldgSort('name')">Student ${ldgSortArrow('name')}</th>
+            <th class="ldg-total-hdr ldg-sortable" rowspan="2" onclick="ldgSort('total')">Total ${ldgSortArrow('total')}</th>
+            <th class="ldg-pct-hdr ldg-sortable" rowspan="2" onclick="ldgSort('pct')">% ${ldgSortArrow('pct')}</th>
+            <th class="ldg-letter-hdr ldg-sortable" rowspan="2" onclick="ldgSort('grade')">Grade ${ldgSortArrow('grade')}</th>
             ${groupHeaderCells}
           </tr>
           <tr>${asgHeaderCells}</tr>
