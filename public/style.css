@@ -208,6 +208,7 @@ a { color: var(--uw-purple); }
 .grade-sync--canvas { background: #fff7ed; color: #c2410c; border: 1px solid #fed7aa; }
 .grade-sync--synced { background: #f0fdf4; color: #15803d; border: 1px solid #86efac; }
 .grade-sync--local  { background: #fef2f2; color: #dc2626; border: 1px solid #fca5a5; }
+.grade-sync--needs  { background: #fefce8; color: #a16207; border: 1px solid #fde68a; }
 .atab-content { display: none; }
 .atab-content.active { display: block; }
 

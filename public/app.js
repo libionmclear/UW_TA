@@ -750,16 +750,32 @@ function renderOverview(root) {
       <div class="card-title">🔴 Needs Grading ${S._syncing ? '<span class="syncing-badge">Syncing Canvas<span class="loading-dots"></span></span>' : `(${needsGrading.length})`}</div>
       ${S._syncing ? '<div class="syncing-hint"><div class="loading-bar-top" style="margin-bottom:0"><div class="loading-bar-fill"></div></div><p class="muted" style="padding:8px 0;text-align:center">Grabbing latest data from Canvas...</p></div>' : ''}
       ${needsGrading.length ? `<table class="overview-table">
-        <thead><tr><th>Assignment</th><th>Type</th><th>Due</th><th>Points</th><th>Pending</th><th></th></tr></thead>
+        <thead><tr><th>Assignment</th><th>Type</th><th>Due</th><th>Points</th><th>Grade Source</th><th>Pending</th><th></th></tr></thead>
         <tbody>${needsGrading.map(a => {
           const g = S.allGrades[String(a.id)] || {};
-          const pending = Object.values(g).filter(gr => gr.status !== 'reviewed').length;
+          const gs = Object.values(g);
+          const pending = gs.filter(gr => gr.status !== 'reviewed').length;
           const due = a.due_at ? new Date(a.due_at).toLocaleDateString() : '—';
+          const withFinal = gs.filter(gr => gr.finalScore != null);
+          const fromCanvas = gs.filter(gr => gr.status === 'canvas');
+          const synced = withFinal.filter(gr => gr.canvasScore != null && gr.finalScore === gr.canvasScore);
+          const uwOnly = withFinal.filter(gr => gr.canvasScore == null || gr.finalScore !== gr.canvasScore);
+          let srcBadge = '';
+          if (!withFinal.length && !fromCanvas.length) {
+            srcBadge = '<span class="grade-sync-badge grade-sync--needs" style="font-size:10px;padding:2px 8px">Needs Grading</span>';
+          } else if (fromCanvas.length && !withFinal.filter(gr => gr.status !== 'canvas').length) {
+            srcBadge = `<span class="grade-sync-badge grade-sync--canvas" style="font-size:10px;padding:2px 8px">Canvas (${fromCanvas.length})</span>`;
+          } else if (uwOnly.length === 0 && synced.length > 0) {
+            srcBadge = `<span class="grade-sync-badge grade-sync--synced" style="font-size:10px;padding:2px 8px">Synced (${synced.length})</span>`;
+          } else if (uwOnly.length > 0) {
+            srcBadge = `<span class="grade-sync-badge grade-sync--local" style="font-size:10px;padding:2px 8px">UW-TA Only (${uwOnly.length})</span>`;
+          }
           return `<tr>
             <td><button class="link-btn" onclick="selectAssignment('${a.id}')">${esc(a.name)}</button></td>
             <td><span class="type-badge">${esc(classifyAssignment(a))}</span></td>
             <td>${due}</td>
             <td>${a.points_possible || '—'}</td>
+            <td>${srcBadge}</td>
             <td><span class="status-badge status--warn">${pending} pending</span></td>
             <td style="display:flex;gap:5px">
               <button class="btn btn-surf" style="font-size:11px;padding:4px 10px" onclick="selectAssignment('${a.id}')">Open</button>
