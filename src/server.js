@@ -786,43 +786,33 @@ app.post('/api/canvas/extract-text', requireAuth, async (req, res) => {
   }
 });
 
-// ── Student Photos ──────────────────────────────────────────────────────────
-const PHOTOS_DIR = path.join(__dirname, '../data/photos');
-if (!fs.existsSync(PHOTOS_DIR)) fs.mkdirSync(PHOTOS_DIR, { recursive: true });
+// ── Photos (stored in store.json as base64 to survive Render deploys) ───────
+if (!store.photos) store.photos = {};
 
 app.get('/api/student-photo/:studentId', (req, res) => {
-  const sid = req.params.studentId;
-  const exts = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
-  for (const ext of exts) {
-    const fp = path.join(PHOTOS_DIR, sid + ext);
-    if (fs.existsSync(fp)) return res.sendFile(fp);
-  }
-  res.status(404).json({ error: 'No photo' });
+  const photo = store.photos[req.params.studentId];
+  if (!photo) return res.status(404).json({ error: 'No photo' });
+  const buf = Buffer.from(photo.data, 'base64');
+  res.setHeader('Content-Type', photo.mime || 'image/jpeg');
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+  res.send(buf);
 });
 
 app.post('/api/student-photo/:studentId', requireAuth, upload.single('photo'), (req, res) => {
   if (!req.file) return fail(res, { message: 'No file uploaded' }, 400);
   const sid = req.params.studentId;
-  const ext = path.extname(req.file.originalname).toLowerCase() || '.jpg';
-  // Remove old photos for this student
-  const exts = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
-  for (const e of exts) {
-    const fp = path.join(PHOTOS_DIR, sid + e);
-    if (fs.existsSync(fp)) fs.unlinkSync(fp);
-  }
-  const fp = path.join(PHOTOS_DIR, sid + ext);
-  fs.writeFileSync(fp, req.file.buffer);
-  console.log(`  ✓ Photo saved: ${fp} (${req.file.buffer.length} bytes)`);
+  // Resize-limit: keep under 100KB by storing as-is (photos are typically small)
+  const data = req.file.buffer.toString('base64');
+  const mime = req.file.mimetype || 'image/jpeg';
+  store.photos[sid] = { data, mime };
+  save();
+  console.log(`  ✓ Photo saved for ${sid} (${req.file.buffer.length} bytes, stored in store.json)`);
   ok(res, { ok: true, path: `/api/student-photo/${sid}` });
 });
 
 app.delete('/api/student-photo/:studentId', requireAuth, (req, res) => {
-  const sid = req.params.studentId;
-  const exts = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
-  for (const e of exts) {
-    const fp = path.join(PHOTOS_DIR, sid + e);
-    if (fs.existsSync(fp)) fs.unlinkSync(fp);
-  }
+  delete store.photos[req.params.studentId];
+  save();
   ok(res, { ok: true });
 });
 
@@ -933,21 +923,19 @@ app.post('/api/change-password', requireAuth, (req, res) => {
 
 // ── User Profile Photo ──────────────────────────────────────────────────────
 app.get('/api/user-photo/:username', (req, res) => {
-  const name = req.params.username.toLowerCase();
-  const exts = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
-  for (const ext of exts) {
-    const fp = path.join(PHOTOS_DIR, 'user_' + name + ext);
-    if (fs.existsSync(fp)) return res.sendFile(fp);
-  }
-  res.status(404).json({ error: 'No photo' });
+  const photo = store.photos['user_' + req.params.username.toLowerCase()];
+  if (!photo) return res.status(404).json({ error: 'No photo' });
+  const buf = Buffer.from(photo.data, 'base64');
+  res.setHeader('Content-Type', photo.mime || 'image/jpeg');
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+  res.send(buf);
 });
 app.post('/api/user-photo/:username', requireAuth, upload.single('photo'), (req, res) => {
   if (!req.file) return fail(res, { message: 'No file' }, 400);
-  const name = req.params.username.toLowerCase();
-  const ext = path.extname(req.file.originalname).toLowerCase() || '.jpg';
-  const exts = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
-  for (const e of exts) { const fp = path.join(PHOTOS_DIR, 'user_' + name + e); if (fs.existsSync(fp)) fs.unlinkSync(fp); }
-  fs.writeFileSync(path.join(PHOTOS_DIR, 'user_' + name + ext), req.file.buffer);
+  const key = 'user_' + req.params.username.toLowerCase();
+  store.photos[key] = { data: req.file.buffer.toString('base64'), mime: req.file.mimetype || 'image/jpeg' };
+  save();
+  console.log(`  ✓ User photo saved for ${key} (${req.file.buffer.length} bytes)`);
   ok(res, { ok: true });
 });
 
