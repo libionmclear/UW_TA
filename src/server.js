@@ -821,6 +821,12 @@ app.get('/api/notifications/unread-count', requireAuth, (req, res) => {
   ok(res, { count });
 });
 
+app.delete('/api/notifications/:id', requireAuth, (req, res) => {
+  store.notifications = (store.notifications || []).filter(n => n.id !== req.params.id);
+  save();
+  ok(res, { ok: true });
+});
+
 app.post('/api/notifications/mark-read', requireAuth, (req, res) => {
   const user = req.session.username;
   (store.notifications || []).forEach(n => {

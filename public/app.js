@@ -4191,6 +4191,7 @@ async function renderNotificationsView(root) {
             <div class="notif-detail">${esc(n.detail)}</div>
           </div>
           <span class="notif-time">${time}</span>
+          <button class="notif-delete" onclick="deleteNotification('${esc(n.id)}')" title="Delete">✕</button>
         </div>`;
       }).join('');
     }
@@ -4212,6 +4213,13 @@ async function renderNotificationsView(root) {
   } catch (e) {
     root.innerHTML = `<p class="muted padded">Failed to load notifications: ${esc(e.message)}</p>`;
   }
+}
+
+async function deleteNotification(id) {
+  try {
+    await DEL(`/api/notifications/${encodeURIComponent(id)}`);
+    renderNotificationsView();
+  } catch (e) { toast('Delete failed: ' + e.message, 'error'); }
 }
 
 /* ── Boot ────────────────────────────────────────────────────────────────────── */
