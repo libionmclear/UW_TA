@@ -1004,14 +1004,22 @@ async function uploadStudentPhoto(studentId, file) {
   form.append('photo', file);
   try {
     const resp = await fetch(`/api/student-photo/${studentId}`, { method: 'POST', body: form });
-    if (!resp.ok) throw new Error('Upload failed');
-    toast('Photo uploaded!', 'success');
-    // Refresh the photo
-    const img = document.getElementById(`sc-photo-${studentId}`);
-    const avatar = document.getElementById(`sc-avatar-${studentId}`);
-    if (img) { img.src = `/api/student-photo/${studentId}?t=${Date.now()}`; img.style.display = ''; }
-    if (avatar) avatar.style.display = 'none';
-  } catch (e) { toast('Upload failed: ' + e.message, 'error'); }
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Upload failed: ' + resp.status);
+    toast(`Photo saved for ${studentId}!`, 'success');
+    // Force refresh all instances of this student's avatar
+    document.querySelectorAll(`img.stu-avatar[src*="student-photo/${studentId}"], img.sc-photo-img[src*="student-photo/${studentId}"]`).forEach(img => {
+      img.src = `/api/student-photo/${studentId}?t=${Date.now()}`;
+      img.style.display = '';
+    });
+    document.querySelectorAll(`#sc-photo-${studentId}`).forEach(img => {
+      img.src = `/api/student-photo/${studentId}?t=${Date.now()}`;
+      img.style.display = '';
+    });
+  } catch (e) {
+    console.error('Photo upload error:', e);
+    toast('Photo upload failed: ' + e.message, 'error');
+  }
 }
 
 function buildStudentCard(studentId) {

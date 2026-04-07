@@ -812,6 +812,7 @@ app.post('/api/student-photo/:studentId', requireAuth, upload.single('photo'), (
   }
   const fp = path.join(PHOTOS_DIR, sid + ext);
   fs.writeFileSync(fp, req.file.buffer);
+  console.log(`  ✓ Photo saved: ${fp} (${req.file.buffer.length} bytes)`);
   ok(res, { ok: true, path: `/api/student-photo/${sid}` });
 });
 
