@@ -1573,6 +1573,26 @@ function renderAssignmentView(root) {
       </div>`;
     })()}
 
+    <!-- Grade sync status badge -->
+    ${(() => {
+      const gs = Object.values(S.grades);
+      const withFinal = gs.filter(g => g.finalScore != null);
+      const fromCanvas = gs.filter(g => g.status === 'canvas');
+      const synced = withFinal.filter(g => g.canvasScore != null && g.finalScore === g.canvasScore);
+      const uwOnly = withFinal.filter(g => g.canvasScore == null || g.finalScore !== g.canvasScore);
+      let badgeHtml = '';
+      if (!withFinal.length && !fromCanvas.length) {
+        badgeHtml = '';
+      } else if (fromCanvas.length && !withFinal.filter(g => g.status !== 'canvas').length) {
+        badgeHtml = `<span class="grade-sync-badge grade-sync--canvas">Canvas Grades (${fromCanvas.length})</span>`;
+      } else if (uwOnly.length === 0 && synced.length > 0) {
+        badgeHtml = `<span class="grade-sync-badge grade-sync--synced">Synced with Canvas (${synced.length})</span>`;
+      } else if (uwOnly.length > 0) {
+        badgeHtml = `<span class="grade-sync-badge grade-sync--local">UW-TA Only (${uwOnly.length})</span>`;
+      }
+      return badgeHtml;
+    })()}
+
     <!-- Tabs -->
     <div class="assign-tabs" id="assign-tabs">
       <button class="assign-tab active" data-atab="instructions" onclick="switchAssignTab('instructions')">Instructions & Rubric</button>
