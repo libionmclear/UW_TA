@@ -208,9 +208,16 @@ a { color: var(--uw-purple); }
 .btn-grade-ai:disabled { opacity: .5; }
 
 /* Grade sync status badges */
+/* In tab bar: match assign-tab size/shape */
+.assign-tabs .grade-sync-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 13px; font-weight: 700; padding: 10px 20px; border-radius: var(--radius);
+  flex-shrink: 0; border: none; letter-spacing: .2px;
+}
+/* Standalone (overview tables etc): smaller pill */
 .grade-sync-badge {
   display: inline-flex; align-items: center; gap: 4px;
-  font-size: 11px; font-weight: 700; padding: 6px 12px; border-radius: 20px;
+  font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 20px;
   flex-shrink: 0;
 }
 .grade-sync--canvas { background: #fff7ed; color: #c2410c; border: 1px solid #fed7aa; }
@@ -218,6 +225,11 @@ a { color: var(--uw-purple); }
 .grade-sync--local  { background: #fef2f2; color: #dc2626; border: 1px solid #fca5a5; }
 .grade-sync--needs  { background: #fefce8; color: #a16207; border: 1px solid #fde68a; }
 .grade-sync--warn   { background: #fff7ed; color: #c2410c; border: 1px solid #fed7aa; }
+.assign-tabs .grade-sync--canvas { border: none; }
+.assign-tabs .grade-sync--synced { border: none; }
+.assign-tabs .grade-sync--local  { border: none; }
+.assign-tabs .grade-sync--needs  { border: none; }
+.assign-tabs .grade-sync--warn   { border: none; }
 .atab-content { display: none; }
 .atab-content.active { display: block; }
 
