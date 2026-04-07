@@ -2935,8 +2935,8 @@ function renderSimParticipationView(root) {
   }).join('');
 
   const headers = actAssignments.map(a =>
-    `<th style="text-align:center;font-size:10px;padding:5px 6px;max-width:90px;white-space:normal;line-height:1.2" title="${esc(a.name)}">
-      <button class="link-btn" style="font-size:10px" onclick="selectAssignment('${a.id}')">${esc(a.name.length > 20 ? a.name.slice(0, 18) + '…' : a.name)}</button>
+    `<th style="text-align:center;font-size:10px;padding:5px 8px;min-width:70px;white-space:normal;line-height:1.3" title="${esc(a.name)}">
+      <button class="link-btn" style="font-size:10px" onclick="selectAssignment('${a.id}')">${esc(a.name)}</button>
     </th>`
   ).join('');
 
@@ -4598,8 +4598,8 @@ function renderCaseParticipationView(root) {
   }).join('');
 
   const caseHeaders = caseAssignments.map(a =>
-    `<th style="text-align:center;font-size:10px;padding:5px 6px;max-width:90px;white-space:normal;line-height:1.2" title="${esc(a.name)}">
-      <button class="link-btn" style="font-size:10px" onclick="selectAssignment('${a.id}')">${esc(a.name.length > 20 ? a.name.slice(0, 18) + '…' : a.name)}</button>
+    `<th style="text-align:center;font-size:10px;padding:5px 8px;min-width:70px;white-space:normal;line-height:1.3" title="${esc(a.name)}">
+      <button class="link-btn" style="font-size:10px" onclick="selectAssignment('${a.id}')">${esc(a.name)}</button>
     </th>`
   ).join('');
 
