@@ -1444,6 +1444,9 @@ function renderAssignmentView(root) {
   // Product of the Week gets its own custom view
   if (group === 'Product of the Week') { renderPotwView(root, a); return; }
 
+  // Group Project gets team-based grading view
+  if (group === 'Group Project') { renderGroupProjectView(root, a); return; }
+
   const due = a.due_at ? new Date(a.due_at).toLocaleDateString() : 'No due date';
   const students = allStudents();
   const graded  = Object.values(S.grades).filter(g => g.status !== 'pending');
@@ -1766,6 +1769,157 @@ function potwUpdateScore(studentId, value, max) {
   S.grades[studentId].finalScore = pts;
   S.grades[studentId].status = 'reviewed';
   saveGrade(studentId);
+}
+
+/* ── Group Project View — Team-based grading ──────────────────────────────── */
+function renderGroupProjectView(root, a) {
+  const students = allStudents();
+  const due = a.due_at ? new Date(a.due_at).toLocaleDateString() : 'No due date';
+  const graded = Object.values(S.grades).filter(g => g.status !== 'pending');
+  const scores = Object.values(S.grades).map(g => g.finalScore).filter(s => s != null);
+  const avg = scores.length ? (scores.reduce((x, y) => x + y, 0) / scores.length).toFixed(1) : '—';
+  const maxPts = a.points_possible || 10;
+
+  // Grade sync badge
+  const gs = Object.values(S.grades);
+  const withFinal = gs.filter(g => g.finalScore != null);
+  const fromCanvas = gs.filter(g => g.status === 'canvas');
+  const synced = withFinal.filter(g => g.canvasScore != null && g.finalScore === g.canvasScore);
+  const uwOnly = withFinal.filter(g => g.canvasScore == null || g.finalScore !== g.canvasScore);
+  let syncBadge = '';
+  if (fromCanvas.length && !withFinal.filter(g => g.status !== 'canvas').length)
+    syncBadge = `<span class="grade-sync-badge grade-sync--canvas">Canvas Grades (${fromCanvas.length})</span>`;
+  else if (uwOnly.length === 0 && synced.length > 0)
+    syncBadge = `<span class="grade-sync-badge grade-sync--synced">Synced (${synced.length})</span>`;
+  else if (uwOnly.length > 0)
+    syncBadge = `<span class="grade-sync-badge grade-sync--local">UW-TA Only (${uwOnly.length})</span>`;
+
+  // Build team cards
+  const teamStudents = {};
+  students.forEach(st => {
+    const t = S.teams[st.id]?.team;
+    const tNum = t || 0; // 0 = unassigned
+    if (!teamStudents[tNum]) teamStudents[tNum] = [];
+    teamStudents[tNum].push(st);
+  });
+
+  const teamNums = Object.keys(S.teamMeta).map(Number).sort((a, b) => a - b);
+  // Add unassigned group if any
+  if (teamStudents[0]?.length) teamNums.push(0);
+
+  const teamCards = teamNums.map(tNum => {
+    const meta = S.teamMeta[String(tNum)] || {};
+    const members = teamStudents[tNum] || [];
+    if (!members.length) return '';
+    const label = tNum === 0 ? 'Unassigned Students' : (meta.name ? `Team ${tNum} — ${meta.name}` : `Team ${tNum}`);
+
+    // Current team grade (from first member who has one, or empty)
+    const firstGraded = members.find(st => S.grades[st.id]?.finalScore != null);
+    const teamScore = firstGraded ? S.grades[firstGraded.id].finalScore : '';
+
+    const memberList = members.map(st => {
+      const g = S.grades[st.id];
+      const score = g?.finalScore != null ? g.finalScore : '—';
+      const canv = g?.canvasScore != null ? `<span class="muted" style="font-size:10px">(Canvas: ${g.canvasScore})</span>` : '';
+      return `<div class="gp-member">
+        <span class="gp-member-name">${esc(st.name)}</span>
+        <span class="gp-member-score">${score} / ${maxPts} ${canv}</span>
+      </div>`;
+    }).join('');
+
+    return `<div class="card gp-team-card">
+      <div class="gp-team-header">
+        <span class="tm-num">${tNum === 0 ? '?' : 'Team ' + tNum}</span>
+        <span class="gp-team-name">${esc(tNum === 0 ? '' : (meta.name || ''))}</span>
+        <span class="muted" style="font-size:11px">${members.length} members</span>
+        <div class="gp-grade-input-wrap">
+          <label style="font-size:11px;font-weight:700;color:var(--uw-purple)">Team Grade:</label>
+          <input type="number" class="input gp-grade-input" min="0" max="${maxPts}" value="${teamScore}"
+            placeholder="—" onchange="gpSetTeamGrade(${tNum}, this.value, ${maxPts})" />
+          <span class="muted" style="font-size:11px">/ ${maxPts}</span>
+        </div>
+      </div>
+      <div class="gp-members">${memberList}</div>
+    </div>`;
+  }).join('');
+
+  root.innerHTML = `
+    <div class="page-title">
+      ${esc(a.name)}
+      <span class="type-badge" style="font-size:13px">Group Project</span>
+      <div class="page-actions">
+        <button class="btn btn-ghost" onclick="selectAssignment('${a.id}')">⟳ Refresh</button>
+      </div>
+    </div>
+
+    <!-- Stat cards -->
+    <div class="asgn-stat-cards">
+      <div class="asgn-stat-card asgn-stat--due">
+        <div class="asgn-stat-icon">📅</div>
+        <div class="asgn-stat-value">${due}</div>
+        <div class="asgn-stat-label">Due Date</div>
+      </div>
+      <div class="asgn-stat-card asgn-stat--points">
+        <div class="asgn-stat-icon">⭐</div>
+        <div class="asgn-stat-value">${maxPts}</div>
+        <div class="asgn-stat-label">Points</div>
+      </div>
+      <div class="asgn-stat-card asgn-stat--students">
+        <div class="asgn-stat-icon">👥</div>
+        <div class="asgn-stat-value">${students.length}</div>
+        <div class="asgn-stat-label">Students</div>
+      </div>
+      <div class="asgn-stat-card asgn-stat--graded">
+        <div class="asgn-stat-icon">✅</div>
+        <div class="asgn-stat-value">${graded.length}</div>
+        <div class="asgn-stat-label">Graded</div>
+      </div>
+      <div class="asgn-stat-card asgn-stat--avg">
+        <div class="asgn-stat-icon">📊</div>
+        <div class="asgn-stat-value">${avg}</div>
+        <div class="asgn-stat-label">Average</div>
+      </div>
+    </div>
+
+    <!-- Sync badge + Push -->
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+      ${syncBadge}
+      <div style="margin-left:auto">
+        <button class="btn assign-tab--push" style="border-radius:var(--radius);padding:8px 16px" onclick="pushAllToCanvas()">⬆ Push Final Grades to Canvas</button>
+      </div>
+    </div>
+
+    <!-- Team grading cards -->
+    <div class="gp-info" style="margin-bottom:10px">
+      <span class="muted" style="font-size:12px">Enter a grade per team — it will be applied to all team members automatically.</span>
+    </div>
+    ${teamCards}`;
+}
+
+async function gpSetTeamGrade(teamNum, value, max) {
+  let pts = value.trim() === '' ? null : Number(value);
+  if (pts !== null) pts = Math.max(0, Math.min(max, pts));
+
+  // Find all students on this team
+  const students = allStudents();
+  const members = students.filter(st => {
+    if (teamNum === 0) return !S.teams[st.id]?.team;
+    return S.teams[st.id]?.team === teamNum;
+  });
+
+  // Apply grade to ALL members
+  const saves = [];
+  for (const st of members) {
+    if (!S.grades[st.id]) S.grades[st.id] = buildEmptyGrade(st.id);
+    S.grades[st.id].finalScore = pts;
+    S.grades[st.id].status = 'reviewed';
+    saves.push(saveGrade(st.id));
+  }
+  await Promise.all(saves);
+  toast(`Grade ${pts != null ? pts : '—'} applied to ${members.length} team members.`, 'success');
+
+  // Refresh to show updated scores
+  renderAssignmentView();
 }
 
 function potwRandomize() {

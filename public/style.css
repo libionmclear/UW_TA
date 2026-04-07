@@ -843,6 +843,20 @@ tbody td { padding: 7px 10px; vertical-align: middle; }
 .potw-spin-btn { font-size: 15px !important; padding: 10px 24px !important; }
 .potw-history { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 .potw-history-item { font-size: 11px; background: var(--bg); border: 1px solid var(--border); padding: 2px 8px; border-radius: 10px; color: var(--text-muted); }
+/* ── Group Project Team Grading ──────────────────────────────────────────────── */
+.gp-team-card { margin-bottom: 12px; }
+.gp-team-header {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding-bottom: 10px; margin-bottom: 8px; border-bottom: 2px solid var(--uw-purple);
+}
+.gp-team-name { font-weight: 700; font-size: 15px; color: var(--uw-purple); flex: 1; }
+.gp-grade-input-wrap { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.gp-grade-input { width: 64px !important; text-align: center; font-size: 16px !important; font-weight: 800; color: var(--uw-purple); }
+.gp-members { display: flex; flex-direction: column; gap: 3px; }
+.gp-member { display: flex; align-items: center; gap: 10px; padding: 5px 8px; border-radius: var(--radius); background: var(--bg); }
+.gp-member-name { flex: 1; font-size: 13px; font-weight: 500; }
+.gp-member-score { font-size: 13px; font-weight: 700; color: var(--uw-purple); white-space: nowrap; }
+
 .potw-check-label { font-size: 11px; font-weight: 600; margin-right: 6px; cursor: pointer; white-space: nowrap; }
 .potw-check-label input { margin-right: 2px; accent-color: var(--uw-purple); }
 .potw-date-input { font-size: 11px !important; padding: 4px 6px !important; max-width: 130px; }
