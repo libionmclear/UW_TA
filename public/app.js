@@ -1635,6 +1635,9 @@ function renderAssignmentView(root) {
   // Group Project gets team-based grading view
   if (group === 'Group Project') { renderGroupProjectView(root, a); return; }
 
+  // Participation gets custom view
+  if (group === 'Participation') { renderParticipationAssignmentView(root, a); return; }
+
   const due = a.due_at ? new Date(a.due_at).toLocaleDateString() : 'No due date';
   const students = allStudents();
   const graded  = Object.values(S.grades).filter(g => g.status !== 'pending');
@@ -2110,6 +2113,125 @@ async function gpSetTeamGrade(teamNum, value, max) {
 
   // Refresh to show updated scores
   renderAssignmentView();
+}
+
+/* ── Participation Assignment View ─────────────────────────────────────────── */
+function renderParticipationAssignmentView(root, a) {
+  const students = allStudents();
+  const due = a.due_at ? new Date(a.due_at).toLocaleDateString() : 'No due date';
+  const maxPts = a.points_possible || 10;
+
+  // Case assignments for participation %
+  const caseAssignments = S.assignments
+    .filter(x => classifyAssignment(x) === 'Cases')
+    .sort((x, y) => new Date(x.due_at || 0) - new Date(y.due_at || 0));
+
+  // Build student rows
+  const rows = students.map(st => {
+    const g = S.grades[st.id] || {};
+
+    // Case participation %
+    let casePts = 0, caseMax = 0;
+    caseAssignments.forEach(ca => {
+      const cg = (S.allGrades[String(ca.id)] || {})[st.id];
+      if (cg?.participation != null) { casePts += cg.participation; caseMax += 3; }
+    });
+    const casePct = caseMax ? Math.round((casePts / caseMax) * 100) : null;
+
+    // Panopto & Behavior (stored in grade object)
+    const panopto = g.panoptoScore != null ? g.panoptoScore : '';
+    const behavior = g.behaviorScore != null ? g.behaviorScore : '';
+    const total = g.finalScore != null ? g.finalScore : '';
+
+    return `<tr>
+      <td style="font-weight:600">${esc(st.name)}</td>
+      <td style="text-align:center;font-weight:700;color:${casePct != null && casePct < 50 ? 'var(--danger)' : 'var(--success)'}">${casePct != null ? casePct + '%' : '—'}</td>
+      <td style="text-align:center">
+        <input type="number" class="input" style="width:50px;text-align:center;font-size:12px;padding:3px" min="0" max="${maxPts}"
+          value="${panopto}" placeholder="—" onchange="partFieldSave('${esc(st.id)}','panoptoScore',this.value,${maxPts})" />
+      </td>
+      <td style="text-align:center">
+        <input type="number" class="input" style="width:50px;text-align:center;font-size:12px;padding:3px" min="0" max="${maxPts}"
+          value="${behavior}" placeholder="—" onchange="partFieldSave('${esc(st.id)}','behaviorScore',this.value,${maxPts})" />
+      </td>
+      <td style="text-align:center">
+        <input type="number" class="input gp-grade-input" style="width:60px" min="0" max="${maxPts}"
+          value="${total}" placeholder="—" onchange="partFinalSave('${esc(st.id)}',this.value,${maxPts})" />
+      </td>
+    </tr>`;
+  }).join('');
+
+  // Sync badge
+  const gs = Object.values(S.grades);
+  const withFinal = gs.filter(g => g.finalScore != null);
+  const fromCanvas = gs.filter(g => g.status === 'canvas');
+  const synced = withFinal.filter(g => g.canvasScore != null && g.finalScore === g.canvasScore);
+  const uwOnly = withFinal.filter(g => g.canvasScore == null || g.finalScore !== g.canvasScore);
+  let syncBadge = '';
+  if (fromCanvas.length && !withFinal.filter(g => g.status !== 'canvas').length)
+    syncBadge = `<span class="grade-sync-badge grade-sync--canvas">Canvas Grades (${fromCanvas.length})</span>`;
+  else if (uwOnly.length === 0 && synced.length > 0)
+    syncBadge = `<span class="grade-sync-badge grade-sync--synced">Synced (${synced.length})</span>`;
+  else if (uwOnly.length > 0)
+    syncBadge = `<span class="grade-sync-badge grade-sync--local">UW-TA Only (${uwOnly.length})</span>`;
+
+  root.innerHTML = `
+    <div class="page-title">
+      ${esc(a.name)}
+      <span class="type-badge" style="font-size:13px">Participation</span>
+      <div class="page-actions">
+        <button class="btn btn-ghost" onclick="selectAssignment('${a.id}')">⟳ Refresh</button>
+      </div>
+    </div>
+
+    <div class="asgn-stat-cards">
+      <div class="asgn-stat-card asgn-stat--due"><div class="asgn-stat-icon">📅</div><div class="asgn-stat-value">${due}</div><div class="asgn-stat-label">Due Date</div></div>
+      <div class="asgn-stat-card asgn-stat--points"><div class="asgn-stat-icon">⭐</div><div class="asgn-stat-value">${maxPts}</div><div class="asgn-stat-label">Points</div></div>
+      <div class="asgn-stat-card asgn-stat--students"><div class="asgn-stat-icon">👥</div><div class="asgn-stat-value">${students.length}</div><div class="asgn-stat-label">Students</div></div>
+      <div class="asgn-stat-card asgn-stat--graded"><div class="asgn-stat-icon">✅</div><div class="asgn-stat-value">${withFinal.length}</div><div class="asgn-stat-label">Graded</div></div>
+    </div>
+
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+      ${syncBadge}
+      <div style="margin-left:auto">
+        <button class="btn assign-tab--push" style="border-radius:var(--radius);padding:8px 16px" onclick="pushAllToCanvas()">⬆ Push Final Grades to Canvas</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Class Participation — ${esc(a.name)}</div>
+      <p class="muted" style="margin-bottom:10px">Case Participation % is auto-calculated from drag-drop scores. Panopto and Behavior are manual. Total is the final grade pushed to Canvas.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Student</th>
+            <th style="text-align:center">Case Participation %</th>
+            <th style="text-align:center">Panopto Videos</th>
+            <th style="text-align:center">Behavior</th>
+            <th style="text-align:center">Total (/${maxPts})</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>`;
+}
+
+async function partFieldSave(studentId, field, value, max) {
+  let v = value.trim() === '' ? null : Number(value);
+  if (v !== null) v = Math.max(0, Math.min(max, v));
+  if (!S.grades[studentId]) S.grades[studentId] = buildEmptyGrade(studentId);
+  S.grades[studentId][field] = v;
+  S.grades[studentId].status = 'reviewed';
+  await saveGrade(studentId);
+}
+
+async function partFinalSave(studentId, value, max) {
+  let v = value.trim() === '' ? null : Number(value);
+  if (v !== null) v = Math.max(0, Math.min(max, v));
+  if (!S.grades[studentId]) S.grades[studentId] = buildEmptyGrade(studentId);
+  S.grades[studentId].finalScore = v;
+  S.grades[studentId].status = 'reviewed';
+  await saveGrade(studentId);
 }
 
 function potwRandomize() {
