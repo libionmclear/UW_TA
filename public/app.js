@@ -1210,10 +1210,16 @@ async function renderLedgerView(root) {
   _renderLedgerHtml(root);
 }
 
+let _ledgerHideNotDue = false;
+
 function _renderLedgerHtml(root, canvasScores) {
   root = root || document.getElementById('view-root');
   const students   = S.allStudentsList;
-  const assignments = [...S.assignments].sort((a, b) => new Date(a.due_at||0) - new Date(b.due_at||0));
+  const now = new Date();
+  const allAssignments = [...S.assignments].sort((a, b) => new Date(a.due_at||0) - new Date(b.due_at||0));
+  const assignments = _ledgerHideNotDue
+    ? allAssignments.filter(a => !a.due_at || new Date(a.due_at) <= now)
+    : allAssignments;
   if (!students.length || !assignments.length) {
     root.innerHTML = '<p class="muted padded">No students or assignments loaded. Select a course first.</p>';
     return;
@@ -1256,14 +1262,20 @@ function _renderLedgerHtml(root, canvasScores) {
     return `<tr>
       <td class="ldg-name">${esc(st.name)}</td>
       <td class="ldg-total">${possible ? `${earned}/${possible}` : '—'}</td>
+      <td class="ldg-pct-cell ${pct != null && pct < 70 ? 'grade-low' : ''}">${pct != null ? pct + '%' : '—'}</td>
       <td class="ldg-letter ${pct != null && pct < 70 ? 'grade-low' : ''}">${letter}</td>
       ${cells.join('')}
     </tr>`;
   }).join('');
 
+  const hiddenCount = _ledgerHideNotDue ? allAssignments.length - assignments.length : 0;
+
   root.innerHTML = `
     <div class="page-title">Grade Ledger — ${esc(S.course?.name || '')}
       <div class="page-actions">
+        <label class="checkbox-label" style="font-size:12px">
+          <input type="checkbox" ${_ledgerHideNotDue ? 'checked' : ''} onchange="_ledgerHideNotDue=this.checked;_renderLedgerHtml()"> Hide Not Due ${hiddenCount ? `(${hiddenCount} hidden)` : ''}
+        </label>
         <button class="btn btn-primary" onclick="syncLedgerFromCanvas()">⟳ Sync from Canvas</button>
       </div>
     </div>
@@ -1273,6 +1285,7 @@ function _renderLedgerHtml(root, canvasScores) {
           <tr>
             <th class="ldg-name-hdr" rowspan="2">Student</th>
             <th class="ldg-total-hdr" rowspan="2">Total</th>
+            <th class="ldg-pct-hdr" rowspan="2">%</th>
             <th class="ldg-letter-hdr" rowspan="2">Grade</th>
             ${groupHeaderCells}
           </tr>
