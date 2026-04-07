@@ -968,6 +968,30 @@ tbody td { padding: 7px 10px; vertical-align: middle; }
 .hdr-user-btn { background: none; border: 1px solid rgba(255,255,255,.3); border-radius: 20px; padding: 3px 10px; cursor: pointer; color: rgba(255,255,255,.9); font-size: 12px; }
 .hdr-user-btn:hover { background: rgba(255,255,255,.15); }
 
+/* ── Case Participation Drag & Drop ─────────────────────────────────────────── */
+.part-container { display: flex; flex-direction: column; gap: 12px; }
+.part-pool { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 12px; }
+.part-pool-hdr { font-size: 12px; font-weight: 700; color: var(--text-muted); margin-bottom: 8px; }
+.part-pool-items { display: flex; flex-wrap: wrap; gap: 4px; min-height: 40px; padding: 4px; border: 2px dashed var(--border); border-radius: var(--radius); }
+.part-buckets { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+@media (max-width: 900px) { .part-buckets { grid-template-columns: repeat(2, 1fr); } }
+.part-bucket {
+  border-radius: var(--radius-lg); padding: 12px; min-height: 120px;
+  display: flex; flex-direction: column; gap: 6px;
+  border: 1px solid var(--border);
+}
+.part-bucket-over { border-color: var(--uw-purple) !important; box-shadow: 0 0 0 2px rgba(75,46,131,.2); }
+.part-bucket-hdr { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .3px; }
+.part-bucket-score { font-weight: 400; font-size: 10px; }
+.part-bucket-count { font-size: 20px; font-weight: 900; opacity: .2; text-align: right; margin-top: -20px; }
+.part-bucket-items { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; }
+.part-student {
+  font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 20px;
+  background: var(--surface); border: 1px solid var(--border); cursor: grab;
+  white-space: nowrap; user-select: none;
+}
+.part-student:active { cursor: grabbing; opacity: .7; }
+
 /* ── Syncing Badge ──────────────────────────────────────────────────────────── */
 .syncing-badge {
   display: inline-flex; align-items: center; gap: 2px;

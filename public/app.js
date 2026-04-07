@@ -243,7 +243,7 @@ const GROUP_RULES = [
     /example.*template/i,
   ]},
   // CASE DISCUSSIONS — HBS cases, case write-ups, in-class discussions, essays
-  { key: 'Case Discussions', patterns: [
+  { key: 'Cases', patterns: [
     /case/i,
     /hbs/i,
     /discussion/i,
@@ -329,7 +329,7 @@ function groupAssignments() {
 const GROUP_ICONS = {
   'Quizzes':              '✎',
   'AI Assignments':       '✦',
-  'Case Discussions':     '◆',
+  'Cases':     '◆',
   'Activities':           '▣',
   'Group Project':        '◈',
   'Final Exam':           '★',
@@ -341,7 +341,7 @@ const GROUP_ICONS = {
 };
 
 // Sidebar display order — main grading groups
-const GROUP_ORDER = ['Quizzes', 'AI Assignments', 'Case Discussions', 'Activities', 'Group Project', 'Final Exam'];
+const GROUP_ORDER = ['Quizzes', 'AI Assignments', 'Cases', 'Activities', 'Group Project', 'Final Exam'];
 
 // Groups that go in the "Other Assignments" sidebar box
 const OTHER_GROUPS = ['Panopto Video Views', 'Participation', 'Course Evaluation', 'Product of the Week', 'Other Assignments'];
@@ -531,7 +531,7 @@ function defaultRubricForAssignment(a) {
       mk('c1', 'Quiz Score', pts, 'Automatically graded quiz score from Canvas.', false),
     ]};
   }
-  if (group === 'Case Discussions') {
+  if (group === 'Cases') {
     return { name: a.name, totalPoints: pts, description: '', criteria: [
       mk('c1', 'Submission',                        Math.round(pts * 0.20), 'Student submitted a complete write-up.', true),
       mk('c2', 'Executive Summary & Recommendations', Math.round(pts * 0.33), 'Clear executive summary with specific, actionable recommendations upfront.'),
@@ -602,6 +602,7 @@ function showView(name) {
     case 'content':     renderContentView(root); loadCourseContent(); break;
     case 'syllabus':    renderSyllabusView(root); break;
     case 'manual':      renderManualView(root); break;
+    case 'caseparticipation': renderCaseParticipationView(root); break;
     case 'messages':      renderMessagesView(root); break;
     case 'notifications': renderNotificationsView(root); break;
     default:            renderOverview(root);
@@ -1803,6 +1804,7 @@ function renderAssignmentView(root) {
       <button class="assign-tab assign-tab--grade" data-atab="oneByOne" onclick="switchAssignTab('oneByOne')">✦ Grade One-by-One</button>
       <button class="assign-tab" data-atab="students" onclick="switchAssignTab('students')">Students (${students.length})</button>
       <button class="assign-tab" data-atab="matrix" onclick="switchAssignTab('matrix')">Grading Matrix</button>
+      ${group === 'Cases' ? `<button class="assign-tab" data-atab="participation" onclick="switchAssignTab('participation')">Discussion Participation</button>` : ''}
       <button class="assign-tab" data-atab="chat" onclick="switchAssignTab('chat')">Notes</button>
       <button class="assign-tab assign-tab--push" onclick="pushAllToCanvas()">⬆ Push Final Grades to Canvas</button>
     </div>
@@ -1811,6 +1813,7 @@ function renderAssignmentView(root) {
     <div id="atab-oneByOne"     class="atab-content">${renderOneByOneTab()}</div>
     <div id="atab-students"     class="atab-content">${renderStudentsTabHtml()}</div>
     <div id="atab-matrix"       class="atab-content">${renderMatrixTabHtml()}</div>
+    ${group === 'Cases' ? `<div id="atab-participation" class="atab-content">${renderParticipationTab()}</div>` : ''}
     <div id="atab-chat"         class="atab-content">${renderChatTabHtml()}</div>
   `;
 }
@@ -2523,6 +2526,115 @@ function renderMatrixTabHtml() {
   </table></div>`;
 }
 
+/* ── Case Discussion Participation Tab ──────────────────────────────────────── */
+const PART_BUCKETS = [
+  { key: 0, label: 'Did Not Participate', color: '#dc2626', bg: '#fef2f2' },
+  { key: 1, label: 'Low Participation',   color: '#d97706', bg: '#fffbeb' },
+  { key: 2, label: 'Participated',         color: '#2563eb', bg: '#eff6ff' },
+  { key: 3, label: 'Excellent',            color: '#16a34a', bg: '#f0fdf4' },
+];
+
+function renderParticipationTab() {
+  const students = allStudents();
+  if (!students.length) return '<p class="muted padded">No students loaded.</p>';
+
+  // Get participation data from grades
+  const buckets = { 0: [], 1: [], 2: [], 3: [] };
+  const assigned = new Set();
+  students.forEach(st => {
+    const g = S.grades[st.id];
+    const p = g?.participation;
+    if (p != null && p >= 0 && p <= 3) {
+      buckets[p].push(st);
+      assigned.add(st.id);
+    }
+  });
+  // Unassigned students go to a pool
+  const unassigned = students.filter(st => !assigned.has(st.id));
+
+  const poolHtml = unassigned.map(st =>
+    `<div class="part-student" draggable="true" ondragstart="partDragStart(event,'${esc(st.id)}')" id="part-${esc(st.id)}">${esc(st.name)}</div>`
+  ).join('');
+
+  const bucketsHtml = PART_BUCKETS.map(b => {
+    const items = buckets[b.key].map(st =>
+      `<div class="part-student" draggable="true" ondragstart="partDragStart(event,'${esc(st.id)}')" id="part-${esc(st.id)}">${esc(st.name)}</div>`
+    ).join('');
+    return `<div class="part-bucket" style="border-top:3px solid ${b.color};background:${b.bg}"
+      ondragover="event.preventDefault();this.classList.add('part-bucket-over')"
+      ondragleave="this.classList.remove('part-bucket-over')"
+      ondrop="partDrop(event,${b.key});this.classList.remove('part-bucket-over')">
+      <div class="part-bucket-hdr" style="color:${b.color}">${b.label} <span class="part-bucket-score">(${b.key} pts)</span></div>
+      <div class="part-bucket-count">${buckets[b.key].length}</div>
+      <div class="part-bucket-items" id="part-bucket-${b.key}">${items}</div>
+    </div>`;
+  }).join('');
+
+  return `
+    <div class="part-container">
+      <div class="part-pool">
+        <div class="part-pool-hdr">Unassigned Students (${unassigned.length})</div>
+        <div class="part-pool-items" id="part-pool"
+          ondragover="event.preventDefault();this.classList.add('part-bucket-over')"
+          ondragleave="this.classList.remove('part-bucket-over')"
+          ondrop="partDrop(event,-1);this.classList.remove('part-bucket-over')">
+          ${poolHtml || '<p class="muted" style="font-size:11px;text-align:center;padding:8px">All students assigned</p>'}
+        </div>
+      </div>
+      <div class="part-buckets">${bucketsHtml}</div>
+      <div style="margin-top:10px;display:flex;gap:8px">
+        <button class="btn btn-surf" onclick="saveAllParticipation()">Save Participation Scores</button>
+        <button class="btn btn-ghost" onclick="resetParticipation()">Reset All</button>
+      </div>
+    </div>`;
+}
+
+let _partDragId = null;
+function partDragStart(e, studentId) {
+  _partDragId = studentId;
+  e.dataTransfer.effectAllowed = 'move';
+}
+
+async function partDrop(e, bucketKey) {
+  e.preventDefault();
+  if (!_partDragId) return;
+  const studentId = _partDragId;
+  _partDragId = null;
+
+  if (!S.grades[studentId]) S.grades[studentId] = buildEmptyGrade(studentId);
+  if (bucketKey === -1) {
+    delete S.grades[studentId].participation;
+  } else {
+    S.grades[studentId].participation = bucketKey;
+  }
+  // Re-render participation tab
+  const el = document.getElementById('atab-participation');
+  if (el) el.innerHTML = renderParticipationTab();
+}
+
+async function saveAllParticipation() {
+  const students = allStudents();
+  const saves = [];
+  for (const st of students) {
+    if (S.grades[st.id]?.participation != null) {
+      S.grades[st.id].status = 'reviewed';
+      saves.push(saveGrade(st.id));
+    }
+  }
+  await Promise.all(saves);
+  toast(`Saved participation for ${saves.length} students.`, 'success');
+}
+
+function resetParticipation() {
+  if (!confirm('Reset all participation for this assignment?')) return;
+  allStudents().forEach(st => {
+    if (S.grades[st.id]) delete S.grades[st.id].participation;
+  });
+  const el = document.getElementById('atab-participation');
+  if (el) el.innerHTML = renderParticipationTab();
+  toast('Participation reset.', 'success');
+}
+
 /* ── Grade One-by-One Tab ───────────────────────────────────────────────────── */
 let oboIndex = 0; // current student index in one-by-one view
 let oboChatMessages = []; // chat messages for Marco & Marlowe discussion
@@ -2873,7 +2985,7 @@ async function oboGradeWithAi() {
       studentName: st.name,
       hasAiCitation: sub?._hasAiCitation || false,
       aiInstructions: S.aiInstructions,
-      isCaseWriteup: classifyAssignment(S.currentAssignment) === 'Case Discussions',
+      isCaseWriteup: classifyAssignment(S.currentAssignment) === 'Cases',
     });
     applyAiGrade(st.id, res.grade, res.aiDetection, res.flagged);
     await saveGrade(st.id);
@@ -3094,7 +3206,7 @@ async function gradeAll() {
     const resp = await fetch('/api/grade/batch', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ submissions, rubric: S.rubric, aiInstructions: S.aiInstructions, isCaseWriteup: classifyAssignment(S.currentAssignment) === 'Case Discussions' }),
+      body: JSON.stringify({ submissions, rubric: S.rubric, aiInstructions: S.aiInstructions, isCaseWriteup: classifyAssignment(S.currentAssignment) === 'Cases' }),
     });
 
     const reader = resp.body.getReader();
@@ -3278,7 +3390,7 @@ document.getElementById('modal-grade-ai').addEventListener('click', async () => 
       studentName: st?.name || modalStudentId,
       hasAiCitation: sub?._hasAiCitation || false,
       aiInstructions: S.aiInstructions,
-      isCaseWriteup: classifyAssignment(S.currentAssignment) === 'Case Discussions',
+      isCaseWriteup: classifyAssignment(S.currentAssignment) === 'Cases',
     });
     applyAiGrade(modalStudentId, res.grade, res.aiDetection, res.flagged);
     renderModalCriteria(modalStudentId);
@@ -4113,6 +4225,73 @@ async function manageStudentTeam(studentId, value) {
 
 async function pushTeamsToCanvas() {
   toast('Team push to Canvas is not directly supported via API. Teams are managed locally.', 'warn');
+}
+
+/* ── Case Participation View (Instructor Tool) ─────────────────────────────── */
+function renderCaseParticipationView(root) {
+  root = root || document.getElementById('view-root');
+  const students = S.allStudentsList.length ? S.allStudentsList : allStudents();
+  const caseAssignments = S.assignments
+    .filter(a => classifyAssignment(a) === 'Cases')
+    .sort((a, b) => new Date(a.due_at || 0) - new Date(b.due_at || 0));
+
+  if (!caseAssignments.length) {
+    root.innerHTML = '<div class="page-title">Case Participation</div><p class="muted padded">No case assignments found.</p>';
+    return;
+  }
+
+  const partLabels = ['—', 'Low', 'Part.', 'Exc.'];
+  const partColors = ['var(--danger)', 'var(--warn)', 'var(--info)', 'var(--success)'];
+
+  // Build per-student row
+  const rows = students.map(st => {
+    let totalPts = 0, totalMax = 0;
+    const cells = caseAssignments.map(a => {
+      const g = (S.allGrades[String(a.id)] || {})[st.id];
+      const p = g?.participation;
+      totalMax += 3;
+      if (p != null) totalPts += p;
+      if (p == null) return '<td class="ldg-cell ldg-empty" style="text-align:center">—</td>';
+      const color = partColors[p] || 'var(--text-muted)';
+      return `<td class="ldg-cell" style="text-align:center;font-weight:700;color:${color}">${p} <span style="font-size:9px;font-weight:400">${partLabels[p]}</span></td>`;
+    }).join('');
+    const pct = totalMax ? Math.round((totalPts / totalMax) * 100) : null;
+    return `<tr>
+      <td class="ldg-name">${esc(st.name)}</td>
+      <td style="text-align:center;font-weight:700;color:var(--uw-purple)">${totalPts}</td>
+      <td style="text-align:center;font-weight:700">${totalMax}</td>
+      <td style="text-align:center;font-weight:700;color:${pct != null && pct < 50 ? 'var(--danger)' : 'var(--success)'}">${pct != null ? pct + '%' : '—'}</td>
+      ${cells}
+    </tr>`;
+  }).join('');
+
+  const caseHeaders = caseAssignments.map(a =>
+    `<th style="text-align:center;font-size:10px;padding:5px 6px;max-width:90px;white-space:normal;line-height:1.2" title="${esc(a.name)}">
+      <button class="link-btn" style="font-size:10px" onclick="selectAssignment('${a.id}')">${esc(a.name.length > 20 ? a.name.slice(0, 18) + '…' : a.name)}</button>
+    </th>`
+  ).join('');
+
+  root.innerHTML = `
+    <div class="page-title">Case Participation — ${esc(S.course?.name || '')}
+      <div class="page-actions">
+        <button class="btn btn-ghost" onclick="renderCaseParticipationView()">⟳ Refresh</button>
+      </div>
+    </div>
+    <div class="muted" style="margin-bottom:10px">Scores: 0 = Did Not Participate, 1 = Low, 2 = Participated, 3 = Excellent. Click a case name to open and grade participation.</div>
+    <div class="ldg-wrap">
+      <table class="ldg-table">
+        <thead>
+          <tr>
+            <th class="ldg-name-hdr">Student</th>
+            <th style="text-align:center;background:var(--uw-purple);color:#fff;min-width:50px">Total</th>
+            <th style="text-align:center;background:var(--uw-purple);color:#fff;min-width:50px">Max</th>
+            <th style="text-align:center;background:var(--uw-purple);color:#fff;min-width:50px">%</th>
+            ${caseHeaders}
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
 }
 
 /* ── Canvas Grade Sync ───────────────────────────────────────────────────────── */
