@@ -1174,8 +1174,11 @@ function renderTeamsView(root) {
             </tbody>
           </table>
         </div>` : `<div class="muted" style="padding:10px 0;font-size:12px">No Group Project assignments found yet.</div>`}
-        <div class="tm-members-bare">
-          ${members.map(st => `<span class="tm-badge">${esc(st.name.split(' ')[0])} ${esc(st.name.split(' ').slice(-1)[0])}</span>`).join('')}
+        <div class="tm-card-footer">
+          <div class="tm-members-bare">
+            ${members.map(st => `<span class="tm-badge">${esc(st.name.split(' ')[0])} ${esc(st.name.split(' ').slice(-1)[0])}</span>`).join('')}
+          </div>
+          <button class="btn btn-ghost tm-notes-btn" onclick="openTeamNotes(${tNum})">📝 Notes</button>
         </div>
       </div>`;
   }).join('');
@@ -1188,6 +1191,80 @@ function renderTeamsView(root) {
     </div>
     ${teamNums.length ? `<div class="tm-grid">${teamCards}</div>`
       : '<p class="muted padded">No team data found. Load a course first.</p>'}`;
+}
+
+/* ── Team Notes ────────────────────────────────────────────────────────────── */
+let _teamNotesNum = null;
+
+function openTeamNotes(teamNum) {
+  _teamNotesNum = teamNum;
+  const meta = S.teamMeta[String(teamNum)] || {};
+  const notes = meta.notes || [];
+  const userName = S.me?.username || 'Marco';
+
+  const notesHtml = notes.length ? notes.map(n =>
+    `<div class="tn-note">
+      <div class="tn-note-header"><strong>(${esc(n.author)})</strong> <span class="muted">${esc(n.date || '')}</span></div>
+      <div class="tn-note-body">${esc(n.text)}</div>
+    </div>`
+  ).join('') : '<p class="muted" style="text-align:center;padding:16px">No notes yet. Start the discussion below.</p>';
+
+  const label = meta.name ? `Team ${teamNum} — ${meta.name}` : `Team ${teamNum}`;
+
+  // Reuse the modal backdrop
+  const backdrop = document.getElementById('modal-backdrop');
+  const modal = backdrop.querySelector('.modal');
+  modal.innerHTML = `
+    <div class="modal-header">
+      <div>
+        <div class="modal-title">📝 ${esc(label)} — Notes</div>
+        <div class="modal-subtitle">Progression notes by Marco & Marlowe</div>
+      </div>
+      <button class="modal-close" onclick="closeTeamNotes()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="tn-notes-list" id="tn-notes-list">${notesHtml}</div>
+    </div>
+    <div class="modal-footer" style="flex-direction:column;gap:6px;align-items:stretch">
+      <div style="display:flex;gap:6px;align-items:center">
+        <span style="font-size:12px;font-weight:700;color:var(--uw-purple)">Writing as: (${esc(userName)})</span>
+      </div>
+      <div style="display:flex;gap:6px">
+        <textarea class="input" id="tn-note-input" rows="2" placeholder="Add a note about this team's progress…" style="flex:1"></textarea>
+        <button class="btn btn-surf" onclick="saveTeamNote()" style="align-self:flex-end">Add Note</button>
+      </div>
+    </div>`;
+
+  backdrop.classList.remove('hidden');
+  // Scroll to bottom
+  setTimeout(() => { const list = document.getElementById('tn-notes-list'); if (list) list.scrollTop = list.scrollHeight; }, 50);
+}
+
+function closeTeamNotes() {
+  document.getElementById('modal-backdrop').classList.add('hidden');
+  _teamNotesNum = null;
+}
+
+async function saveTeamNote() {
+  if (_teamNotesNum == null || !S.course) return;
+  const input = document.getElementById('tn-note-input');
+  const text = input?.value?.trim();
+  if (!text) return;
+
+  const userName = S.me?.username || 'Marco';
+  const tKey = String(_teamNotesNum);
+  if (!S.teamMeta[tKey]) S.teamMeta[tKey] = {};
+  if (!S.teamMeta[tKey].notes) S.teamMeta[tKey].notes = [];
+  S.teamMeta[tKey].notes.push({
+    author: userName,
+    text,
+    date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+  });
+
+  await PUT(`/api/team-meta/${S.course.id}`, S.teamMeta).catch(() => {});
+  input.value = '';
+  openTeamNotes(_teamNotesNum); // refresh
+  toast('Note saved.', 'success');
 }
 
 /* ── LEDGER VIEW (Canvas-style grade spreadsheet) ────────────────────────────── */

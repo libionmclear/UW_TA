@@ -607,9 +607,17 @@ tbody td { padding: 7px 10px; vertical-align: middle; }
 .tm-score          { text-align:center; font-size:12px; }
 .tm-total-row td   { background:var(--bg); font-size:12px; }
 .tm-avg            { color:var(--uw-purple); }
-.tm-members-bare   { display:flex; flex-wrap:wrap; gap:5px; margin-top:4px; }
+.tm-card-footer    { display:flex; align-items:flex-end; gap:8px; margin-top:6px; }
+.tm-members-bare   { display:flex; flex-wrap:wrap; gap:5px; flex:1; }
 .tm-badge          { background:var(--bg); border:1px solid var(--border); border-radius:20px; padding:2px 8px; font-size:11px; color:var(--text-muted); }
 .tm-label-pill     { background:var(--uw-purple); color:#fff; border-radius:20px; padding:2px 10px; font-size:11px; font-weight:600; white-space:nowrap; }
+.tm-notes-btn      { font-size:11px !important; padding:4px 10px !important; flex-shrink:0; }
+
+/* Team notes modal */
+.tn-notes-list     { max-height:340px; overflow-y:auto; display:flex; flex-direction:column; gap:8px; padding:4px 0; }
+.tn-note           { background:var(--bg); border:1px solid var(--border); border-radius:var(--radius); padding:8px 12px; }
+.tn-note-header    { font-size:12px; margin-bottom:3px; }
+.tn-note-body      { font-size:13px; line-height:1.5; }
 
 /* ── Grade Ledger ────────────────────────────────────────────────────────────── */
 .ldg-wrap         { overflow-x:auto; max-height:calc(100vh - 130px); border:1px solid var(--border); border-radius:var(--radius-lg); background:var(--surface); }
