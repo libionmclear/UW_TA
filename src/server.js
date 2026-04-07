@@ -299,6 +299,33 @@ app.post('/api/ai-detect', requireAuth, (req, res) => {
   } catch (e) { fail(res, e); }
 });
 
+// ── AI Student Feedback Generation ───────────────────────────────────────────
+app.post('/api/grade/feedback', requireAuth, async (req, res) => {
+  try {
+    const { studentName, assignmentName, totalScore, totalPossible, criteriaContext, overallFeedback } = req.body;
+    const Anthropic = require('@anthropic-ai/sdk');
+    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const resp = await client.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 300,
+      messages: [{ role: 'user', content: `Write ONE paragraph (3-5 sentences) of constructive student feedback for this graded assignment. Be encouraging but honest. Address what was done well and what could be improved. Write in second person ("You did well...").
+
+Student: ${studentName}
+Assignment: ${assignmentName}
+Score: ${totalScore} / ${totalPossible}
+
+Criteria breakdown:
+${criteriaContext}
+
+${overallFeedback ? `Instructor notes: ${overallFeedback}` : ''}
+
+Write ONLY the feedback paragraph, no preamble:` }],
+    });
+    const feedback = resp.content[0].text.trim();
+    ok(res, { feedback });
+  } catch (e) { fail(res, e); }
+});
+
 // ── AI Grading ────────────────────────────────────────────────────────────────
 app.post('/api/grade/single', async (req, res) => {
   try {

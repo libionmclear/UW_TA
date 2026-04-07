@@ -1676,23 +1676,23 @@ function renderInstructionsTab() {
       <!-- Assignment Description + AI Grading Instructions (stacked left column) -->
       <div style="display:flex;flex-direction:column;gap:16px">
 
-        <!-- Assignment Description -->
+        <!-- What — Example / Expected Submission -->
         <div class="card">
-          <div class="card-title">Assignment Description
-            <span class="card-title-hint">The actual assignment text / prompt given to students</span>
+          <div class="card-title">What — Assignment Description
+            <span class="card-title-hint">What students need to submit — paste the assignment prompt or example</span>
           </div>
           <textarea id="assignment-text-input" class="input" rows="6"
-            placeholder="Paste the full assignment description here…"
+            placeholder="Paste the full assignment description, prompt, or example of what a good submission looks like…"
           >${esc(S.assignmentText)}</textarea>
         </div>
 
-        <!-- AI Grading Instructions -->
+        <!-- How — AI Grading Instructions -->
         <div class="card">
-          <div class="card-title">AI Grading Instructions
-            <span class="card-title-hint">Injected into every AI grading prompt for this assignment</span>
+          <div class="card-title">How — AI Grading Instructions
+            <span class="card-title-hint">Tell the AI how to grade — what to look for, what to penalize</span>
           </div>
           <textarea id="ai-instructions-text" class="input" rows="5"
-            placeholder="Enter specific grading instructions for the AI…
+            placeholder="Explain to the AI how to grade this assignment…
 
 Example: 'This is a case write-up. Students MUST have an executive summary with recommendations, supporting points, and a conclusion with alternatives. Penalize missing sections heavily.'"
           >${esc(S.aiInstructions)}</textarea>
@@ -2071,12 +2071,23 @@ function renderOneByOneTab() {
             <div class="obo-total-item obo-total-final"><span>Final</span><strong>${finalTotal}</strong></div>
           </div>
 
-          <!-- Grading Discussion Chat -->
+          <!-- AI Student Feedback -->
+          <div class="card obo-student-feedback-card">
+            <div class="card-title">Student Feedback
+              <span class="card-title-hint">One paragraph explaining the grade — shared with student</span>
+              <button class="btn btn-ghost" style="font-size:11px;padding:3px 8px;margin-left:auto" onclick="oboGenerateFeedback()">✦ AI Generate</button>
+            </div>
+            <textarea class="input" id="obo-student-feedback" rows="3"
+              placeholder="Write or generate a paragraph explaining this grade to the student…"
+              onchange="oboSaveFeedbackField()">${esc(g?.studentFeedback || '')}</textarea>
+          </div>
+
+          <!-- Marco & Marlowe Discussion -->
           <div class="obo-chat-card card">
-            <div class="card-title">Grading Discussion</div>
-            <div class="obo-chat-messages" id="obo-chat-messages">${chatHtml || '<p class="muted" style="text-align:center;padding:12px">Discuss this grade...</p>'}</div>
+            <div class="card-title">Marco & Marlowe — Grading Discussion & Private Notes</div>
+            <div class="obo-chat-messages" id="obo-chat-messages">${chatHtml || '<p class="muted" style="text-align:center;padding:12px">Discuss this grade privately...</p>'}</div>
             <div class="obo-chat-input-row">
-              <input class="input obo-chat-input" id="obo-chat-input" placeholder="Type a message..." onkeydown="if(event.key==='Enter')oboSendChat()" />
+              <input class="input obo-chat-input" id="obo-chat-input" placeholder="Type a note..." onkeydown="if(event.key==='Enter')oboSendChat()" />
               <button class="btn btn-surf" onclick="oboSendChat()">Send</button>
             </div>
           </div>
@@ -2283,6 +2294,54 @@ async function oboGradeWithAi() {
     toast('AI grading complete!', 'success');
   } catch (e) { toast('Grading error: ' + e.message, 'error'); }
   finally { if (btn) { btn.disabled = false; btn.textContent = '✦ Grade with AI'; } }
+}
+
+async function oboGenerateFeedback() {
+  const students = allStudents();
+  const st = students[oboIndex];
+  if (!st) return;
+  const g = S.grades[st.id];
+  if (!g || !S.rubric) { toast('Grade the student first.', 'warn'); return; }
+  if (!S.health?.claude) { toast('Claude not configured.', 'error'); return; }
+
+  const btn = document.querySelector('[onclick="oboGenerateFeedback()"]');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Generating...'; }
+
+  try {
+    // Build context from criteria scores and justifications
+    const criteriaContext = S.rubric.criteria.map(c => {
+      const cd = g.criteria?.[c.id] || {};
+      const score = cd.aiScore ?? cd.marcoScore ?? cd.marlowScore ?? '—';
+      return `${c.name}: ${score}/${c.maxPoints}${cd.aiJustification ? ' — ' + cd.aiJustification : ''}`;
+    }).join('\n');
+
+    const res = await POST('/api/grade/feedback', {
+      studentName: st.name,
+      assignmentName: S.currentAssignment?.name || 'Assignment',
+      totalScore: g.finalScore ?? '—',
+      totalPossible: S.rubric.totalPoints,
+      criteriaContext,
+      overallFeedback: g.aiOverallFeedback || '',
+    });
+
+    const fb = document.getElementById('obo-student-feedback');
+    if (fb) fb.value = res.feedback;
+    if (!S.grades[st.id]) S.grades[st.id] = buildEmptyGrade(st.id);
+    S.grades[st.id].studentFeedback = res.feedback;
+    await saveGrade(st.id);
+    toast('Feedback generated!', 'success');
+  } catch (e) { toast('Feedback generation failed: ' + e.message, 'error'); }
+  finally { if (btn) { btn.disabled = false; btn.textContent = '✦ AI Generate'; } }
+}
+
+function oboSaveFeedbackField() {
+  const students = allStudents();
+  const st = students[oboIndex];
+  if (!st) return;
+  const fb = document.getElementById('obo-student-feedback')?.value || '';
+  if (!S.grades[st.id]) S.grades[st.id] = buildEmptyGrade(st.id);
+  S.grades[st.id].studentFeedback = fb;
+  saveGrade(st.id);
 }
 
 async function oboSaveGrade() {

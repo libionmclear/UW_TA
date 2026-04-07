@@ -710,6 +710,9 @@ tbody td { padding: 7px 10px; vertical-align: middle; }
 .obo-total-final { background: #fef3c7; border: 2px solid var(--uw-gold); }
 .obo-total-final strong { color: var(--uw-purple); font-size: 24px; }
 
+.obo-student-feedback-card { border-left: 4px solid var(--uw-gold); }
+.obo-student-feedback-card textarea { font-size: 13px; line-height: 1.6; }
+
 .obo-ai-explain { background: #f0f4ff; border: 1px solid #c7d2fe; }
 .obo-ai-explain-text { font-size: 13px; line-height: 1.6; color: var(--text); }
 .obo-ai-crit-feedback { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 10px; margin-bottom: 6px; }
