@@ -1440,6 +1440,10 @@ function renderAssignmentView(root) {
   if (!a) { root.innerHTML = '<p class="muted padded">Select an assignment from the sidebar.</p>'; return; }
 
   const group = classifyAssignment(a);
+
+  // Product of the Week gets its own custom view
+  if (group === 'Product of the Week') { renderPotwView(root, a); return; }
+
   const due = a.due_at ? new Date(a.due_at).toLocaleDateString() : 'No due date';
   const students = allStudents();
   const graded  = Object.values(S.grades).filter(g => g.status !== 'pending');
@@ -1623,6 +1627,146 @@ function renderAssignmentView(root) {
 
 /* ── Product of the Week Randomizer ─────────────────────────────────────────── */
 let _potwPicked = [];
+
+function renderPotwView(root, a) {
+  const students = allStudents();
+  const due = a.due_at ? new Date(a.due_at).toLocaleDateString() : 'No due date';
+  const graded = Object.values(S.grades).filter(g => g.status !== 'pending');
+  const scores = Object.values(S.grades).map(g => g.finalScore).filter(s => s != null);
+  const avg = scores.length ? (scores.reduce((x, y) => x + y, 0) / scores.length).toFixed(1) : '—';
+
+  // Grade sync badge
+  const gs = Object.values(S.grades);
+  const withFinal = gs.filter(g => g.finalScore != null);
+  const fromCanvas = gs.filter(g => g.status === 'canvas');
+  const synced = withFinal.filter(g => g.canvasScore != null && g.finalScore === g.canvasScore);
+  const uwOnly = withFinal.filter(g => g.canvasScore == null || g.finalScore !== g.canvasScore);
+  let syncBadge = '';
+  if (fromCanvas.length && !withFinal.filter(g => g.status !== 'canvas').length)
+    syncBadge = `<span class="grade-sync-badge grade-sync--canvas">Canvas Grades (${fromCanvas.length})</span>`;
+  else if (uwOnly.length === 0 && synced.length > 0)
+    syncBadge = `<span class="grade-sync-badge grade-sync--synced">Synced (${synced.length})</span>`;
+  else if (uwOnly.length > 0)
+    syncBadge = `<span class="grade-sync-badge grade-sync--local">UW-TA Only (${uwOnly.length})</span>`;
+
+  // Student rows
+  const rows = students.map(st => {
+    const g = S.grades[st.id] || {};
+    const potw = g.potwData || {};
+    const type = potw.type || '';
+    const date = potw.date || '';
+    const desc = potw.description || '';
+    const pts = g.finalScore != null ? g.finalScore : '';
+    return `<tr>
+      <td style="font-weight:600">${esc(st.name)}</td>
+      <td style="text-align:center">
+        <label class="potw-check-label"><input type="radio" name="potw-type-${esc(st.id)}" value="volunteered" ${type === 'volunteered' ? 'checked' : ''}
+          onchange="potwUpdateStudent('${esc(st.id)}','type','volunteered')"> Vol</label>
+        <label class="potw-check-label"><input type="radio" name="potw-type-${esc(st.id)}" value="called" ${type === 'called' ? 'checked' : ''}
+          onchange="potwUpdateStudent('${esc(st.id)}','type','called')"> Called</label>
+      </td>
+      <td><input type="date" class="input potw-date-input" value="${esc(date)}"
+        onchange="potwUpdateStudent('${esc(st.id)}','date',this.value)" /></td>
+      <td><input type="text" class="input" placeholder="Brief description…" value="${esc(desc)}"
+        onchange="potwUpdateStudent('${esc(st.id)}','description',this.value)" style="font-size:12px" /></td>
+      <td><input type="number" class="input potw-pts-input" min="0" max="${a.points_possible || 10}" value="${pts}"
+        onchange="potwUpdateScore('${esc(st.id)}',this.value,${a.points_possible || 10})" placeholder="—" /></td>
+    </tr>`;
+  }).join('');
+
+  root.innerHTML = `
+    <div class="page-title">
+      ${esc(a.name)}
+      <span class="type-badge" style="font-size:13px">Product of the Week</span>
+      <div class="page-actions">
+        <button class="btn btn-ghost" onclick="selectAssignment('${a.id}')">⟳ Refresh</button>
+      </div>
+    </div>
+
+    <!-- Stat cards -->
+    <div class="asgn-stat-cards">
+      <div class="asgn-stat-card asgn-stat--due">
+        <div class="asgn-stat-icon">📅</div>
+        <div class="asgn-stat-value">${due}</div>
+        <div class="asgn-stat-label">Due Date</div>
+      </div>
+      <div class="asgn-stat-card asgn-stat--points">
+        <div class="asgn-stat-icon">⭐</div>
+        <div class="asgn-stat-value">${a.points_possible || '?'}</div>
+        <div class="asgn-stat-label">Points</div>
+      </div>
+      <div class="asgn-stat-card asgn-stat--students">
+        <div class="asgn-stat-icon">👥</div>
+        <div class="asgn-stat-value">${students.length}</div>
+        <div class="asgn-stat-label">Students</div>
+      </div>
+      <div class="asgn-stat-card asgn-stat--graded">
+        <div class="asgn-stat-icon">✅</div>
+        <div class="asgn-stat-value">${graded.length}</div>
+        <div class="asgn-stat-label">Graded</div>
+      </div>
+      <div class="asgn-stat-card asgn-stat--avg">
+        <div class="asgn-stat-icon">📊</div>
+        <div class="asgn-stat-value">${avg}</div>
+        <div class="asgn-stat-label">Average</div>
+      </div>
+    </div>
+
+    <!-- Randomizer -->
+    <div class="card potw-randomizer-card">
+      <div class="card-title">◎ Student Randomizer</div>
+      <div class="potw-body">
+        <div class="potw-result" id="potw-result">Click to pick a random student</div>
+        <div class="potw-actions">
+          <button class="btn btn-primary potw-spin-btn" onclick="potwRandomize()">🎲 Pick Random Student</button>
+          <button class="btn btn-ghost" onclick="potwRandomize()">🔄 Pick Another</button>
+        </div>
+        <div class="potw-history" id="potw-history"></div>
+      </div>
+    </div>
+
+    <!-- Sync badge + Push button -->
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+      ${syncBadge}
+      <div style="margin-left:auto">
+        <button class="btn assign-tab--push" style="border-radius:var(--radius);padding:8px 16px" onclick="pushAllToCanvas()">⬆ Push Final Grades to Canvas</button>
+      </div>
+    </div>
+
+    <!-- Student list -->
+    <div class="card">
+      <div class="card-title">Students — Product of the Week Tracker</div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Student</th>
+            <th style="text-align:center">Volunteered / Called</th>
+            <th>Date</th>
+            <th>Brief Description</th>
+            <th style="text-align:center">Points (/${a.points_possible || 10})</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>`;
+}
+
+function potwUpdateStudent(studentId, field, value) {
+  if (!S.grades[studentId]) S.grades[studentId] = buildEmptyGrade(studentId);
+  if (!S.grades[studentId].potwData) S.grades[studentId].potwData = {};
+  S.grades[studentId].potwData[field] = value;
+  S.grades[studentId].status = 'reviewed';
+  saveGrade(studentId);
+}
+
+function potwUpdateScore(studentId, value, max) {
+  let pts = value.trim() === '' ? null : Number(value);
+  if (pts !== null) pts = Math.max(0, Math.min(max, pts));
+  if (!S.grades[studentId]) S.grades[studentId] = buildEmptyGrade(studentId);
+  S.grades[studentId].finalScore = pts;
+  S.grades[studentId].status = 'reviewed';
+  saveGrade(studentId);
+}
 
 function potwRandomize() {
   const students = allStudents();

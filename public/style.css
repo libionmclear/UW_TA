@@ -843,6 +843,10 @@ tbody td { padding: 7px 10px; vertical-align: middle; }
 .potw-spin-btn { font-size: 15px !important; padding: 10px 24px !important; }
 .potw-history { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 .potw-history-item { font-size: 11px; background: var(--bg); border: 1px solid var(--border); padding: 2px 8px; border-radius: 10px; color: var(--text-muted); }
+.potw-check-label { font-size: 11px; font-weight: 600; margin-right: 6px; cursor: pointer; white-space: nowrap; }
+.potw-check-label input { margin-right: 2px; accent-color: var(--uw-purple); }
+.potw-date-input { font-size: 11px !important; padding: 4px 6px !important; max-width: 130px; }
+.potw-pts-input { width: 60px !important; text-align: center; font-size: 13px !important; font-weight: 700; }
 
 /* ── Syncing Badge ──────────────────────────────────────────────────────────── */
 .syncing-badge {
