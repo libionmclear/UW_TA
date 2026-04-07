@@ -837,6 +837,54 @@ app.post('/api/notifications/mark-read', requireAuth, (req, res) => {
   ok(res, { ok: true });
 });
 
+// ── Canvas Messages ──────────────────────────────────────────────────────────
+app.get('/api/messages', requireAuth, async (_req, res) => {
+  try { ok(res, await canvas.getConversations()); } catch (e) { fail(res, e); }
+});
+app.get('/api/messages/:id', requireAuth, async (req, res) => {
+  try { ok(res, await canvas.getConversation(req.params.id)); } catch (e) { fail(res, e); }
+});
+app.post('/api/messages/:id/reply', requireAuth, async (req, res) => {
+  try {
+    const result = await canvas.replyToConversation(req.params.id, req.body.body);
+    addNotification(req, 'message_sent', `Replied to conversation ${req.params.id}`);
+    ok(res, result);
+  } catch (e) { fail(res, e); }
+});
+
+// ── Change Password ──────────────────────────────────────────────────────────
+app.post('/api/change-password', requireAuth, (req, res) => {
+  const { oldPassword, newPassword } = req.body;
+  if (!oldPassword || !newPassword) return fail(res, { message: 'Missing fields' }, 400);
+  if (newPassword.length < 4) return fail(res, { message: 'Password too short' }, 400);
+  const user = USERS.find(u => u.username === req.session.username);
+  if (!user) return fail(res, { message: 'User not found' }, 404);
+  if (user.password !== oldPassword) return fail(res, { message: 'Old password incorrect' }, 401);
+  user.password = newPassword;
+  try { fs.writeFileSync(USERS_FILE, JSON.stringify(USERS, null, 2)); } catch { }
+  ok(res, { ok: true });
+});
+
+// ── User Profile Photo ──────────────────────────────────────────────────────
+app.get('/api/user-photo/:username', (req, res) => {
+  const name = req.params.username.toLowerCase();
+  const exts = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
+  for (const ext of exts) {
+    const fp = path.join(PHOTOS_DIR, 'user_' + name + ext);
+    if (fs.existsSync(fp)) return res.sendFile(fp);
+  }
+  res.status(404).json({ error: 'No photo' });
+});
+app.post('/api/user-photo/:username', requireAuth, upload.single('photo'), (req, res) => {
+  if (!req.file) return fail(res, { message: 'No file' }, 400);
+  const name = req.params.username.toLowerCase();
+  const ext = path.extname(req.file.originalname).toLowerCase() || '.jpg';
+  const exts = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
+  for (const e of exts) { const fp = path.join(PHOTOS_DIR, 'user_' + name + e); if (fs.existsSync(fp)) fs.unlinkSync(fp); }
+  fs.writeFileSync(path.join(PHOTOS_DIR, 'user_' + name + ext), req.file.buffer);
+  ok(res, { ok: true });
+});
+
 // ── SPA fallback ──────────────────────────────────────────────────────────────
 app.get('*', (req, res) => {
   if (!req.session.authenticated) return res.redirect('/login.html');

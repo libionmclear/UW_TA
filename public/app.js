@@ -602,6 +602,7 @@ function showView(name) {
     case 'content':     renderContentView(root); loadCourseContent(); break;
     case 'syllabus':    renderSyllabusView(root); break;
     case 'manual':      renderManualView(root); break;
+    case 'messages':      renderMessagesView(root); break;
     case 'notifications': renderNotificationsView(root); break;
     default:            renderOverview(root);
   }
@@ -4156,6 +4157,192 @@ async function loadCurrentUser() {
     if (!me.authenticated) { window.location.href = '/login.html'; return; }
     document.getElementById('hdr-username').textContent = displayName(me.username);
   } catch { window.location.href = '/login.html'; }
+}
+
+/* ── Messages View (Canvas Inbox) ──────────────────────────────────────────── */
+async function renderMessagesView(root) {
+  root = root || document.getElementById('view-root');
+  root.innerHTML = '<div class="loading-splash"><div class="loading-bounce"></div><div class="loading-text">Loading messages<span class="loading-dots"></span></div></div>';
+  try {
+    const convos = await GET('/api/messages');
+    const rows = convos.map(c => {
+      const participants = (c.participants || []).map(p => p.name).join(', ');
+      const date = new Date(c.last_message_at || c.created_at).toLocaleString('en-US', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
+      const unread = c.workflow_state === 'unread';
+      return `<div class="msg-item ${unread ? 'msg-unread' : ''}" onclick="openMessage('${c.id}')">
+        <div class="msg-item-left">
+          <div class="msg-subject ${unread ? 'msg-subject-unread' : ''}">${esc(c.subject || '(no subject)')}</div>
+          <div class="msg-participants">${esc(participants)}</div>
+          <div class="msg-preview">${esc((c.last_message || '').substring(0, 100))}</div>
+        </div>
+        <div class="msg-item-right">
+          <span class="msg-date">${date}</span>
+          ${unread ? '<span class="msg-unread-dot"></span>' : ''}
+        </div>
+      </div>`;
+    }).join('');
+
+    root.innerHTML = `
+      <div class="page-title">✉ Messages — Canvas Inbox
+        <div class="page-actions">
+          <button class="btn btn-ghost" onclick="renderMessagesView()">⟳ Refresh</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="msg-list" id="msg-list">${rows || '<p class="muted" style="padding:16px;text-align:center">No messages.</p>'}</div>
+      </div>
+      <div id="msg-detail-card"></div>`;
+  } catch (e) {
+    root.innerHTML = `<p class="muted padded">Failed to load messages: ${esc(e.message)}</p>`;
+  }
+}
+
+async function openMessage(id) {
+  const detail = document.getElementById('msg-detail-card');
+  if (!detail) return;
+  detail.innerHTML = '<div class="card"><p class="muted" style="padding:16px;text-align:center">Loading conversation...</p></div>';
+  try {
+    const convo = await GET(`/api/messages/${id}`);
+    const msgs = (convo.messages || []).map(m => {
+      const name = displayName(m.author_id === convo.audience?.[0] ? (convo.participants?.find(p => p.id === m.author_id)?.name || 'Student') : (S.me?.username || 'You'));
+      const color = authorColor(name);
+      const date = new Date(m.created_at).toLocaleString('en-US', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
+      return `<div class="msg-bubble">
+        <div class="msg-bubble-author" style="color:${color}"><strong>${esc(name)}</strong> <span class="muted">${date}</span></div>
+        <div class="msg-bubble-body">${m.body || ''}</div>
+      </div>`;
+    }).join('');
+
+    detail.innerHTML = `<div class="card" style="margin-top:12px">
+      <div class="card-title">${esc(convo.subject || '(no subject)')}</div>
+      <div class="msg-thread">${msgs}</div>
+      <div class="msg-reply-row" style="margin-top:10px">
+        <textarea class="input" id="msg-reply-input" rows="2" placeholder="Type a reply..."></textarea>
+        <button class="btn btn-surf" onclick="sendMessageReply('${id}')" style="margin-top:6px">Send Reply to Canvas</button>
+      </div>
+    </div>`;
+  } catch (e) { detail.innerHTML = `<div class="card"><p class="muted">Error: ${esc(e.message)}</p></div>`; }
+}
+
+async function sendMessageReply(id) {
+  const input = document.getElementById('msg-reply-input');
+  const body = input?.value?.trim();
+  if (!body) { toast('Type a reply.', 'warn'); return; }
+  try {
+    await POST(`/api/messages/${id}/reply`, { body });
+    toast('Reply sent to Canvas!', 'success');
+    openMessage(id);
+  } catch (e) { toast('Send failed: ' + e.message, 'error'); }
+}
+
+/* ── Profile Side Card ─────────────────────────────────────────────────────── */
+function toggleProfileCard() {
+  const card = document.getElementById('profile-card');
+  if (!card) return;
+  if (card.classList.contains('hidden')) {
+    renderProfileCard();
+    card.classList.remove('hidden');
+  } else {
+    card.classList.add('hidden');
+  }
+}
+
+function renderProfileCard() {
+  const inner = document.getElementById('profile-card-inner');
+  if (!inner) return;
+  const name = displayName(S.me?.username || 'User');
+  const color = authorColor(name);
+  const photoUrl = `/api/user-photo/${encodeURIComponent((S.me?.username || '').toLowerCase())}`;
+
+  inner.innerHTML = `
+    <div class="prof-header">
+      <div class="prof-photo-wrap">
+        <img class="prof-photo" id="prof-photo-img" src="${photoUrl}" alt="${esc(name)}"
+          onerror="this.style.display='none';this.nextElementSibling.style.display='grid'" />
+        <div class="prof-avatar" style="display:none;background:${color}">${name[0]}</div>
+        <button class="prof-photo-btn" onclick="document.getElementById('prof-photo-input').click()">+</button>
+        <input type="file" id="prof-photo-input" accept="image/*" style="display:none"
+          onchange="uploadProfilePhoto(this.files[0])" />
+      </div>
+      <div>
+        <div class="prof-name" style="color:${color}">${esc(name)}</div>
+        <div class="muted" style="font-size:11px">${esc(S.me?.role || 'Instructor')}</div>
+      </div>
+      <button class="prof-close" onclick="toggleProfileCard()">✕</button>
+    </div>
+
+    <div class="prof-links">
+      <button class="btn btn-ghost" style="width:100%;justify-content:flex-start" onclick="showView('notifications');toggleProfileCard()">🔔 Notifications</button>
+      <button class="btn btn-ghost" style="width:100%;justify-content:flex-start" onclick="showView('messages');toggleProfileCard()">✉ Messages</button>
+    </div>
+
+    <div class="prof-section">
+      <div class="prof-section-title">Change Password</div>
+      <input class="input" id="prof-old-pw" type="password" placeholder="Current password" style="margin-bottom:6px" />
+      <input class="input" id="prof-new-pw" type="password" placeholder="New password" style="margin-bottom:6px" />
+      <input class="input" id="prof-new-pw2" type="password" placeholder="Confirm new password" style="margin-bottom:6px" />
+      <button class="btn btn-surf" onclick="changePassword()">Update Password</button>
+      <div id="prof-pw-status" class="muted" style="font-size:11px;margin-top:4px"></div>
+    </div>
+
+    <div class="prof-section">
+      <div class="prof-section-title">Recent Activity</div>
+      <div id="prof-activity" class="prof-activity">Loading...</div>
+    </div>`;
+
+  // Load activity
+  loadProfileActivity();
+}
+
+let store_notifications_cache = [];
+
+async function loadProfileActivity() {
+  try {
+    const notifs = await GET('/api/notifications');
+    store_notifications_cache = notifs;
+    const el = document.getElementById('prof-activity');
+    if (!el) return;
+    // Show last 8 activities from either user
+    const recent = notifs.slice(-8).reverse();
+    el.innerHTML = recent.length ? recent.map(n => {
+      const name = displayName(n.user);
+      const color = authorColor(name);
+      const time = new Date(n.time).toLocaleString('en-US', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
+      return `<div class="prof-activity-item">
+        <span style="color:${color};font-weight:700;font-size:11px">${esc(name)}</span>
+        <span class="muted" style="font-size:10px">${time}</span>
+        <div style="font-size:11px">${esc(n.detail?.substring(0, 60) || '')}</div>
+      </div>`;
+    }).join('') : '<p class="muted" style="font-size:11px">No recent activity.</p>';
+  } catch { const el = document.getElementById('prof-activity'); if (el) el.innerHTML = '<p class="muted" style="font-size:11px">Could not load.</p>'; }
+}
+
+async function uploadProfilePhoto(file) {
+  if (!file) return;
+  const form = new FormData();
+  form.append('photo', file);
+  try {
+    await fetch(`/api/user-photo/${encodeURIComponent((S.me?.username || '').toLowerCase())}`, { method: 'POST', body: form });
+    toast('Photo uploaded!', 'success');
+    renderProfileCard();
+  } catch (e) { toast('Upload failed: ' + e.message, 'error'); }
+}
+
+async function changePassword() {
+  const old = document.getElementById('prof-old-pw')?.value;
+  const pw1 = document.getElementById('prof-new-pw')?.value;
+  const pw2 = document.getElementById('prof-new-pw2')?.value;
+  const status = document.getElementById('prof-pw-status');
+  if (!old || !pw1 || !pw2) { if (status) status.textContent = 'Fill in all fields.'; return; }
+  if (pw1 !== pw2) { if (status) status.textContent = 'New passwords do not match.'; return; }
+  if (pw1.length < 4) { if (status) status.textContent = 'Password too short (min 4).'; return; }
+  try {
+    await POST('/api/change-password', { oldPassword: old, newPassword: pw1 });
+    if (status) { status.style.color = 'var(--success)'; status.textContent = 'Password updated!'; }
+    document.getElementById('prof-old-pw').value = '';
+    document.getElementById('prof-new-pw').value = '';
+    document.getElementById('prof-new-pw2').value = '';
+  } catch (e) { if (status) { status.style.color = 'var(--danger)'; status.textContent = e.message; } }
 }
 
 /* ── Notifications ─────────────────────────────────────────────────────────── */

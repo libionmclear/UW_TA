@@ -28,12 +28,17 @@
     <button id="btn-export" class="btn btn-ghost" disabled title="Export current assignment grades as CSV">⬇ Export Grades</button>
     <div class="hdr-divider"></div>
     <button id="btn-notifications" class="btn btn-ghost notif-btn" onclick="showView('notifications')" title="Notifications">
-      🔔 <span id="notif-badge" class="notif-badge" style="display:none">0</span>
+      🔔 Notifications <span id="notif-badge" class="notif-badge" style="display:none">0</span>
     </button>
-    <span id="hdr-username" class="hdr-user"></span>
+    <button id="hdr-username" class="hdr-user hdr-user-btn" onclick="toggleProfileCard()"></button>
     <button id="btn-logout" class="btn btn-ghost">Sign Out</button>
   </div>
 </header>
+
+<!-- ── Profile Side Card ──────────────────────────────────────────────────── -->
+<div id="profile-card" class="profile-card hidden">
+  <div class="profile-card-inner" id="profile-card-inner"></div>
+</div>
 
 <!-- ── Layout ──────────────────────────────────────────────────────────────── -->
 <div class="layout">
@@ -42,6 +47,9 @@
   <nav class="sidebar" id="sidebar">
     <button class="nav-btn nav-btn-top active" data-view="overview">
       <span class="nav-icon">◇</span> Overview
+    </button>
+    <button class="nav-btn nav-btn-messages" data-view="messages">
+      <span class="nav-icon">✉</span> Messages
     </button>
 
     <div class="sidebar-box">

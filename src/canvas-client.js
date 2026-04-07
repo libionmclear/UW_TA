@@ -161,6 +161,26 @@ async function pushGradesBulk(courseId, assignmentId, gradeData) {
   return res.json();
 }
 
+// ── Canvas Conversations (Messages) ──────────────────────────────────────────
+async function getConversations(scope = 'inbox') {
+  return canvasGet(`/conversations?scope=${scope}&per_page=30`);
+}
+
+async function getConversation(id) {
+  return canvasGet(`/conversations/${id}`);
+}
+
+async function replyToConversation(id, body) {
+  const url = `${API_URL}/conversations/${id}/add_message`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ body }),
+  });
+  if (!res.ok) throw new Error(`Canvas API error ${res.status}: ${await res.text()}`);
+  return res.json();
+}
+
 module.exports = {
   testConnection,
   getCourses,
@@ -181,4 +201,7 @@ module.exports = {
   addQuizQuestion,
   publishQuiz,
   getAllSubmissions,
+  getConversations,
+  getConversation,
+  replyToConversation,
 };
