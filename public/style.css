@@ -710,6 +710,12 @@ tbody td { padding: 7px 10px; vertical-align: middle; }
 .obo-total-final { background: #fef3c7; border: 2px solid var(--uw-gold); }
 .obo-total-final strong { color: var(--uw-purple); font-size: 24px; }
 
+/* ── AI Rubric Assistant ─────────────────────────────────────────────────────── */
+.ai-rubric-input-row { display: flex; gap: 6px; }
+.ai-rubric-input-row .input { flex: 1; font-size: 12px; }
+#ai-rubric-response { margin-top: 10px; padding: 10px 12px; background: #f0f4ff; border: 1px solid #c7d2fe; border-radius: var(--radius); }
+.ai-rubric-crit-preview { padding: 6px 8px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 4px; }
+
 .obo-student-feedback-card { border-left: 4px solid var(--uw-gold); }
 .obo-student-feedback-card textarea { font-size: 13px; line-height: 1.6; }
 

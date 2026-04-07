@@ -1696,7 +1696,7 @@ function renderInstructionsTab() {
 
 Example: 'This is a case write-up. Students MUST have an executive summary with recommendations, supporting points, and a conclusion with alternatives. Penalize missing sections heavily.'"
           >${esc(S.aiInstructions)}</textarea>
-          <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
+          <div style="display:flex;gap:8px;margin-top:8px;align-items:center;flex-wrap:wrap">
             <button class="btn btn-surf" onclick="saveAiInstructions()">Save</button>
             <span id="ai-instr-status" class="muted" style="font-size:12px"></span>
           </div>
@@ -1705,6 +1705,17 @@ Example: 'This is a case write-up. Students MUST have an executive summary with 
             ① Executive Summary + Recommendations &nbsp;·&nbsp;
             ② Supporting Points &amp; Evidence &nbsp;·&nbsp;
             ③ Conclusion / Alternatives / Other Thoughts
+          </div>
+
+          <!-- AI Rubric Assistant -->
+          <div class="ai-rubric-assist" style="margin-top:12px">
+            <div style="font-size:11px;font-weight:700;color:var(--uw-purple);margin-bottom:4px">✦ ASK AI TO BUILD OR MODIFY THE RUBRIC</div>
+            <div class="ai-rubric-input-row">
+              <input class="input" id="ai-rubric-prompt" placeholder="e.g. 'Suggest a rubric for a case write-up worth 15 points' or 'Add a criterion for grammar'"
+                onkeydown="if(event.key==='Enter')aiSuggestRubric()" />
+              <button class="btn btn-surf" onclick="aiSuggestRubric()" id="ai-rubric-btn">✦ Ask AI</button>
+            </div>
+            <div id="ai-rubric-response" style="display:none"></div>
           </div>
         </div>
 
@@ -1798,6 +1809,65 @@ async function generateRubricAi() {
     refreshInstructionsTab();
     toast('Rubric generated! Save it when ready.', 'success');
   } catch (e) { toast('Generation failed: ' + e.message, 'error'); }
+}
+
+async function aiSuggestRubric() {
+  const prompt = document.getElementById('ai-rubric-prompt')?.value?.trim();
+  if (!prompt) { toast('Type a request for the AI.', 'warn'); return; }
+  if (!S.health?.claude) { toast('Claude not configured.', 'error'); return; }
+
+  const btn = document.getElementById('ai-rubric-btn');
+  const respBox = document.getElementById('ai-rubric-response');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Thinking...'; }
+  if (respBox) { respBox.style.display = 'block'; respBox.innerHTML = '<p class="muted">AI is working...</p>'; }
+
+  try {
+    const currentRubric = S.rubric || defaultRubricForAssignment(S.currentAssignment);
+    const currentCriteria = (currentRubric.criteria || []).map(c => `${c.name} (${c.maxPoints}pts): ${c.description}`).join('\n');
+    const assignmentText = document.getElementById('assignment-text-input')?.value || S.currentAssignment?.name || '';
+    const aiInstructions = document.getElementById('ai-instructions-text')?.value || '';
+
+    const res = await POST('/api/rubric/ai-assist', {
+      prompt,
+      assignmentName: S.currentAssignment?.name || '',
+      assignmentText,
+      aiInstructions,
+      currentCriteria,
+      totalPoints: currentRubric.totalPoints || 15,
+    });
+
+    if (res.rubric) {
+      // AI returned a full rubric — show preview and apply button
+      const preview = res.rubric.criteria.map(c =>
+        `<div class="ai-rubric-crit-preview">
+          <strong>${esc(c.name)}</strong> (${c.maxPoints}pts)
+          <div class="muted" style="font-size:11px">${esc(c.description)}</div>
+        </div>`
+      ).join('');
+      respBox.innerHTML = `
+        <div style="margin-bottom:8px;font-size:12px;color:var(--text)">${esc(res.message || 'AI suggested the following rubric:')}</div>
+        ${preview}
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button class="btn btn-primary" onclick="applyAiRubricSuggestion()">Apply This Rubric</button>
+          <button class="btn btn-ghost" onclick="document.getElementById('ai-rubric-response').style.display='none'">Dismiss</button>
+        </div>`;
+      // Store for applying
+      S._aiSuggestedRubric = res.rubric;
+    } else {
+      respBox.innerHTML = `<div style="font-size:12px;line-height:1.5">${esc(res.message || 'Done.')}</div>`;
+    }
+  } catch (e) {
+    if (respBox) respBox.innerHTML = `<p style="color:var(--danger);font-size:12px">Error: ${esc(e.message)}</p>`;
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '✦ Ask AI'; }
+  }
+}
+
+function applyAiRubricSuggestion() {
+  if (!S._aiSuggestedRubric) return;
+  S.rubric = { ...S._aiSuggestedRubric, id: S.rubric?.id };
+  refreshInstructionsTab();
+  toast('Rubric applied! Save it when ready.', 'success');
 }
 
 /* ── Students Tab ────────────────────────────────────────────────────────────── */

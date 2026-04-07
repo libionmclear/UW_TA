@@ -289,6 +289,53 @@ app.delete('/api/grades/:cid/:aid', (req, res) => {
   ok(res, { ok: true });
 });
 
+// ── AI Rubric Assistant ──────────────────────────────────────────────────────
+app.post('/api/rubric/ai-assist', requireAuth, async (req, res) => {
+  try {
+    const { prompt, assignmentName, assignmentText, aiInstructions, currentCriteria, totalPoints } = req.body;
+    const Anthropic = require('@anthropic-ai/sdk');
+    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const resp = await client.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 1000,
+      messages: [{ role: 'user', content: `You are a rubric design assistant for a university marketing course.
+
+ASSIGNMENT: ${assignmentName || 'Unknown'}
+ASSIGNMENT DESCRIPTION: ${(assignmentText || '').substring(0, 2000)}
+GRADING INSTRUCTIONS: ${(aiInstructions || '').substring(0, 1000)}
+TOTAL POINTS: ${totalPoints || 15}
+
+CURRENT RUBRIC CRITERIA:
+${currentCriteria || '(none yet)'}
+
+USER REQUEST: ${prompt}
+
+Based on the request, either:
+1. Generate a COMPLETE new rubric, OR
+2. Suggest modifications to the existing rubric (add/remove/change criteria)
+
+Respond ONLY with valid JSON:
+{
+  "message": "Brief explanation of what you did",
+  "rubric": {
+    "name": "Rubric name",
+    "totalPoints": ${totalPoints || 15},
+    "description": "...",
+    "criteria": [
+      { "id": "c1", "name": "Criterion Name", "maxPoints": 5, "description": "What earns full points", "autoGrant": false },
+      ...
+    ]
+  }
+}` }],
+    });
+    const raw = resp.content[0].text;
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (!match) throw new Error('AI returned non-JSON');
+    const parsed = JSON.parse(match[0]);
+    ok(res, parsed);
+  } catch (e) { fail(res, e); }
+});
+
 // ── AI Detection (standalone) ────────────────────────────────────────────────
 app.post('/api/ai-detect', requireAuth, (req, res) => {
   try {
