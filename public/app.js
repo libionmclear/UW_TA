@@ -1573,33 +1573,28 @@ function renderAssignmentView(root) {
       </div>`;
     })()}
 
-    <!-- Grade sync status badge -->
-    ${(() => {
-      const gs = Object.values(S.grades);
-      const withFinal = gs.filter(g => g.finalScore != null);
-      const fromCanvas = gs.filter(g => g.status === 'canvas');
-      const synced = withFinal.filter(g => g.canvasScore != null && g.finalScore === g.canvasScore);
-      const uwOnly = withFinal.filter(g => g.canvasScore == null || g.finalScore !== g.canvasScore);
-      let badgeHtml = '';
-      if (!withFinal.length && !fromCanvas.length) {
-        badgeHtml = '';
-      } else if (fromCanvas.length && !withFinal.filter(g => g.status !== 'canvas').length) {
-        badgeHtml = `<span class="grade-sync-badge grade-sync--canvas">Canvas Grades (${fromCanvas.length})</span>`;
-      } else if (uwOnly.length === 0 && synced.length > 0) {
-        badgeHtml = `<span class="grade-sync-badge grade-sync--synced">Synced with Canvas (${synced.length})</span>`;
-      } else if (uwOnly.length > 0) {
-        badgeHtml = `<span class="grade-sync-badge grade-sync--local">UW-TA Only (${uwOnly.length})</span>`;
-      }
-      return badgeHtml;
-    })()}
-
     <!-- Tabs -->
     <div class="assign-tabs" id="assign-tabs">
+      ${(() => {
+        const gs = Object.values(S.grades);
+        const withFinal = gs.filter(g => g.finalScore != null);
+        const fromCanvas = gs.filter(g => g.status === 'canvas');
+        const synced = withFinal.filter(g => g.canvasScore != null && g.finalScore === g.canvasScore);
+        const uwOnly = withFinal.filter(g => g.canvasScore == null || g.finalScore !== g.canvasScore);
+        if (fromCanvas.length && !withFinal.filter(g => g.status !== 'canvas').length)
+          return `<span class="grade-sync-badge grade-sync--canvas">Canvas Grades (${fromCanvas.length})</span>`;
+        if (uwOnly.length === 0 && synced.length > 0)
+          return `<span class="grade-sync-badge grade-sync--synced">Synced with Canvas (${synced.length})</span>`;
+        if (uwOnly.length > 0)
+          return `<span class="grade-sync-badge grade-sync--local">UW-TA Only (${uwOnly.length})</span>`;
+        return '';
+      })()}
       <button class="assign-tab active" data-atab="instructions" onclick="switchAssignTab('instructions')">Instructions & Rubric</button>
       <button class="assign-tab assign-tab--grade" data-atab="oneByOne" onclick="switchAssignTab('oneByOne')">✦ Grade One-by-One</button>
       <button class="assign-tab" data-atab="students" onclick="switchAssignTab('students')">Students (${students.length})</button>
       <button class="assign-tab" data-atab="matrix" onclick="switchAssignTab('matrix')">Grading Matrix</button>
       <button class="assign-tab" data-atab="chat" onclick="switchAssignTab('chat')">Notes</button>
+      <button class="assign-tab assign-tab--push" onclick="pushAllToCanvas()">⬆ Push Final Grades to Canvas</button>
     </div>
 
     <div id="atab-instructions" class="atab-content active">${renderInstructionsTab()}</div>

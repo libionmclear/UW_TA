@@ -192,11 +192,18 @@ a { color: var(--uw-purple); }
 .assign-tab--grade:hover { background: var(--uw-gold); filter: brightness(1.05); }
 .assign-tab--grade.active { background: var(--uw-purple); color: #fff !important; }
 
+/* Push to Canvas button in tab bar */
+.assign-tab--push {
+  margin-left: auto !important; background: var(--uw-purple) !important; color: #fff !important;
+  font-weight: 800 !important; letter-spacing: .3px;
+}
+.assign-tab--push:hover { filter: brightness(1.15) !important; background: var(--uw-purple) !important; }
+
 /* Grade sync status badges */
 .grade-sync-badge {
   display: inline-flex; align-items: center; gap: 4px;
-  font-size: 11px; font-weight: 700; padding: 4px 12px; border-radius: 20px;
-  margin-bottom: 6px;
+  font-size: 11px; font-weight: 700; padding: 6px 12px; border-radius: 20px;
+  flex-shrink: 0;
 }
 .grade-sync--canvas { background: #fff7ed; color: #c2410c; border: 1px solid #fed7aa; }
 .grade-sync--synced { background: #f0fdf4; color: #15803d; border: 1px solid #86efac; }
