@@ -621,8 +621,19 @@ function nextClassDates(from) {
 
 async function dismissAssignment(aid) {
   S.dismissed.add(String(aid));
-  await PUT(`/api/dismissed/${S.course.id}`, [...S.dismissed]).catch(() => {});
+  // Snapshot current canvas scores so we can detect future changes
+  const g = S.allGrades[String(aid)] || {};
+  Object.values(g).forEach(gr => {
+    if (gr.canvasScore != null) gr._dismissedScore = gr.canvasScore;
+  });
+  // Persist grades with snapshot and dismissed list
+  const saves = Object.entries(g).map(([uid, gr]) =>
+    PUT(`/api/grades/${S.course.id}/${aid}/${uid}`, gr).catch(() => {})
+  );
+  saves.push(PUT(`/api/dismissed/${S.course.id}`, [...S.dismissed]).catch(() => {}));
+  await Promise.all(saves);
   renderOverview();
+  toast('Marked as finalized.', 'success');
 }
 
 function renderOverview(root) {
@@ -651,10 +662,37 @@ function renderOverview(root) {
     return first?.session || '';
   }
 
-  const needsGrading = S.assignments.filter(a => {
-    if (S.dismissed.has(String(a.id))) return false;
-    const g = S.allGrades[String(a.id)] || {};
-    return Object.values(g).some(gr => gr.status !== 'reviewed');
+  // Build needs-attention list with status logic
+  const needsGrading = [];
+  S.assignments.forEach(a => {
+    const aid = String(a.id);
+    const g = S.allGrades[aid] || {};
+    const gs = Object.values(g);
+    if (!gs.length) { needsGrading.push({ a, status: 'no_grades', label: `${allStudents().length} to be graded`, color: 'needs' }); return; }
+    const withFinal = gs.filter(gr => gr.finalScore != null);
+    const fromCanvas = gs.filter(gr => gr.status === 'canvas');
+    const synced = withFinal.filter(gr => gr.canvasScore != null && gr.finalScore === gr.canvasScore);
+    const uwOnly = withFinal.filter(gr => gr.canvasScore == null || (gr.finalScore !== gr.canvasScore && gr.status !== 'canvas'));
+    // Check for canvas changes after dismissal
+    const dismissed = S.dismissed.has(aid);
+    if (dismissed) {
+      // Check if any canvas scores changed since we dismissed
+      const changed = gs.filter(gr => gr._dismissedScore != null && gr.canvasScore != null && gr.canvasScore !== gr._dismissedScore);
+      if (changed.length) {
+        needsGrading.push({ a, status: 'changed', label: `${changed.length} grade(s) changed`, color: 'warn' });
+      }
+      return; // dismissed and no changes
+    }
+    if (fromCanvas.length && !gs.some(gr => gr.status === 'reviewed' || gr.status === 'ai_graded')) {
+      needsGrading.push({ a, status: 'canvas_only', label: 'To be finalized', color: 'canvas' });
+    } else if (uwOnly.length > 0 && synced.length === 0) {
+      needsGrading.push({ a, status: 'local_only', label: 'To be finalized and pushed', color: 'local' });
+    } else if (synced.length > 0 && uwOnly.length === 0) {
+      needsGrading.push({ a, status: 'synced', label: 'Grades Synced', color: 'synced' });
+    } else if (gs.some(gr => gr.status !== 'reviewed')) {
+      const pending = gs.filter(gr => gr.status !== 'reviewed').length;
+      needsGrading.push({ a, status: 'pending', label: `${pending} to be graded`, color: 'needs' });
+    }
   });
 
   const recentlyGraded = S.assignments.filter(a => {
@@ -750,40 +788,45 @@ function renderOverview(root) {
       <div class="card-title">🔴 Needs Grading ${S._syncing ? '<span class="syncing-badge">Syncing Canvas<span class="loading-dots"></span></span>' : `(${needsGrading.length})`}</div>
       ${S._syncing ? '<div class="syncing-hint"><div class="loading-bar-top" style="margin-bottom:0"><div class="loading-bar-fill"></div></div><p class="muted" style="padding:8px 0;text-align:center">Grabbing latest data from Canvas...</p></div>' : ''}
       ${needsGrading.length ? `<table class="overview-table">
-        <thead><tr><th>Assignment</th><th>Type</th><th>Due</th><th>Points</th><th>Grade Source</th><th>Pending</th><th></th></tr></thead>
-        <tbody>${needsGrading.map(a => {
+        <thead><tr><th>Assignment</th><th>Type</th><th>Due</th><th>Points</th><th>Grade Source</th><th>Status</th><th></th></tr></thead>
+        <tbody>${needsGrading.map(item => {
+          const a = item.a;
           const g = S.allGrades[String(a.id)] || {};
           const gs = Object.values(g);
-          const pending = gs.filter(gr => gr.status !== 'reviewed').length;
           const due = a.due_at ? new Date(a.due_at).toLocaleDateString() : '—';
-          const withFinal = gs.filter(gr => gr.finalScore != null);
+
+          // Grade source badge
           const fromCanvas = gs.filter(gr => gr.status === 'canvas');
+          const withFinal = gs.filter(gr => gr.finalScore != null);
           const synced = withFinal.filter(gr => gr.canvasScore != null && gr.finalScore === gr.canvasScore);
-          const uwOnly = withFinal.filter(gr => gr.canvasScore == null || gr.finalScore !== gr.canvasScore);
+          const uwOnly = withFinal.filter(gr => gr.canvasScore == null || (gr.finalScore !== gr.canvasScore && gr.status !== 'canvas'));
           let srcBadge = '';
-          if (!withFinal.length && !fromCanvas.length) {
-            srcBadge = '<span class="grade-sync-badge grade-sync--needs" style="font-size:10px;padding:2px 8px">Needs Grading</span>';
-          } else if (fromCanvas.length && !withFinal.filter(gr => gr.status !== 'canvas').length) {
+          if (!withFinal.length && !fromCanvas.length)
+            srcBadge = '<span class="grade-sync-badge grade-sync--needs" style="font-size:10px;padding:2px 8px">No Grades</span>';
+          else if (fromCanvas.length && !gs.some(gr => gr.status === 'reviewed' || gr.status === 'ai_graded'))
             srcBadge = `<span class="grade-sync-badge grade-sync--canvas" style="font-size:10px;padding:2px 8px">Canvas (${fromCanvas.length})</span>`;
-          } else if (uwOnly.length === 0 && synced.length > 0) {
+          else if (uwOnly.length === 0 && synced.length > 0)
             srcBadge = `<span class="grade-sync-badge grade-sync--synced" style="font-size:10px;padding:2px 8px">Synced (${synced.length})</span>`;
-          } else if (uwOnly.length > 0) {
+          else if (uwOnly.length > 0)
             srcBadge = `<span class="grade-sync-badge grade-sync--local" style="font-size:10px;padding:2px 8px">UW-TA Only (${uwOnly.length})</span>`;
-          }
+
+          // Status badge
+          const statusBadge = `<span class="grade-sync-badge grade-sync--${item.color}" style="font-size:10px;padding:2px 8px">${item.label}</span>`;
+
           return `<tr>
             <td><button class="link-btn" onclick="selectAssignment('${a.id}')">${esc(a.name)}</button></td>
             <td><span class="type-badge">${esc(classifyAssignment(a))}</span></td>
             <td>${due}</td>
             <td>${a.points_possible || '—'}</td>
             <td>${srcBadge}</td>
-            <td><span class="status-badge status--warn">${pending} pending</span></td>
+            <td>${statusBadge}</td>
             <td style="display:flex;gap:5px">
               <button class="btn btn-surf" style="font-size:11px;padding:4px 10px" onclick="selectAssignment('${a.id}')">Open</button>
-              <button class="btn btn-ghost" style="font-size:11px;padding:4px 10px" title="Hide until new submission" onclick="dismissAssignment('${a.id}')">✓ Done</button>
+              <button class="btn btn-ghost" style="font-size:11px;padding:4px 10px" title="Mark as finalized" onclick="dismissAssignment('${a.id}')">✓ Done</button>
             </td>
           </tr>`;
         }).join('')}</tbody>
-      </table>` : '<p class="muted">All assignments reviewed! 🎉</p>'}
+      </table>` : '<p class="muted">All assignments finalized! 🎉</p>'}
     </div>
 
     <div class="overview-grid">
