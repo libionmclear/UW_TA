@@ -662,9 +662,10 @@ function renderOverview(root) {
     return first?.session || '';
   }
 
-  // Build needs-attention list with status logic
+  // Build needs-attention list — only assignments whose due date has arrived or passed
   const needsGrading = [];
   S.assignments.forEach(a => {
+    if (a.due_at && new Date(a.due_at) > now) return; // not due yet — skip
     const aid = String(a.id);
     const g = S.allGrades[aid] || {};
     const gs = Object.values(g);
