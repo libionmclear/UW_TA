@@ -76,6 +76,25 @@ function studentAvatar(st, size = 24) {
     onerror="this.style.display='none';this.nextElementSibling.style.display='grid'" /><span class="stu-avatar-fallback" style="width:${size}px;height:${size}px;font-size:${Math.round(size*0.45)}px;display:none">${initial}</span>`;
 }
 
+/* ── Photo Hover Enlarge ───────────────────────────────────────────────────── */
+let _hoverTip = null;
+document.addEventListener('mouseover', e => {
+  const img = e.target.closest('img.stu-avatar, img.notif-photo, img.hdr-user-photo, img.sc-photo-img, img.prof-photo');
+  if (!img || !img.src || img.naturalWidth === 0) return;
+  if (_hoverTip) return;
+  _hoverTip = document.createElement('div');
+  _hoverTip.className = 'photo-hover-tip';
+  _hoverTip.innerHTML = `<img src="${img.src}" />`;
+  document.body.appendChild(_hoverTip);
+  const r = img.getBoundingClientRect();
+  _hoverTip.style.left = Math.min(r.left, window.innerWidth - 160) + 'px';
+  _hoverTip.style.top = (r.bottom + 6) + 'px';
+});
+document.addEventListener('mouseout', e => {
+  const img = e.target.closest('img.stu-avatar, img.notif-photo, img.hdr-user-photo, img.sc-photo-img, img.prof-photo');
+  if (img && _hoverTip) { _hoverTip.remove(); _hoverTip = null; }
+});
+
 /* ═══════════════════════════════════════════════════════════════════════════
    BOOT
    ═══════════════════════════════════════════════════════════════════════════ */
@@ -613,6 +632,7 @@ function showView(name) {
     case 'syllabus':    renderSyllabusView(root); break;
     case 'manual':      renderManualView(root); break;
     case 'caseparticipation': renderCaseParticipationView(root); break;
+    case 'simparticipation': renderSimParticipationView(root); break;
     case 'messages':      renderMessagesView(root); break;
     case 'notifications': renderNotificationsView(root); break;
     default:            renderOverview(root);
@@ -1818,6 +1838,7 @@ function renderAssignmentView(root) {
       <button class="assign-tab" data-atab="students" onclick="switchAssignTab('students')">Students (${students.length})</button>
       <button class="assign-tab" data-atab="matrix" onclick="switchAssignTab('matrix')">Grading Matrix</button>
       ${group === 'Cases' ? `<button class="assign-tab" data-atab="participation" onclick="switchAssignTab('participation')">Discussion Participation</button>` : ''}
+      ${group === 'Activities' ? `<button class="assign-tab" data-atab="simparticipation" onclick="switchAssignTab('simparticipation')">Simulation Participation</button>` : ''}
       <button class="assign-tab" data-atab="chat" onclick="switchAssignTab('chat')">Notes</button>
       <button class="assign-tab assign-tab--push" onclick="pushAllToCanvas()">⬆ Push Final Grades to Canvas</button>
     </div>
@@ -1827,6 +1848,7 @@ function renderAssignmentView(root) {
     <div id="atab-students"     class="atab-content">${renderStudentsTabHtml()}</div>
     <div id="atab-matrix"       class="atab-content">${renderMatrixTabHtml()}</div>
     ${group === 'Cases' ? `<div id="atab-participation" class="atab-content">${renderParticipationTab()}</div>` : ''}
+    ${group === 'Activities' ? `<div id="atab-simparticipation" class="atab-content">${renderSimParticipationTab()}</div>` : ''}
     <div id="atab-chat"         class="atab-content">${renderChatTabHtml()}</div>
   `;
 }
@@ -2131,12 +2153,10 @@ function renderParticipationAssignmentView(root, a) {
   const due = a.due_at ? new Date(a.due_at).toLocaleDateString() : 'No due date';
   const maxPts = a.points_possible || 10;
 
-  // Case assignments for participation %
-  const caseAssignments = S.assignments
-    .filter(x => classifyAssignment(x) === 'Cases')
-    .sort((x, y) => new Date(x.due_at || 0) - new Date(y.due_at || 0));
+  // Case & Activity assignments for participation %
+  const caseAssignments = S.assignments.filter(x => classifyAssignment(x) === 'Cases').sort((x, y) => new Date(x.due_at || 0) - new Date(y.due_at || 0));
+  const actAssignments = S.assignments.filter(x => classifyAssignment(x) === 'Activities').sort((x, y) => new Date(x.due_at || 0) - new Date(y.due_at || 0));
 
-  // Build student rows
   const rows = students.map(st => {
     const g = S.grades[st.id] || {};
 
@@ -2148,14 +2168,22 @@ function renderParticipationAssignmentView(root, a) {
     });
     const casePct = caseMax ? Math.round((casePts / caseMax) * 100) : null;
 
-    // Panopto & Behavior (stored in grade object)
+    // Simulation participation %
+    let simPts = 0, simMax = 0;
+    actAssignments.forEach(aa => {
+      const ag = (S.allGrades[String(aa.id)] || {})[st.id];
+      if (ag?.simParticipation != null) { simPts += ag.simParticipation; simMax += 3; }
+    });
+    const simPct = simMax ? Math.round((simPts / simMax) * 100) : null;
+
     const panopto = g.panoptoScore != null ? g.panoptoScore : '';
     const behavior = g.behaviorScore != null ? g.behaviorScore : '';
     const total = g.finalScore != null ? g.finalScore : '';
 
     return `<tr>
-      <td style="font-weight:600">${esc(st.name)}</td>
+      <td><span class="stu-avatar-wrap">${studentAvatar(st, 20)}<strong>${esc(st.name)}</strong></span></td>
       <td style="text-align:center;font-weight:700;color:${casePct != null && casePct < 50 ? 'var(--danger)' : 'var(--success)'}">${casePct != null ? casePct + '%' : '—'}</td>
+      <td style="text-align:center;font-weight:700;color:${simPct != null && simPct < 50 ? 'var(--danger)' : 'var(--success)'}">${simPct != null ? simPct + '%' : '—'}</td>
       <td style="text-align:center">
         <input type="number" class="input" style="width:50px;text-align:center;font-size:12px;padding:3px" min="0" max="${maxPts}"
           value="${panopto}" placeholder="—" onchange="partFieldSave('${esc(st.id)}','panoptoScore',this.value,${maxPts})" />
@@ -2210,12 +2238,13 @@ function renderParticipationAssignmentView(root, a) {
 
     <div class="card">
       <div class="card-title">Class Participation — ${esc(a.name)}</div>
-      <p class="muted" style="margin-bottom:10px">Case Participation % is auto-calculated from drag-drop scores. Panopto and Behavior are manual. Total is the final grade pushed to Canvas.</p>
+      <p class="muted" style="margin-bottom:10px">Case & Sim Participation % are auto-calculated from drag-drop scores. Panopto and Behavior are manual. Total is the final grade pushed to Canvas.</p>
       <div class="table-wrap">
         <table>
           <thead><tr>
             <th>Student</th>
             <th style="text-align:center">Case Participation %</th>
+            <th style="text-align:center">Sim Participation %</th>
             <th style="text-align:center">Panopto Videos</th>
             <th style="text-align:center">Behavior</th>
             <th style="text-align:center">Total (/${maxPts})</th>
@@ -2786,6 +2815,146 @@ function resetParticipation() {
   const el = document.getElementById('atab-participation');
   if (el) el.innerHTML = renderParticipationTab();
   toast('Participation reset.', 'success');
+}
+
+/* ── Simulation Participation Tab (drag-drop, same as Case) ────────────────── */
+function renderSimParticipationTab() {
+  const students = allStudents();
+  if (!students.length) return '<p class="muted padded">No students loaded.</p>';
+
+  const buckets = { 0: [], 1: [], 2: [], 3: [] };
+  const assigned = new Set();
+  students.forEach(st => {
+    const g = S.grades[st.id];
+    const p = g?.simParticipation;
+    if (p != null && p >= 0 && p <= 3) { buckets[p].push(st); assigned.add(st.id); }
+  });
+  const unassigned = students.filter(st => !assigned.has(st.id));
+
+  const poolHtml = unassigned.map(st =>
+    `<div class="part-student" draggable="true" ondragstart="simPartDragStart(event,'${esc(st.id)}')" id="simpart-${esc(st.id)}">${esc(st.name)}</div>`
+  ).join('');
+
+  const bucketsHtml = PART_BUCKETS.map(b => {
+    const items = buckets[b.key].map(st =>
+      `<div class="part-student" draggable="true" ondragstart="simPartDragStart(event,'${esc(st.id)}')" id="simpart-${esc(st.id)}">${esc(st.name)}</div>`
+    ).join('');
+    return `<div class="part-bucket" style="border-top:3px solid ${b.color};background:${b.bg}"
+      ondragover="event.preventDefault();this.classList.add('part-bucket-over')"
+      ondragleave="this.classList.remove('part-bucket-over')"
+      ondrop="simPartDrop(event,${b.key});this.classList.remove('part-bucket-over')">
+      <div class="part-bucket-hdr" style="color:${b.color}">${b.label} <span class="part-bucket-score">(${b.key} pts)</span></div>
+      <div class="part-bucket-count">${buckets[b.key].length}</div>
+      <div class="part-bucket-items" id="simpart-bucket-${b.key}">${items}</div>
+    </div>`;
+  }).join('');
+
+  return `<div class="part-container">
+    <div class="part-pool">
+      <div class="part-pool-hdr">Unassigned Students (${unassigned.length})</div>
+      <div class="part-pool-items" id="simpart-pool"
+        ondragover="event.preventDefault();this.classList.add('part-bucket-over')"
+        ondragleave="this.classList.remove('part-bucket-over')"
+        ondrop="simPartDrop(event,-1);this.classList.remove('part-bucket-over')">
+        ${poolHtml || '<p class="muted" style="font-size:11px;text-align:center;padding:8px">All students assigned</p>'}
+      </div>
+    </div>
+    <div class="part-buckets">${bucketsHtml}</div>
+    <div style="margin-top:10px;display:flex;gap:8px">
+      <button class="btn btn-surf" onclick="saveAllSimParticipation()">Save Simulation Participation</button>
+      <button class="btn btn-ghost" onclick="resetSimParticipation()">Reset All</button>
+    </div>
+  </div>`;
+}
+
+let _simPartDragId = null;
+function simPartDragStart(e, studentId) { _simPartDragId = studentId; e.dataTransfer.effectAllowed = 'move'; }
+
+async function simPartDrop(e, bucketKey) {
+  e.preventDefault();
+  if (!_simPartDragId) return;
+  const studentId = _simPartDragId; _simPartDragId = null;
+  if (!S.grades[studentId]) S.grades[studentId] = buildEmptyGrade(studentId);
+  if (bucketKey === -1) delete S.grades[studentId].simParticipation;
+  else S.grades[studentId].simParticipation = bucketKey;
+  const el = document.getElementById('atab-simparticipation');
+  if (el) el.innerHTML = renderSimParticipationTab();
+}
+
+async function saveAllSimParticipation() {
+  const saves = [];
+  allStudents().forEach(st => {
+    if (S.grades[st.id]?.simParticipation != null) { S.grades[st.id].status = 'reviewed'; saves.push(saveGrade(st.id)); }
+  });
+  await Promise.all(saves);
+  toast(`Saved simulation participation for ${saves.length} students.`, 'success');
+}
+
+function resetSimParticipation() {
+  if (!confirm('Reset all simulation participation for this assignment?')) return;
+  allStudents().forEach(st => { if (S.grades[st.id]) delete S.grades[st.id].simParticipation; });
+  const el = document.getElementById('atab-simparticipation');
+  if (el) el.innerHTML = renderSimParticipationTab();
+  toast('Simulation participation reset.', 'success');
+}
+
+/* ── Simulation Participation View (Instructor Tool) ───────────────────────── */
+function renderSimParticipationView(root) {
+  root = root || document.getElementById('view-root');
+  const students = S.allStudentsList.length ? S.allStudentsList : allStudents();
+  const actAssignments = S.assignments
+    .filter(a => classifyAssignment(a) === 'Activities')
+    .sort((a, b) => new Date(a.due_at || 0) - new Date(b.due_at || 0));
+
+  if (!actAssignments.length) {
+    root.innerHTML = '<div class="page-title">Simulation Participation</div><p class="muted padded">No activity/simulation assignments found.</p>';
+    return;
+  }
+
+  const partLabels = ['—', 'Low', 'Part.', 'Exc.'];
+  const partColors = ['var(--danger)', 'var(--warn)', 'var(--info)', 'var(--success)'];
+
+  const rows = students.map(st => {
+    let totalPts = 0, totalMax = 0;
+    const cells = actAssignments.map(a => {
+      const g = (S.allGrades[String(a.id)] || {})[st.id];
+      const p = g?.simParticipation;
+      totalMax += 3;
+      if (p != null) totalPts += p;
+      if (p == null) return '<td class="ldg-cell ldg-empty" style="text-align:center">—</td>';
+      return `<td class="ldg-cell" style="text-align:center;font-weight:700;color:${partColors[p]}">${p} <span style="font-size:9px;font-weight:400">${partLabels[p]}</span></td>`;
+    }).join('');
+    const pct = totalMax ? Math.round((totalPts / totalMax) * 100) : null;
+    return `<tr>
+      <td class="ldg-name"><span class="stu-avatar-wrap">${studentAvatar(st, 18)}${esc(st.name)}</span></td>
+      <td style="text-align:center;font-weight:700;color:var(--uw-purple)">${totalPts}</td>
+      <td style="text-align:center;font-weight:700">${totalMax}</td>
+      <td style="text-align:center;font-weight:700;color:${pct != null && pct < 50 ? 'var(--danger)' : 'var(--success)'}">${pct != null ? pct + '%' : '—'}</td>
+      ${cells}
+    </tr>`;
+  }).join('');
+
+  const headers = actAssignments.map(a =>
+    `<th style="text-align:center;font-size:10px;padding:5px 6px;max-width:90px;white-space:normal;line-height:1.2" title="${esc(a.name)}">
+      <button class="link-btn" style="font-size:10px" onclick="selectAssignment('${a.id}')">${esc(a.name.length > 20 ? a.name.slice(0, 18) + '…' : a.name)}</button>
+    </th>`
+  ).join('');
+
+  root.innerHTML = `
+    <div class="page-title">Simulation Participation — ${esc(S.course?.name || '')}
+      <div class="page-actions"><button class="btn btn-ghost" onclick="renderSimParticipationView()">⟳ Refresh</button></div>
+    </div>
+    <div class="muted" style="margin-bottom:10px">Scores: 0 = Did Not Participate, 1 = Low, 2 = Participated, 3 = Excellent. Click an activity name to open and grade.</div>
+    <div class="ldg-wrap"><table class="ldg-table">
+      <thead><tr>
+        <th class="ldg-name-hdr">Student</th>
+        <th style="text-align:center;background:var(--uw-purple);color:#fff;min-width:50px">Total</th>
+        <th style="text-align:center;background:var(--uw-purple);color:#fff;min-width:50px">Max</th>
+        <th style="text-align:center;background:var(--uw-purple);color:#fff;min-width:50px">%</th>
+        ${headers}
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>`;
 }
 
 /* ── Grade One-by-One Tab ───────────────────────────────────────────────────── */

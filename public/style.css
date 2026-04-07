@@ -206,6 +206,8 @@ a { color: var(--uw-purple); }
 .assign-tab[data-atab="matrix"].active { background: #15803d; color: #fff !important; }
 .assign-tab[data-atab="participation"] { background: #fef3c7; color: #92400e !important; }
 .assign-tab[data-atab="participation"].active { background: #92400e; color: #fff !important; }
+.assign-tab[data-atab="simparticipation"] { background: #d1fae5; color: #065f46 !important; }
+.assign-tab[data-atab="simparticipation"].active { background: #065f46; color: #fff !important; }
 .assign-tab[data-atab="chat"] { background: #f3f4f6; color: #374151 !important; }
 .assign-tab[data-atab="chat"].active { background: #374151; color: #fff !important; }
 
@@ -1055,12 +1057,20 @@ tbody td { padding: 7px 10px; vertical-align: middle; }
 }
 
 /* ── Student Avatars (inline) ────────────────────────────────────────────────── */
-.stu-avatar { border-radius: 50%; object-fit: cover; flex-shrink: 0; vertical-align: middle; }
+.stu-avatar { border-radius: 50%; object-fit: cover; flex-shrink: 0; vertical-align: middle; cursor: pointer; }
 .stu-avatar-fallback {
   border-radius: 50%; background: #9ca3af; color: #fff; font-weight: 700;
   display: grid; place-items: center; flex-shrink: 0; vertical-align: middle;
 }
 .stu-avatar-wrap { display: inline-flex; align-items: center; gap: 6px; }
+
+/* Photo hover enlarge tooltip */
+.photo-hover-tip {
+  position: fixed; z-index: 500; pointer-events: none;
+  border-radius: 8px; box-shadow: 0 8px 30px rgba(0,0,0,.25);
+  border: 3px solid #fff; overflow: hidden;
+}
+.photo-hover-tip img { display: block; width: 140px; height: 140px; object-fit: cover; }
 .manage-photo-wrap { position: relative; display: inline-block; }
 .manage-photo-btn {
   position: absolute; bottom: -2px; right: -2px; width: 16px; height: 16px;
