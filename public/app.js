@@ -1201,18 +1201,20 @@ function openTeamNotes(teamNum) {
   _teamNotesNum = teamNum;
   const meta = S.teamMeta[String(teamNum)] || {};
   const notes = meta.notes || [];
-  const userName = S.me?.username || 'Marco';
+  const userName = displayName(S.me?.username || 'Marco');
 
-  const notesHtml = notes.length ? notes.map(n =>
-    `<div class="tn-note">
-      <div class="tn-note-header"><strong>(${esc(n.author)})</strong> <span class="muted">${esc(n.date || '')}</span></div>
+  const notesHtml = notes.length ? notes.map(n => {
+    const name = displayName(n.author);
+    const color = authorColor(name);
+    return `<div class="tn-note" style="border-left:3px solid ${color}">
+      <div class="tn-note-header"><strong style="color:${color}">(${esc(name)})</strong> <span class="muted">${esc(n.date || '')}</span></div>
       <div class="tn-note-body">${esc(n.text)}</div>
-    </div>`
-  ).join('') : '<p class="muted" style="text-align:center;padding:16px">No notes yet. Start the discussion below.</p>';
+    </div>`;
+  }).join('') : '<p class="muted" style="text-align:center;padding:16px">No notes yet. Start the discussion below.</p>';
 
   const label = meta.name ? `Team ${teamNum} — ${meta.name}` : `Team ${teamNum}`;
+  const userColor = authorColor(userName);
 
-  // Reuse the modal backdrop
   const backdrop = document.getElementById('modal-backdrop');
   const modal = backdrop.querySelector('.modal');
   modal.innerHTML = `
@@ -1228,7 +1230,7 @@ function openTeamNotes(teamNum) {
     </div>
     <div class="modal-footer" style="flex-direction:column;gap:6px;align-items:stretch">
       <div style="display:flex;gap:6px;align-items:center">
-        <span style="font-size:12px;font-weight:700;color:var(--uw-purple)">Writing as: (${esc(userName)})</span>
+        <span style="font-size:12px;font-weight:700;color:${userColor}">Writing as: (${esc(userName)})</span>
       </div>
       <div style="display:flex;gap:6px">
         <textarea class="input" id="tn-note-input" rows="2" placeholder="Add a note about this team's progress…" style="flex:1"></textarea>
@@ -1252,7 +1254,7 @@ async function saveTeamNote() {
   const text = input?.value?.trim();
   if (!text) return;
 
-  const userName = S.me?.username || 'Marco';
+  const userName = displayName(S.me?.username || 'Marco');
   const tKey = String(_teamNotesNum);
   if (!S.teamMeta[tKey]) S.teamMeta[tKey] = {};
   if (!S.teamMeta[tKey].notes) S.teamMeta[tKey].notes = [];
@@ -2563,15 +2565,16 @@ function renderOneByOneTab() {
   const finalTotal = g?.finalScore != null ? g.finalScore : '—';
 
   const aiFeedback = g?.aiOverallFeedback || '';
-  const userName = S.me?.username || 'You';
+  const userName = displayName(S.me?.username || 'You');
   const chatHtml = oboChatMessages.map(m => {
-    const isMe = m.from === userName;
-    const bg = isMe ? 'var(--uw-purple)' : 'var(--info)';
+    const name = displayName(m.from);
+    const isMe = name === userName;
+    const bg = authorColor(name);
     return `<div class="obo-chat-msg ${isMe ? 'obo-chat-right' : 'obo-chat-left'}">
-      <div class="obo-chat-avatar" style="background:${bg}">${m.from[0].toUpperCase()}</div>
+      <div class="obo-chat-avatar" style="background:${bg}">${name[0].toUpperCase()}</div>
       <div class="obo-chat-bubble-wrap">
-        <div class="obo-chat-author">${esc(m.from)}</div>
-        <div class="obo-chat-bubble">${esc(m.text)}</div>
+        <div class="obo-chat-author" style="color:${bg}">${esc(name)}</div>
+        <div class="obo-chat-bubble" style="background:${isMe ? bg : ''};color:${isMe ? '#fff' : ''};border-color:${bg}">${esc(m.text)}</div>
       </div>
     </div>`;
   }).join('');
@@ -2953,7 +2956,7 @@ function oboSendChat() {
   const input = document.getElementById('obo-chat-input');
   const text = input?.value?.trim();
   if (!text) return;
-  const userName = S.me?.username || 'You';
+  const userName = displayName(S.me?.username || 'You');
   oboChatMessages.push({ from: userName, text, time: new Date().toLocaleTimeString() });
   input.value = '';
   renderOboChatMessages();
@@ -2962,15 +2965,16 @@ function oboSendChat() {
 function renderOboChatMessages() {
   const container = document.getElementById('obo-chat-messages');
   if (!container) return;
-  const userName = S.me?.username || 'You';
+  const userName = displayName(S.me?.username || 'You');
   container.innerHTML = oboChatMessages.map(m => {
-    const isMe = m.from === userName;
-    const bg = isMe ? 'var(--uw-purple)' : 'var(--info)';
+    const name = displayName(m.from);
+    const isMe = name === userName;
+    const bg = authorColor(name);
     return `<div class="obo-chat-msg ${isMe ? 'obo-chat-right' : 'obo-chat-left'}">
-      <div class="obo-chat-avatar" style="background:${bg}">${m.from[0].toUpperCase()}</div>
+      <div class="obo-chat-avatar" style="background:${bg}">${name[0].toUpperCase()}</div>
       <div class="obo-chat-bubble-wrap">
-        <div class="obo-chat-author">${esc(m.from)}</div>
-        <div class="obo-chat-bubble">${esc(m.text)}</div>
+        <div class="obo-chat-author" style="color:${bg}">${esc(name)}</div>
+        <div class="obo-chat-bubble" style="background:${isMe ? bg : ''};color:${isMe ? '#fff' : ''};border-color:${bg}">${esc(m.text)}</div>
       </div>
     </div>`;
   }).join('');
@@ -3738,29 +3742,36 @@ function renderChatTabHtml() {
   </div>`;
 }
 
+function displayName(name) {
+  const n = (name || '').toLowerCase();
+  if (n === 'marco') return 'Marco';
+  if (n === 'marlowe') return 'Marlowe';
+  return name || '';
+}
+
 function authorColor(name) {
   const n = (name || '').toLowerCase();
-  if (n === 'marco')   return '#4B2E83';  // UW purple
+  if (n === 'marco')   return '#2563eb';  // blue
   if (n === 'marlowe') return '#16a34a';  // green
-  // cycle through a few colors for others
-  const colors = ['#2563eb','#d97706','#dc2626','#0891b2'];
+  const colors = ['#7c3aed','#d97706','#dc2626','#0891b2'];
   let h = 0; for (let c of name) h = (h * 31 + c.charCodeAt(0)) & 0xffff;
   return colors[h % colors.length];
 }
 
 function renderChatMessages(comments) {
-  const me = S.me?.username || '';
+  const me = displayName(S.me?.username || '');
   if (!comments.length) return '<p class="muted" style="padding:16px;text-align:center">No notes yet. Be the first to add one.</p>';
   return comments.map(c => {
-    const isMe = c.author === me;
-    const color = authorColor(c.author);
+    const name = displayName(c.author);
+    const isMe = name.toLowerCase() === me.toLowerCase();
+    const color = authorColor(name);
     const time  = new Date(c.ts).toLocaleString('en-US', { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' });
-    const initial = (c.author || '?')[0].toUpperCase();
+    const initial = (name || '?')[0].toUpperCase();
     return `<div class="chat-msg ${isMe ? 'chat-msg-me' : 'chat-msg-them'}">
-      ${!isMe ? `<div class="chat-avatar" style="background:${color}" title="${esc(c.author)}">${initial}</div>` : ''}
+      ${!isMe ? `<div class="chat-avatar" style="background:${color}" title="${esc(name)}">${initial}</div>` : ''}
       <div class="chat-bubble-wrap">
-        ${!isMe ? `<div class="chat-author" style="color:${color}">${esc(c.author)}</div>` : ''}
-        <div class="chat-bubble ${isMe ? 'chat-bubble-me' : 'chat-bubble-them'}" style="${isMe ? `background:${color}` : ''}">
+        ${!isMe ? `<div class="chat-author" style="color:${color}">${esc(name)}</div>` : ''}
+        <div class="chat-bubble ${isMe ? 'chat-bubble-me' : 'chat-bubble-them'}" style="${isMe ? `background:${color}` : `border-color:${color}`}">
           ${esc(c.text)}
         </div>
         <div class="chat-time">${time}</div>
@@ -4143,7 +4154,7 @@ async function loadCurrentUser() {
   try {
     const me = await GET('/auth/me');
     if (!me.authenticated) { window.location.href = '/login.html'; return; }
-    document.getElementById('hdr-username').textContent = me.username;
+    document.getElementById('hdr-username').textContent = displayName(me.username);
   } catch { window.location.href = '/login.html'; }
 }
 
@@ -4184,10 +4195,12 @@ async function renderNotificationsView(root) {
       return items.map(n => {
         const icon = n.action === 'grade_changed' ? '📝' : n.action === 'comment' ? '💬' : n.action === 'team_note' ? '👥' : n.action === 'rubric_changed' ? '📋' : '🔔';
         const time = new Date(n.time).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+        const uName = displayName(n.user);
+        const uColor = authorColor(uName);
         return `<div class="notif-item ${n.read ? 'notif-read' : 'notif-unread'}">
           <span class="notif-icon">${icon}</span>
           <div class="notif-content">
-            <div class="notif-user">${esc(n.user)}</div>
+            <div class="notif-user" style="color:${uColor}">${esc(uName)}</div>
             <div class="notif-detail">${esc(n.detail)}</div>
           </div>
           <span class="notif-time">${time}</span>
