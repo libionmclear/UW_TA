@@ -197,6 +197,18 @@ a { color: var(--uw-purple); }
 .assign-tab--grade:hover { background: var(--uw-gold); filter: brightness(1.05); }
 .assign-tab--grade.active { background: var(--uw-purple); color: #fff !important; }
 
+/* Per-tab colors */
+.assign-tab[data-atab="instructions"] { background: #ede9fe; color: #5b21b6 !important; }
+.assign-tab[data-atab="instructions"].active { background: #5b21b6; color: #fff !important; }
+.assign-tab[data-atab="students"] { background: #dbeafe; color: #1d4ed8 !important; }
+.assign-tab[data-atab="students"].active { background: #1d4ed8; color: #fff !important; }
+.assign-tab[data-atab="matrix"] { background: #dcfce7; color: #15803d !important; }
+.assign-tab[data-atab="matrix"].active { background: #15803d; color: #fff !important; }
+.assign-tab[data-atab="participation"] { background: #fef3c7; color: #92400e !important; }
+.assign-tab[data-atab="participation"].active { background: #92400e; color: #fff !important; }
+.assign-tab[data-atab="chat"] { background: #f3f4f6; color: #374151 !important; }
+.assign-tab[data-atab="chat"].active { background: #374151; color: #fff !important; }
+
 /* Push to Canvas button in tab bar — same shape as other tabs */
 .assign-tab--push {
   margin-left: auto !important; background: var(--uw-purple) !important; color: #fff !important;
@@ -1038,6 +1050,22 @@ tbody td { padding: 7px 10px; vertical-align: middle; }
   0%   { transform: translateX(-100%); }
   100% { transform: translateX(400%); }
 }
+
+/* ── Student Avatars (inline) ────────────────────────────────────────────────── */
+.stu-avatar { border-radius: 50%; object-fit: cover; flex-shrink: 0; vertical-align: middle; }
+.stu-avatar-fallback {
+  border-radius: 50%; background: #9ca3af; color: #fff; font-weight: 700;
+  display: grid; place-items: center; flex-shrink: 0; vertical-align: middle;
+}
+.stu-avatar-wrap { display: inline-flex; align-items: center; gap: 6px; }
+.manage-photo-wrap { position: relative; display: inline-block; }
+.manage-photo-btn {
+  position: absolute; bottom: -2px; right: -2px; width: 16px; height: 16px;
+  border-radius: 50%; background: var(--uw-gold); color: var(--uw-purple);
+  border: none; font-size: 10px; font-weight: 700; cursor: pointer;
+  display: grid; place-items: center; line-height: 1;
+}
+.manage-photo-btn:hover { filter: brightness(1.1); }
 
 /* ── Misc ────────────────────────────────────────────────────────────────────── */
 .muted   { color: var(--text-muted); font-size: 13px; }

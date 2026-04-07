@@ -66,6 +66,16 @@ function esc(str) {
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
+/* ── Student Avatar Helper ─────────────────────────────────────────────────── */
+function studentAvatar(st, size = 24) {
+  const id = typeof st === 'string' ? st : st?.id;
+  const name = typeof st === 'string' ? st : (st?.name || '?');
+  const initial = (name[0] || '?').toUpperCase();
+  const photoUrl = `/api/student-photo/${esc(id)}`;
+  return `<img class="stu-avatar" src="${photoUrl}" alt="" style="width:${size}px;height:${size}px"
+    onerror="this.style.display='none';this.nextElementSibling.style.display='grid'" /><span class="stu-avatar-fallback" style="width:${size}px;height:${size}px;font-size:${Math.round(size*0.45)}px;display:none">${initial}</span>`;
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
    BOOT
    ═══════════════════════════════════════════════════════════════════════════ */
@@ -921,7 +931,7 @@ function _renderGradeBookHtml(root, selectedStudentId) {
     const barW = pct != null ? Math.min(pct, 100) : 0;
     const barColor = pct == null ? '#ddd' : pct >= 80 ? 'var(--success)' : pct >= 70 ? 'var(--warn)' : 'var(--danger)';
     return `<tr class="gb-student-row ${isSelected ? 'gb-selected' : ''}" onclick="showStudentCard('${esc(st.id)}')">
-      <td class="gb-name"><span class="gb-avatar">${esc((st.name||'?')[0].toUpperCase())}</span>${esc(st.name)}</td>
+      <td class="gb-name"><span class="stu-avatar-wrap">${studentAvatar(st)}</span>${esc(st.name)}</td>
       <td class="gb-score">${possible ? `${earned}/${possible}` : '—'}</td>
       <td class="gb-pct">
         ${pct != null ? `<div class="gb-bar-wrap"><div class="gb-bar" style="width:${barW}%;background:${barColor}"></div></div>
@@ -1391,7 +1401,7 @@ function _renderLedgerHtml(root, canvasScores) {
       return `<td class="ldg-cell ${bg}">${score != null ? score : '<span class="ldg-empty">—</span>'}</td>`;
     }).join('');
     return `<tr>
-      <td class="ldg-name">${esc(st.name)}</td>
+      <td class="ldg-name"><span class="stu-avatar-wrap">${studentAvatar(st, 18)}${esc(st.name)}</span></td>
       <td class="ldg-total">${possible ? `${earned}/${possible}` : '—'}</td>
       <td class="ldg-pct-cell ${pct != null && pct < 70 ? 'grade-low' : ''}">${pct != null ? pct + '%' : '—'}</td>
       <td class="ldg-letter ${pct != null && pct < 70 ? 'grade-low' : ''}">${letter}</td>
@@ -2512,33 +2522,54 @@ function applyAiRubricSuggestion() {
 }
 
 /* ── Students Tab ────────────────────────────────────────────────────────────── */
+let _stuSort = 'name', _stuDir = 1;
+function stuSort(col) { if (_stuSort === col) _stuDir *= -1; else { _stuSort = col; _stuDir = 1; } showView('assignment'); }
+function stuArrow(col) { return _stuSort !== col ? '<span class="ldg-sort">⇅</span>' : _stuDir === 1 ? '<span class="ldg-sort ldg-sort-active">▲</span>' : '<span class="ldg-sort ldg-sort-active">▼</span>'; }
+
 function renderStudentsTabHtml() {
-  const students = allStudents();
+  const students = allStudents().map(st => {
+    const g = S.grades[st.id];
+    return { ...st, score: g?.finalScore ?? null, status: g?.status || 'pending', flagged: g?.flagged };
+  });
   if (!students.length) return '<p class="muted padded">No students loaded yet. Data loads automatically.</p>';
+
+  students.sort((a, b) => {
+    let c = 0;
+    if (_stuSort === 'name') c = a.name.localeCompare(b.name);
+    else if (_stuSort === 'score') c = (a.score ?? -1) - (b.score ?? -1);
+    else if (_stuSort === 'status') c = a.status.localeCompare(b.status);
+    return c * _stuDir;
+  });
 
   const rows = students.map(st => {
     const sub = submissionFor(st.id);
     const g = S.grades[st.id];
     const submitted = sub && sub.workflow_state !== 'unsubmitted' ? '✓' : '—';
     const late = sub?.late ? '<span class="status-badge status--late">LATE</span>' : '';
-    const status = g
+    const statusBadge = g
       ? `<span class="status-badge status--${g.status === 'reviewed' ? 'reviewed' : 'graded'}">${g.status === 'reviewed' ? 'Reviewed' : 'AI Graded'}</span>`
       : '<span class="status-badge status--pending">Pending</span>';
     const flag = g?.flagged ? '<span class="ai-badge ai-badge--flagged">⚑ AI</span>' : '';
     const final = g?.finalScore != null ? `<strong>${g.finalScore}</strong>` : '—';
 
     return `<tr>
-      <td><button class="link-btn" onclick="openStudent('${esc(st.id)}')">${esc(st.name)}</button></td>
+      <td><span class="stu-avatar-wrap">${studentAvatar(st)}<button class="link-btn" onclick="openStudent('${esc(st.id)}')">${esc(st.name)}</button></span></td>
       <td style="text-align:center">${submitted}</td>
       <td>${late}</td>
-      <td>${status} ${flag}</td>
+      <td>${statusBadge} ${flag}</td>
       <td style="text-align:center">${final} ${S.rubric ? '/ ' + S.rubric.totalPoints : ''}</td>
       <td><button class="btn btn-surf-sec" style="font-size:11px;padding:4px 8px" onclick="openStudent('${esc(st.id)}')">View/Grade</button></td>
     </tr>`;
   }).join('');
 
   return `<table>
-    <thead><tr><th>Student</th><th>Submitted</th><th>Status</th><th>Grade Status</th><th>Score</th><th></th></tr></thead>
+    <thead><tr>
+      <th class="ldg-sortable" onclick="stuSort('name')">Student ${stuArrow('name')}</th>
+      <th>Submitted</th><th>Status</th>
+      <th class="ldg-sortable" onclick="stuSort('status')">Grade Status ${stuArrow('status')}</th>
+      <th class="ldg-sortable" onclick="stuSort('score')">Score ${stuArrow('score')}</th>
+      <th></th>
+    </tr></thead>
     <tbody>${rows}</tbody>
   </table>`;
 }
@@ -2605,7 +2636,7 @@ function renderMatrixTabHtml() {
     const fin    = g?.finalScore        != null ? `<strong>${g.finalScore}</strong>` : '—';
 
     return `<tr class="${rowClass}" id="row-${esc(st.id)}">
-      <td class="col-sticky"><button class="link-btn" onclick="openStudent('${esc(st.id)}')">${esc(st.name)}</button></td>
+      <td class="col-sticky"><span class="stu-avatar-wrap">${studentAvatar(st, 20)}<button class="link-btn" onclick="openStudent('${esc(st.id)}')">${esc(st.name)}</button></span></td>
       <td>${statusBadge} ${flagged ? '<span class="ai-badge ai-badge--flagged">⚑</span>' : ''}</td>
       <td>${aiConf}</td>
       ${scoreCols}
@@ -4274,7 +4305,17 @@ function renderManualView(root) {
     const teamMeta = teamNum ? (S.teamMeta[String(teamNum)] || {}) : {};
     const teamLabel = teamNum ? (teamMeta.name ? `Team ${teamNum} — ${teamMeta.name}` : `Team ${teamNum}`) : '';
     return `<tr>
-      <td style="font-weight:600">${esc(st.name)}</td>
+      <td>
+        <span class="stu-avatar-wrap">
+          <span class="manage-photo-wrap">
+            ${studentAvatar(st, 28)}
+            <button class="manage-photo-btn" title="Upload photo" onclick="document.getElementById('stu-photo-${esc(st.id)}').click()">+</button>
+            <input type="file" id="stu-photo-${esc(st.id)}" accept="image/*" style="display:none"
+              onchange="uploadStudentPhoto('${esc(st.id)}', this.files[0])" />
+          </span>
+          <strong>${esc(st.name)}</strong>
+        </span>
+      </td>
       <td class="muted" style="font-size:11px">${esc(st.email || '')}</td>
       <td style="font-size:12px">${esc(st.id)}</td>
       <td>
@@ -4379,7 +4420,7 @@ function renderCaseParticipationView(root) {
     }).join('');
     const pct = totalMax ? Math.round((totalPts / totalMax) * 100) : null;
     return `<tr>
-      <td class="ldg-name">${esc(st.name)}</td>
+      <td class="ldg-name"><span class="stu-avatar-wrap">${studentAvatar(st, 18)}${esc(st.name)}</span></td>
       <td style="text-align:center;font-weight:700;color:var(--uw-purple)">${totalPts}</td>
       <td style="text-align:center;font-weight:700">${totalMax}</td>
       <td style="text-align:center;font-weight:700;color:${pct != null && pct < 50 ? 'var(--danger)' : 'var(--success)'}">${pct != null ? pct + '%' : '—'}</td>
