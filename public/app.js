@@ -4609,7 +4609,8 @@ async function loadCurrentUser() {
     const dn = displayName(me.username);
     const hdrBtn = document.getElementById('hdr-username');
     hdrBtn.textContent = dn;
-    hdrBtn.style.color = authorColor(dn);
+    hdrBtn.style.color = '#fff';
+    hdrBtn.style.background = authorColor(dn);
     hdrBtn.style.borderColor = authorColor(dn);
   } catch { window.location.href = '/login.html'; }
 }
