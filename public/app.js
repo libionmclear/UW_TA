@@ -4606,7 +4606,11 @@ async function loadCurrentUser() {
   try {
     const me = await GET('/auth/me');
     if (!me.authenticated) { window.location.href = '/login.html'; return; }
-    document.getElementById('hdr-username').textContent = displayName(me.username);
+    const dn = displayName(me.username);
+    const hdrBtn = document.getElementById('hdr-username');
+    hdrBtn.textContent = dn;
+    hdrBtn.style.color = authorColor(dn);
+    hdrBtn.style.borderColor = authorColor(dn);
   } catch { window.location.href = '/login.html'; }
 }
 
