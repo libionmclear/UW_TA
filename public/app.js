@@ -2735,12 +2735,12 @@ function renderParticipationTab() {
   const unassigned = students.filter(st => !assigned.has(st.id));
 
   const poolHtml = unassigned.map(st =>
-    `<div class="part-student" draggable="true" ondragstart="partDragStart(event,'${esc(st.id)}')" id="part-${esc(st.id)}">${esc(st.name)}</div>`
+    `<div class="part-student" draggable="true" ondragstart="partDragStart(event,'${esc(st.id)}')" id="part-${esc(st.id)}">${studentAvatar(st, 18)}${esc(st.name)}</div>`
   ).join('');
 
   const bucketsHtml = PART_BUCKETS.map(b => {
     const items = buckets[b.key].map(st =>
-      `<div class="part-student" draggable="true" ondragstart="partDragStart(event,'${esc(st.id)}')" id="part-${esc(st.id)}">${esc(st.name)}</div>`
+      `<div class="part-student" draggable="true" ondragstart="partDragStart(event,'${esc(st.id)}')" id="part-${esc(st.id)}">${studentAvatar(st, 18)}${esc(st.name)}</div>`
     ).join('');
     return `<div class="part-bucket" style="border-top:3px solid ${b.color};background:${b.bg}"
       ondragover="event.preventDefault();this.classList.add('part-bucket-over')"
@@ -2832,12 +2832,12 @@ function renderSimParticipationTab() {
   const unassigned = students.filter(st => !assigned.has(st.id));
 
   const poolHtml = unassigned.map(st =>
-    `<div class="part-student" draggable="true" ondragstart="simPartDragStart(event,'${esc(st.id)}')" id="simpart-${esc(st.id)}">${esc(st.name)}</div>`
+    `<div class="part-student" draggable="true" ondragstart="simPartDragStart(event,'${esc(st.id)}')" id="simpart-${esc(st.id)}">${studentAvatar(st, 18)}${esc(st.name)}</div>`
   ).join('');
 
   const bucketsHtml = PART_BUCKETS.map(b => {
     const items = buckets[b.key].map(st =>
-      `<div class="part-student" draggable="true" ondragstart="simPartDragStart(event,'${esc(st.id)}')" id="simpart-${esc(st.id)}">${esc(st.name)}</div>`
+      `<div class="part-student" draggable="true" ondragstart="simPartDragStart(event,'${esc(st.id)}')" id="simpart-${esc(st.id)}">${studentAvatar(st, 18)}${esc(st.name)}</div>`
     ).join('');
     return `<div class="part-bucket" style="border-top:3px solid ${b.color};background:${b.bg}"
       ondragover="event.preventDefault();this.classList.add('part-bucket-over')"
