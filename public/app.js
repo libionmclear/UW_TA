@@ -4649,7 +4649,8 @@ async function loadCurrentUser() {
     if (!me.authenticated) { window.location.href = '/login.html'; return; }
     const dn = displayName(me.username);
     const hdrBtn = document.getElementById('hdr-username');
-    hdrBtn.textContent = dn;
+    const photoUrl = `/api/user-photo/${encodeURIComponent(me.username.toLowerCase())}`;
+    hdrBtn.innerHTML = `<img class="hdr-user-photo" src="${photoUrl}" onerror="this.style.display='none'" />${esc(dn)}`;
     hdrBtn.style.color = '#fff';
     hdrBtn.style.background = authorColor(dn);
     hdrBtn.style.borderColor = authorColor(dn);
@@ -4881,11 +4882,25 @@ async function renderNotificationsView(root) {
         const time = new Date(n.time).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
         const uName = displayName(n.user);
         const uColor = authorColor(uName);
+        const photoUrl = `/api/user-photo/${encodeURIComponent(n.user.toLowerCase())}`;
+        // Build link
+        let linkHtml = '';
+        if (n.link) {
+          const parts = n.link.split(':');
+          if (parts[0] === 'assignment') {
+            const tab = parts[2] || '';
+            linkHtml = `<button class="link-btn" style="font-size:11px" onclick="selectAssignment('${esc(parts[1])}')${tab ? ";setTimeout(()=>switchAssignTab('" + esc(tab) + "'),200)" : ''}">View →</button>`;
+          } else if (parts[0] === 'teams') {
+            linkHtml = `<button class="link-btn" style="font-size:11px" onclick="showView('teams')">View Teams →</button>`;
+          }
+        }
         return `<div class="notif-item ${n.read ? 'notif-read' : 'notif-unread'}">
-          <span class="notif-icon">${icon}</span>
+          <img class="notif-photo" src="${photoUrl}" onerror="this.style.display='none';this.nextElementSibling.style.display='grid'" />
+          <span class="notif-avatar-fallback" style="display:none;background:${uColor}">${uName[0]}</span>
           <div class="notif-content">
             <div class="notif-user" style="color:${uColor}">${esc(uName)}</div>
             <div class="notif-detail">${esc(n.detail)}</div>
+            ${linkHtml}
           </div>
           <span class="notif-time">${time}</span>
           <button class="notif-delete" onclick="deleteNotification('${esc(n.id)}')" title="Delete">✕</button>

@@ -118,9 +118,24 @@ const gradesKey  = (cid, aid) => `${cid}__${aid}`;
 function ok(res, data)   { res.json(data); }
 function fail(res, e, code = 500) { res.status(code).json({ error: e.message || e }); }
 
-function addNotification(req, action, detail) {
+function addNotification(req, action, detail, groupKey, link) {
   if (!store.notifications) store.notifications = [];
   const user = req.session?.username || 'unknown';
+
+  // If groupKey provided, update existing notification instead of creating duplicate
+  if (groupKey) {
+    const existing = store.notifications.find(n => n.groupKey === groupKey && n.user === user);
+    if (existing) {
+      existing.detail = detail;
+      existing.time = new Date().toISOString();
+      existing.readBy = []; // mark unread again
+      if (existing.count) existing.count++; else existing.count = 2;
+      if (link) existing.link = link;
+      save();
+      return;
+    }
+  }
+
   store.notifications.push({
     id: Date.now() + '_' + Math.random().toString(36).slice(2, 6),
     user,
@@ -128,6 +143,9 @@ function addNotification(req, action, detail) {
     detail,
     time: new Date().toISOString(),
     readBy: [],
+    groupKey: groupKey || null,
+    count: 1,
+    link: link || null,
   });
   // Keep last 200 notifications
   if (store.notifications.length > 200) store.notifications = store.notifications.slice(-200);
@@ -229,7 +247,7 @@ app.get('/api/assignment-rubric/:cid/:aid', (req, res) => {
 app.put('/api/assignment-rubric/:cid/:aid', requireAuth, (req, res) => {
   const key = gradesKey(req.params.cid, req.params.aid);
   store.assignmentRubrics[key] = { ...req.body, updatedAt: new Date().toISOString() };
-  addNotification(req, 'rubric_changed', `Rubric updated for assignment ${req.params.aid}`);
+  addNotification(req, 'rubric_changed', `Updated rubric for assignment ${req.params.aid}`, `rubric_${req.params.aid}`, `assignment:${req.params.aid}`);
   save();
   ok(res, store.assignmentRubrics[key]);
 });
@@ -297,9 +315,14 @@ app.put('/api/grades/:cid/:aid/:studentId', (req, res) => {
   if (!store.grades[key]) store.grades[key] = {};
   const prev = store.grades[key][req.params.studentId];
   store.grades[key][req.params.studentId] = { ...req.body, updatedAt: new Date().toISOString() };
-  // Log notification if finalScore changed
+  // Log grouped notification per assignment (updates count instead of new entry per student)
   if (req.body.finalScore != null && (!prev || prev.finalScore !== req.body.finalScore)) {
-    addNotification(req, 'grade_changed', `Graded ${req.body.studentName || req.params.studentId}: ${req.body.finalScore}pts (assignment ${req.params.aid})`);
+    const gKey = `grade_${req.params.cid}_${req.params.aid}`;
+    const graded = Object.values(store.grades[key] || {}).filter(g => g.finalScore != null).length;
+    const total = Object.keys(store.grades[key] || {}).length;
+    addNotification(req, 'grade_changed',
+      `Graded ${graded} of ${total} students (assignment ${req.params.aid})`,
+      gKey, `assignment:${req.params.aid}`);
   }
   save();
   ok(res, store.grades[key][req.params.studentId]);
@@ -631,7 +654,7 @@ app.post('/api/comments/:cid/:aid', requireAuth, (req, res) => {
   if (!text?.trim()) return fail(res, { message: 'Empty comment' }, 400);
   const comment = { author: req.session.username, text: text.trim(), ts: new Date().toISOString() };
   store.comments[key].push(comment);
-  addNotification(req, 'comment', `New note on assignment: "${text.trim().substring(0, 60)}${text.length > 60 ? '…' : ''}"`);
+  addNotification(req, 'comment', `Wrote a note on assignment: "${text.trim().substring(0, 60)}${text.length > 60 ? '…' : ''}"`, null, `assignment:${req.params.aid}:chat`);
   save();
   ok(res, comment);
 });
@@ -659,7 +682,7 @@ app.put('/api/team-meta/:cid', requireAuth, (req, res) => {
       const newNotes = tData?.notes?.length || 0;
       if (newNotes > prevNotes) {
         const latest = tData.notes[tData.notes.length - 1];
-        addNotification(req, 'team_note', `Team ${tNum} note: "${(latest?.text || '').substring(0, 60)}${(latest?.text || '').length > 60 ? '…' : ''}"`);
+        addNotification(req, 'team_note', `Wrote a note for Team ${tNum}: "${(latest?.text || '').substring(0, 60)}${(latest?.text || '').length > 60 ? '…' : ''}"`, null, `teams:${tNum}`);
       }
     });
   }
