@@ -2112,7 +2112,7 @@ function renderOneByOneTab() {
           ${!submitted ? '<span class="status-badge status--pending">Not Submitted</span>' : sub?.late ? '<span class="status-badge status--late">Late</span>' : '<span class="status-badge status--submitted">Submitted</span>'}
         </div>
         <div class="obo-topbar-actions">
-          <button class="btn btn-surf" id="obo-grade-ai-btn" onclick="oboGradeWithAi()">✦ Grade with AI</button>
+          <button class="btn btn-grade-ai" id="obo-grade-ai-btn" onclick="oboGradeWithAi()">✦ Grade with AI</button>
           <button class="btn btn-ghost" onclick="oboRunAiDetect()">🔍 AI Detect</button>
           <button class="btn btn-primary" onclick="oboSaveAndNext()">Save & Next →</button>
         </div>
@@ -2545,24 +2545,40 @@ async function onScoreChange(input) {
 function recalcTotals(studentId) {
   const g = S.grades[studentId];
   if (!g || !S.rubric) return;
-  let aiT = 0, marT = 0, mrlT = 0, hasMarco = false, hasMarlow = false;
+  let aiT = 0, marT = 0, mrlT = 0, hasMarco = false, hasMarlow = false, finalT = 0;
   S.rubric.criteria.forEach(c => {
     const cd = g.criteria?.[c.id] || {};
-    if (cd.aiScore    != null) aiT  += cd.aiScore;
+    // AI total
+    if (cd.aiScore != null) aiT += cd.aiScore;
+    // Marco total (fills from AI where Marco didn't score)
     if (cd.marcoScore != null) { marT += cd.marcoScore; hasMarco = true; }
     else if (cd.aiScore != null) marT += cd.aiScore;
+    // Marlowe total (fills from Marco then AI where Marlowe didn't score)
     if (cd.marlowScore != null) { mrlT += cd.marlowScore; hasMarlow = true; }
     else if (cd.marcoScore != null) mrlT += cd.marcoScore;
     else if (cd.aiScore != null) mrlT += cd.aiScore;
+
+    // Per-criterion final: if both Marco & Marlowe scored, average (round up).
+    // If only one scored, use that. Otherwise AI.
+    const mScore = cd.marcoScore;
+    const wScore = cd.marlowScore;
+    if (mScore != null && wScore != null) {
+      finalT += Math.ceil((mScore + wScore) / 2);
+    } else if (wScore != null) {
+      finalT += wScore;
+    } else if (mScore != null) {
+      finalT += mScore;
+    } else if (cd.aiScore != null) {
+      finalT += cd.aiScore;
+    }
   });
   g.aiTotalScore      = aiT;
   g.marcoTotalScore   = hasMarco  ? marT : null;
   g.marloweTotalScore = hasMarlow ? mrlT : null;
-  // Final priority: Marlowe → Marco → AI → Canvas (imported)
-  g.finalScore = g.marloweTotalScore != null ? g.marloweTotalScore
-               : g.marcoTotalScore   != null ? g.marcoTotalScore
-               : g.aiTotalScore      != null ? g.aiTotalScore
-               : g.canvasScore       != null ? g.canvasScore
+  // Final: per-criterion merge (Marco/Marlowe override AI, both→average rounded up)
+  // Fall back to canvas if nothing else
+  g.finalScore = (hasMarco || hasMarlow || aiT > 0) ? finalT
+               : g.canvasScore != null ? g.canvasScore
                : null;
 }
 

@@ -192,12 +192,20 @@ a { color: var(--uw-purple); }
 .assign-tab--grade:hover { background: var(--uw-gold); filter: brightness(1.05); }
 .assign-tab--grade.active { background: var(--uw-purple); color: #fff !important; }
 
-/* Push to Canvas button in tab bar */
+/* Push to Canvas button in tab bar — same shape as other tabs */
 .assign-tab--push {
   margin-left: auto !important; background: var(--uw-purple) !important; color: #fff !important;
-  font-weight: 800 !important; letter-spacing: .3px;
 }
 .assign-tab--push:hover { filter: brightness(1.15) !important; background: var(--uw-purple) !important; }
+
+/* Grade with AI — bright green */
+.btn-grade-ai {
+  background: #16a34a !important; color: #fff !important; font-weight: 700;
+  padding: 8px 18px; font-size: 13px; border-radius: var(--radius); border: none;
+  box-shadow: 0 2px 6px rgba(22,163,74,.3);
+}
+.btn-grade-ai:hover:not(:disabled) { background: #15803d !important; }
+.btn-grade-ai:disabled { opacity: .5; }
 
 /* Grade sync status badges */
 .grade-sync-badge {
