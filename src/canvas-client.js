@@ -161,6 +161,16 @@ async function pushGradesBulk(courseId, assignmentId, gradeData) {
   return res.json();
 }
 
+// ── Canvas Analytics ─────────────────────────────────────────────────────────
+async function getStudentAnalytics(courseId) {
+  // Course-level student summaries: page views, participations, time on site
+  return canvasGet(`/courses/${courseId}/analytics/student_summaries?per_page=100`);
+}
+
+async function getCourseActivity(courseId) {
+  return canvasGet(`/courses/${courseId}/analytics/activity`);
+}
+
 // ── Canvas Conversations (Messages) ──────────────────────────────────────────
 async function getConversations(scope = 'inbox') {
   return canvasGet(`/conversations?scope=${scope}&per_page=30`);
@@ -204,4 +214,6 @@ module.exports = {
   getConversations,
   getConversation,
   replyToConversation,
+  getStudentAnalytics,
+  getCourseActivity,
 };

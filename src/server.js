@@ -837,6 +837,48 @@ app.post('/api/notifications/mark-read', requireAuth, (req, res) => {
   ok(res, { ok: true });
 });
 
+// ── Canvas Analytics ─────────────────────────────────────────────────────────
+app.get('/api/analytics/:cid/students', requireAuth, async (req, res) => {
+  try { ok(res, await canvas.getStudentAnalytics(req.params.cid)); } catch (e) { fail(res, e); }
+});
+app.get('/api/analytics/:cid/activity', requireAuth, async (req, res) => {
+  try { ok(res, await canvas.getCourseActivity(req.params.cid)); } catch (e) { fail(res, e); }
+});
+
+// ── Textbook Storage ─────────────────────────────────────────────────────────
+app.get('/api/textbook', requireAuth, (_req, res) => {
+  ok(res, { text: store.textbook || '', filename: store.textbookFilename || '' });
+});
+app.post('/api/textbook', requireAuth, upload.single('file'), async (req, res) => {
+  try {
+    let text = '';
+    const name = (req.file?.originalname || '').toLowerCase();
+    if (req.file) {
+      if (name.endsWith('.pdf')) {
+        const pdf = await pdfParse(req.file.buffer);
+        text = pdf.text;
+      } else if (name.endsWith('.docx') || name.endsWith('.doc')) {
+        const result = await mammoth.extractRawText({ buffer: req.file.buffer });
+        text = result.value;
+      } else {
+        text = req.file.buffer.toString('utf8', 0, Math.min(req.file.buffer.length, 500000));
+        text = stripHtml(text);
+      }
+    } else if (req.body.text) {
+      text = req.body.text;
+    }
+    store.textbook = text.substring(0, 500000);
+    store.textbookFilename = req.file?.originalname || 'pasted text';
+    save();
+    ok(res, { chars: store.textbook.length, filename: store.textbookFilename });
+  } catch (e) { fail(res, e); }
+});
+app.delete('/api/textbook', requireAuth, (_req, res) => {
+  store.textbook = ''; store.textbookFilename = '';
+  save();
+  ok(res, { ok: true });
+});
+
 // ── Canvas Messages ──────────────────────────────────────────────────────────
 app.get('/api/messages', requireAuth, async (_req, res) => {
   try { ok(res, await canvas.getConversations()); } catch (e) { fail(res, e); }

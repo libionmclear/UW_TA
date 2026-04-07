@@ -3866,6 +3866,36 @@ function renderContentView(root) {
       </div>
     </div>
 
+    <!-- Harvard Business Publishing -->
+    <div class="card">
+      <div class="card-title">📚 Harvard Business Publishing — Course Pack</div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <a href="https://hbsp.harvard.edu/import/1403560" target="_blank" class="btn btn-surf" style="font-size:13px;padding:8px 16px">Open HBS Course Pack ↗</a>
+        <span class="muted" style="font-size:12px">Cases, simulations, and readings for B BUS 464</span>
+      </div>
+    </div>
+
+    <!-- Textbook for AI -->
+    <div class="card">
+      <div class="card-title">📖 Textbook (for AI grading context)
+        <span class="card-title-hint">Upload textbook content so AI can reference it when grading</span>
+      </div>
+      <div id="textbook-status"></div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px">
+        <input type="file" id="textbook-file" accept=".pdf,.docx,.doc,.txt,.md" style="font-size:12px" />
+        <button class="btn btn-surf" onclick="uploadTextbook()">Upload Textbook</button>
+        <button class="btn btn-ghost btn-danger" onclick="deleteTextbook()">Remove</button>
+      </div>
+    </div>
+
+    <!-- Canvas Analytics -->
+    <div class="card">
+      <div class="card-title">📊 Canvas Student Analytics
+        <div style="margin-left:auto"><button class="btn btn-surf" style="font-size:12px" onclick="loadCanvasAnalytics()">Load Analytics</button></div>
+      </div>
+      <div id="canvas-analytics"><p class="muted">Click Load Analytics to pull student engagement data from Canvas.</p></div>
+    </div>
+
     <div class="two-col-grid">
       <div class="card">
         <div class="card-title">Course Modules</div>
@@ -3877,6 +3907,9 @@ function renderContentView(root) {
       </div>
     </div>
     <div class="card"><div class="card-title">Page Viewer</div><div id="content-viewer"><p class="muted">Click a page to view.</p></div></div>`;
+
+  // Load textbook status
+  loadTextbookStatus();
 }
 
 function togglePanopto() {
@@ -3886,6 +3919,78 @@ function togglePanopto() {
   const isOpen = container.style.display !== 'none';
   container.style.display = isOpen ? 'none' : 'block';
   if (hint) hint.style.display = isOpen ? 'block' : 'none';
+}
+
+async function loadTextbookStatus() {
+  const el = document.getElementById('textbook-status');
+  if (!el) return;
+  try {
+    const tb = await GET('/api/textbook');
+    if (tb.text) {
+      el.innerHTML = `<div style="font-size:12px;color:var(--success);font-weight:600">✓ Textbook loaded: ${esc(tb.filename)} (${(tb.text.length / 1000).toFixed(0)}K chars)</div>`;
+    } else {
+      el.innerHTML = '<div class="muted" style="font-size:12px">No textbook uploaded yet.</div>';
+    }
+  } catch { if (el) el.innerHTML = '<div class="muted" style="font-size:12px">No textbook uploaded yet.</div>'; }
+}
+
+async function uploadTextbook() {
+  const file = document.getElementById('textbook-file')?.files?.[0];
+  if (!file) { toast('Select a file.', 'warn'); return; }
+  toast('Uploading and extracting text...');
+  const form = new FormData();
+  form.append('file', file);
+  try {
+    const resp = await fetch('/api/textbook', { method: 'POST', body: form });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error);
+    toast(`Textbook uploaded! ${data.chars} chars extracted.`, 'success');
+    loadTextbookStatus();
+  } catch (e) { toast('Upload failed: ' + e.message, 'error'); }
+}
+
+async function deleteTextbook() {
+  if (!confirm('Remove the textbook?')) return;
+  await DEL('/api/textbook');
+  toast('Textbook removed.', 'success');
+  loadTextbookStatus();
+}
+
+async function loadCanvasAnalytics() {
+  if (!S.course) { toast('Select a course first.', 'warn'); return; }
+  const el = document.getElementById('canvas-analytics');
+  if (!el) return;
+  el.innerHTML = '<div class="loading-splash" style="padding:30px"><div class="loading-bounce"></div><div class="loading-text">Loading analytics<span class="loading-dots"></span></div></div>';
+  try {
+    const data = await GET(`/api/analytics/${S.course.id}/students`);
+    if (!data.length) { el.innerHTML = '<p class="muted">No analytics data available.</p>'; return; }
+
+    // Sort by page views descending
+    data.sort((a, b) => (b.page_views || 0) - (a.page_views || 0));
+
+    const maxViews = Math.max(1, ...data.map(s => s.page_views || 0));
+    const rows = data.map(s => {
+      const name = s.name || `User ${s.id}`;
+      const views = s.page_views || 0;
+      const parts = s.participations || 0;
+      const viewsPct = Math.round((views / maxViews) * 100);
+      const tardiness = s.tardiness_breakdown || {};
+      return `<tr>
+        <td style="font-weight:600;font-size:12px">${esc(name)}</td>
+        <td style="text-align:center">${views}</td>
+        <td style="min-width:100px"><div class="dist-bar-track"><div class="dist-bar-fill" style="width:${viewsPct}%;background:var(--uw-purple)"></div></div></td>
+        <td style="text-align:center">${parts}</td>
+        <td style="text-align:center;font-size:11px;color:var(--success)">${tardiness.on_time || 0}</td>
+        <td style="text-align:center;font-size:11px;color:var(--warn)">${tardiness.late || 0}</td>
+        <td style="text-align:center;font-size:11px;color:var(--danger)">${tardiness.missing || 0}</td>
+      </tr>`;
+    }).join('');
+
+    el.innerHTML = `<div class="table-wrap"><table>
+      <thead><tr><th>Student</th><th>Page Views</th><th></th><th>Participations</th><th>On Time</th><th>Late</th><th>Missing</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>`;
+  } catch (e) { el.innerHTML = `<p class="muted">Analytics error: ${esc(e.message)}</p>`; }
 }
 
 async function loadCourseContent() {
@@ -3927,42 +4032,87 @@ async function viewPage(url) {
 /* ── Manual Entry View ───────────────────────────────────────────────────────── */
 function renderManualView(root) {
   root = root || document.getElementById('view-root');
+  const students = S.allStudentsList.length ? S.allStudentsList : allStudents();
+
+  const rows = students.map(st => {
+    const teamData = S.teams[st.id];
+    const teamNum = teamData?.team || '';
+    const teamMeta = teamNum ? (S.teamMeta[String(teamNum)] || {}) : {};
+    const teamLabel = teamNum ? (teamMeta.name ? `Team ${teamNum} — ${teamMeta.name}` : `Team ${teamNum}`) : '';
+    return `<tr>
+      <td style="font-weight:600">${esc(st.name)}</td>
+      <td class="muted" style="font-size:11px">${esc(st.email || '')}</td>
+      <td style="font-size:12px">${esc(st.id)}</td>
+      <td>
+        <div style="display:flex;gap:4px;align-items:center">
+          <input type="number" class="input" style="width:50px;text-align:center;font-size:12px;padding:3px" min="1" max="99"
+            value="${teamNum}" placeholder="—" onchange="manageStudentTeam('${esc(st.id)}',this.value)" />
+          <span class="muted" style="font-size:10px">${esc(teamLabel)}</span>
+        </div>
+      </td>
+      <td><button class="btn btn-ghost btn-danger" style="font-size:11px;padding:2px 8px" onclick="removeStudent('${esc(st.id)}')">✕</button></td>
+    </tr>`;
+  }).join('');
+
   root.innerHTML = `
-    <div class="page-title">Add Student Manually</div>
-    <div class="card" style="max-width:600px">
-      <div class="field-group"><label>Student Name</label><input id="manual-name" type="text" class="input" placeholder="First Last" /></div>
-      <div class="field-group"><label>Student ID (optional)</label><input id="manual-id" type="text" class="input" placeholder="e.g. 2034567" /></div>
-      <div class="field-group"><label>Paste Submission Text</label><textarea id="manual-text" class="input" rows="10" placeholder="Paste the student's submission here…"></textarea></div>
-      <div class="field-row">
-        <label class="checkbox-label"><input id="manual-late" type="checkbox" /> Late submission</label>
-        <label class="checkbox-label"><input id="manual-ai-cite" type="checkbox" /> Student disclosed AI use</label>
+    <div class="page-title">Manage Students
+      <div class="page-actions">
+        <button class="btn btn-ghost" onclick="renderManualView()">⟳ Refresh</button>
+        <button class="btn btn-surf" onclick="pushTeamsToCanvas()">⬆ Push Teams to Canvas</button>
       </div>
-      <div class="card-actions">
-        <button class="btn btn-primary" onclick="addManualStudent(true)">Add &amp; Grade with AI</button>
-        <button class="btn btn-secondary" onclick="addManualStudent(false)">Add Without Grading</button>
+    </div>
+
+    <!-- Add student -->
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-title">Add Student</div>
+      <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
+        <div class="field-group" style="flex:1;min-width:160px;margin-bottom:0"><label>Name</label><input id="manual-name" class="input" placeholder="First Last" /></div>
+        <div class="field-group" style="width:120px;margin-bottom:0"><label>ID (optional)</label><input id="manual-id" class="input" placeholder="e.g. 2034567" /></div>
+        <div class="field-group" style="width:60px;margin-bottom:0"><label>Team</label><input id="manual-team" class="input" type="number" min="1" max="99" placeholder="—" /></div>
+        <button class="btn btn-primary" onclick="addManualStudent()">+ Add</button>
+      </div>
+    </div>
+
+    <!-- Student roster -->
+    <div class="card">
+      <div class="card-title">Student Roster (${students.length})</div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Name</th><th>Email</th><th>ID</th><th>Team</th><th></th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
       </div>
     </div>`;
 }
 
-async function addManualStudent(gradeNow) {
+async function addManualStudent() {
   const name = document.getElementById('manual-name')?.value?.trim();
   const id   = document.getElementById('manual-id')?.value?.trim() || `manual_${Date.now()}`;
-  const text = document.getElementById('manual-text')?.value?.trim();
-  const isLate = document.getElementById('manual-late')?.checked;
-  const hasAiCitation = document.getElementById('manual-ai-cite')?.checked;
+  const team = Number(document.getElementById('manual-team')?.value) || null;
   if (!name) { toast('Enter a student name.', 'warn'); return; }
   S.manualStudents.push({ id, name });
-  S.submissions.push({ user_id: id, workflow_state: text ? 'submitted' : 'unsubmitted', body: text, late: isLate, _manualText: text, _hasAiCitation: hasAiCitation });
+  if (team) { S.teams[id] = { team }; await PUT(`/api/teams/${S.course.id}`, S.teams).catch(() => {}); }
   toast(`Added ${name}.`, 'success');
-  if (gradeNow && S.rubric && text && S.health?.claude) {
-    try {
-      const res = await POST('/api/grade/single', { text, rubric: S.rubric, studentName: name, hasAiCitation, aiInstructions: S.aiInstructions, isCaseWriteup: classifyAssignment(S.currentAssignment) === 'Case Discussions' });
-      applyAiGrade(id, res.grade, res.aiDetection, res.flagged);
-      await saveGrade(id);
-      toast(`${name} graded!`, 'success');
-    } catch (e) { toast('Grading failed: ' + e.message, 'error'); }
-  }
   renderManualView();
+}
+
+function removeStudent(studentId) {
+  if (!confirm('Remove this student from the local roster?')) return;
+  S.manualStudents = S.manualStudents.filter(s => s.id !== studentId);
+  toast('Student removed from local roster.', 'success');
+  renderManualView();
+}
+
+async function manageStudentTeam(studentId, value) {
+  const num = parseInt(value) || null;
+  if (num) S.teams[studentId] = { team: num };
+  else delete S.teams[studentId];
+  await PUT(`/api/teams/${S.course.id}`, S.teams).catch(() => {});
+  renderManualView();
+}
+
+async function pushTeamsToCanvas() {
+  toast('Team push to Canvas is not directly supported via API. Teams are managed locally.', 'warn');
 }
 
 /* ── Canvas Grade Sync ───────────────────────────────────────────────────────── */
