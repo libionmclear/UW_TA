@@ -2193,7 +2193,14 @@ async function renderParticipationAssignmentView(root, a) {
 
     const panopto = g.panoptoScore != null ? g.panoptoScore : '';
     const behavior = g.behaviorScore != null ? g.behaviorScore : '';
-    const total = g.finalScore != null ? g.finalScore : '';
+
+    // Average all available percentages for Total %
+    const pcts = [casePct, simPct, presPct].filter(p => p != null);
+    const avgPct = pcts.length ? Math.round(pcts.reduce((a, b) => a + b, 0) / pcts.length) : null;
+
+    // Score out of 40 based on average %
+    const score40 = avgPct != null ? Math.round(avgPct / 100 * 40) : '';
+    const total = g.finalScore != null ? g.finalScore : score40;
 
     return `<tr>
       <td><span class="stu-avatar-wrap">${studentAvatar(st, 20)}<strong>${esc(st.name)}</strong></span></td>
@@ -2201,16 +2208,17 @@ async function renderParticipationAssignmentView(root, a) {
       <td style="text-align:center;font-weight:700;color:${simPct != null && simPct < 50 ? 'var(--danger)' : 'var(--success)'}">${simPct != null ? simPct + '%' : '—'}</td>
       <td style="text-align:center;font-weight:700;color:${presPct != null && presPct < 50 ? 'var(--danger)' : 'var(--success)'}">${presPct != null ? presPct + '%' : '—'}</td>
       <td style="text-align:center">
-        <input type="number" class="input" style="width:50px;text-align:center;font-size:12px;padding:3px" min="0" max="${maxPts}"
-          value="${panopto}" placeholder="—" onchange="partFieldSave('${esc(st.id)}','panoptoScore',this.value,${maxPts})" />
+        <input type="number" class="input" style="width:50px;text-align:center;font-size:12px;padding:3px" min="0" max="40"
+          value="${panopto}" placeholder="—" onchange="partFieldSave('${esc(st.id)}','panoptoScore',this.value,40)" />
       </td>
       <td style="text-align:center">
-        <input type="number" class="input" style="width:50px;text-align:center;font-size:12px;padding:3px" min="0" max="${maxPts}"
-          value="${behavior}" placeholder="—" onchange="partFieldSave('${esc(st.id)}','behaviorScore',this.value,${maxPts})" />
+        <input type="number" class="input" style="width:50px;text-align:center;font-size:12px;padding:3px" min="0" max="40"
+          value="${behavior}" placeholder="—" onchange="partFieldSave('${esc(st.id)}','behaviorScore',this.value,40)" />
       </td>
+      <td style="text-align:center;font-weight:800;color:var(--uw-purple);font-size:15px">${avgPct != null ? avgPct + '%' : '—'}</td>
       <td style="text-align:center">
-        <input type="number" class="input gp-grade-input" style="width:60px" min="0" max="${maxPts}"
-          value="${total}" placeholder="—" onchange="partFinalSave('${esc(st.id)}',this.value,${maxPts})" />
+        <input type="number" class="input gp-grade-input" style="width:60px" min="0" max="40"
+          value="${total}" placeholder="—" onchange="partFinalSave('${esc(st.id)}',this.value,40)" />
       </td>
     </tr>`;
   }).join('');
@@ -2254,7 +2262,7 @@ async function renderParticipationAssignmentView(root, a) {
 
     <div class="card">
       <div class="card-title">Total Participation — ${esc(a.name)}</div>
-      <p class="muted" style="margin-bottom:10px">Case, Sim & Presence % are auto-calculated. Panopto and Behavior are manual. Total is the final grade pushed to Canvas.</p>
+      <p class="muted" style="margin-bottom:10px">Case, Sim & Presence % are auto-calculated. Panopto and Behavior are manual. Total % averages the three columns. Score /40 is the final grade pushed to Canvas.</p>
       <div class="table-wrap">
         <table>
           <thead><tr>
@@ -2262,9 +2270,10 @@ async function renderParticipationAssignmentView(root, a) {
             <th style="text-align:center">Case Part. %</th>
             <th style="text-align:center">Sim Part. %</th>
             <th style="text-align:center">Class Presence %</th>
-            <th style="text-align:center">Panopto Videos</th>
+            <th style="text-align:center">Panopto</th>
             <th style="text-align:center">Behavior</th>
-            <th style="text-align:center">Total (/${maxPts})</th>
+            <th style="text-align:center;background:var(--uw-gold);color:var(--uw-purple)">Total %</th>
+            <th style="text-align:center">Score /40</th>
           </tr></thead>
           <tbody>${rows}</tbody>
         </table>
@@ -2806,6 +2815,9 @@ async function partDrop(e, bucketKey) {
   } else {
     S.grades[studentId].participation = bucketKey;
   }
+  S.grades[studentId].status = 'reviewed';
+  // Auto-save immediately
+  await saveGrade(studentId);
   // Re-render participation tab
   const el = document.getElementById('atab-participation');
   if (el) el.innerHTML = renderParticipationTab();
@@ -2894,6 +2906,8 @@ async function simPartDrop(e, bucketKey) {
   if (!S.grades[studentId]) S.grades[studentId] = buildEmptyGrade(studentId);
   if (bucketKey === -1) delete S.grades[studentId].simParticipation;
   else S.grades[studentId].simParticipation = bucketKey;
+  S.grades[studentId].status = 'reviewed';
+  await saveGrade(studentId);
   const el = document.getElementById('atab-simparticipation');
   if (el) el.innerHTML = renderSimParticipationTab();
 }
@@ -3142,7 +3156,7 @@ function _renderPresenceUI(root) {
 let _presDragId = null;
 function presDragStart(e, id) { _presDragId = id; e.dataTransfer.effectAllowed = 'move'; }
 
-function presDrop(e, bucketKey) {
+async function presDrop(e, bucketKey) {
   e.preventDefault();
   if (!_presDragId) return;
   const sid = _presDragId; _presDragId = null;
@@ -3150,6 +3164,8 @@ function presDrop(e, bucketKey) {
   if (bucketKey === -1) delete _presenceData[_presenceDate][sid];
   else _presenceData[_presenceDate][sid] = bucketKey;
   _renderPresenceUI();
+  // Auto-save immediately
+  if (S.course) await PUT(`/api/presence/${S.course.id}/${_presenceDate}`, _presenceData[_presenceDate] || {});
 }
 
 async function savePresence() {
