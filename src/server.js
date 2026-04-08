@@ -929,7 +929,7 @@ app.get('/api/messages/:id', requireAuth, async (req, res) => {
 });
 app.post('/api/messages/:id/reply', requireAuth, async (req, res) => {
   try {
-    const result = await canvas.replyToConversation(req.params.id, req.body.body);
+    const result = await canvas.replyToConversation(req.params.id, req.body.body, req.body.recipientIds || []);
     addNotification(req, 'message_sent', `Replied to conversation ${req.params.id}`);
     ok(res, result);
   } catch (e) { fail(res, e); }

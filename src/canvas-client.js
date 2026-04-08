@@ -180,12 +180,15 @@ async function getConversation(id) {
   return canvasGet(`/conversations/${id}`);
 }
 
-async function replyToConversation(id, body) {
+async function replyToConversation(id, body, recipientIds) {
   const url = `${API_URL}/conversations/${id}/add_message`;
+  const payload = { body };
+  // If recipientIds provided, only send to those users (not whole class)
+  if (recipientIds?.length) payload.recipients = recipientIds;
   const res = await fetch(url, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ body }),
+    body: JSON.stringify(payload),
   });
   if (!res.ok) throw new Error(`Canvas API error ${res.status}: ${await res.text()}`);
   return res.json();

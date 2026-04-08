@@ -5206,41 +5206,70 @@ async function renderMessagesView(root) {
   }
 }
 
+let _msgConvoCache = null;
+
 async function openMessage(id) {
-  const detail = document.getElementById('msg-detail-card');
-  if (!detail) return;
-  detail.innerHTML = '<div class="card"><p class="muted" style="padding:16px;text-align:center">Loading conversation...</p></div>';
+  // Use the modal for message popup
+  const backdrop = document.getElementById('modal-backdrop');
+  const modal = backdrop.querySelector('.modal');
+  modal.innerHTML = `<div class="modal-header"><div><div class="modal-title">Loading...</div></div><button class="modal-close" onclick="closeModal()">✕</button></div><div class="modal-body"><p class="muted" style="text-align:center;padding:20px">Loading conversation...</p></div>`;
+  backdrop.classList.remove('hidden');
+
   try {
     const convo = await GET(`/api/messages/${id}`);
-    const msgs = (convo.messages || []).map(m => {
-      const name = displayName(m.author_id === convo.audience?.[0] ? (convo.participants?.find(p => p.id === m.author_id)?.name || 'Student') : (S.me?.username || 'You'));
-      const color = authorColor(name);
+    _msgConvoCache = convo;
+
+    // Find the sender (not us) to reply only to them
+    const myId = convo.participants?.find(p => p.name?.toLowerCase() === (S.me?.username || '').toLowerCase())?.id;
+    const senderIds = (convo.participants || []).filter(p => p.id !== myId).map(p => p.id);
+    const senderNames = (convo.participants || []).filter(p => p.id !== myId).map(p => p.name).join(', ');
+
+    const msgs = (convo.messages || []).reverse().map(m => {
+      const participant = convo.participants?.find(p => p.id === m.author_id);
+      const isMe = m.author_id === myId;
+      const name = isMe ? displayName(S.me?.username || 'You') : (participant?.name || 'Student');
+      const color = isMe ? authorColor(displayName(S.me?.username)) : '#6b7280';
       const date = new Date(m.created_at).toLocaleString('en-US', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
-      return `<div class="msg-bubble">
+      return `<div class="msg-modal-bubble ${isMe ? 'msg-modal-me' : 'msg-modal-them'}">
         <div class="msg-bubble-author" style="color:${color}"><strong>${esc(name)}</strong> <span class="muted">${date}</span></div>
         <div class="msg-bubble-body">${m.body || ''}</div>
       </div>`;
     }).join('');
 
-    detail.innerHTML = `<div class="card" style="margin-top:12px">
-      <div class="card-title">${esc(convo.subject || '(no subject)')}</div>
-      <div class="msg-thread">${msgs}</div>
-      <div class="msg-reply-row" style="margin-top:10px">
-        <textarea class="input" id="msg-reply-input" rows="2" placeholder="Type a reply..."></textarea>
-        <button class="btn btn-surf" onclick="sendMessageReply('${id}')" style="margin-top:6px">Send Reply to Canvas</button>
+    modal.innerHTML = `
+      <div class="modal-header">
+        <div>
+          <div class="modal-title">${esc(convo.subject || '(no subject)')}</div>
+          <div class="modal-subtitle">With: ${esc(senderNames)}</div>
+        </div>
+        <button class="modal-close" onclick="closeModal()">✕</button>
       </div>
-    </div>`;
-  } catch (e) { detail.innerHTML = `<div class="card"><p class="muted">Error: ${esc(e.message)}</p></div>`; }
+      <div class="modal-body">
+        <div class="msg-modal-thread">${msgs}</div>
+      </div>
+      <div class="modal-footer" style="flex-direction:column;align-items:stretch;gap:6px">
+        <div class="muted" style="font-size:11px">Replying to: <strong>${esc(senderNames)}</strong> only (not the whole class)</div>
+        <textarea class="input" id="msg-reply-input" rows="2" placeholder="Type your reply..."></textarea>
+        <button class="btn btn-primary" onclick="sendMessageReply('${id}', [${senderIds.map(i => i).join(',')}])">Send Reply to ${esc(senderNames.split(',')[0])}</button>
+      </div>`;
+
+    // Scroll to bottom of thread
+    const thread = modal.querySelector('.msg-modal-thread');
+    if (thread) thread.scrollTop = thread.scrollHeight;
+
+  } catch (e) {
+    modal.innerHTML = `<div class="modal-header"><div><div class="modal-title">Error</div></div><button class="modal-close" onclick="closeModal()">✕</button></div><div class="modal-body"><p class="muted">Failed: ${esc(e.message)}</p></div>`;
+  }
 }
 
-async function sendMessageReply(id) {
+async function sendMessageReply(id, recipientIds) {
   const input = document.getElementById('msg-reply-input');
   const body = input?.value?.trim();
   if (!body) { toast('Type a reply.', 'warn'); return; }
   try {
-    await POST(`/api/messages/${id}/reply`, { body });
+    await POST(`/api/messages/${id}/reply`, { body, recipientIds });
     toast('Reply sent to Canvas!', 'success');
-    openMessage(id);
+    openMessage(id); // refresh the conversation
   } catch (e) { toast('Send failed: ' + e.message, 'error'); }
 }
 
