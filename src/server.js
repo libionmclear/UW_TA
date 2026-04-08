@@ -494,13 +494,80 @@ app.post('/api/quiz-bank/suggest', async (req, res) => {
   } catch (e) { fail(res, e); }
 });
 
+// ── List existing Canvas quizzes ─────────────────────────────────────────────
+app.get('/api/canvas/quizzes/:cid', requireAuth, async (req, res) => {
+  try {
+    const quizzes = await canvas.getQuizzes(req.params.cid);
+    ok(res, quizzes);
+  } catch (e) { fail(res, e); }
+});
+
 // ── Create Quiz on Canvas from question bank ──────────────────────────────────
 app.post('/api/canvas/create-quiz/:cid', async (req, res) => {
   try {
     const { cid } = req.params;
-    const { title, description, timeLimit, allowedAttempts, pointsPossible, questions, publish, lockdown } = req.body;
+    const { title, description, timeLimit, allowedAttempts, pointsPossible, questions, publish, lockdown, existingQuizId } = req.body;
 
     if (!questions || !questions.length) return fail(res, { message: 'No questions provided.' }, 400);
+
+    // If pushing to an existing quiz, skip creation
+    if (existingQuizId) {
+      const added = [];
+      for (const q of questions) {
+        const qText   = typeof q === 'string' ? q : (q.question || '');
+        const answer  = typeof q === 'string' ? '' : (q.answer || '');
+        const choices = typeof q === 'string' ? [] : (q.choices || []);
+        const pts     = typeof q === 'object' && q.points ? q.points : 1;
+        const qTypeHint = typeof q === 'object' ? (q.questionType || '') : '';
+
+        let questionType = 'multiple_choice_question';
+        let answers = [];
+
+        if (qTypeHint === 'true_false' || (choices.length === 2 && choices.some(c => /true/i.test(c)) && choices.some(c => /false/i.test(c)))) {
+          questionType = 'true_false_question';
+          const correctIsTrue = /^t/i.test(answer);
+          answers = [
+            { answer_text: 'True',  weight: correctIsTrue ? 100 : 0 },
+            { answer_text: 'False', weight: correctIsTrue ? 0 : 100 },
+          ];
+        } else if (choices.length >= 2) {
+          answers = choices.map((c, i) => {
+            const choiceText = c.replace(/^[a-eA-E][\.\)]\s*/, '').trim();
+            const choiceLetter = String.fromCharCode(65 + i);
+            const isCorrect = answer
+              ? (answer.toUpperCase().startsWith(choiceLetter) || answer.toLowerCase().includes(choiceText.toLowerCase().substring(0, 15)))
+              : false;
+            return { answer_text: choiceText, weight: isCorrect ? 100 : 0 };
+          });
+        } else if (answer) {
+          questionType = 'short_answer_question';
+          answers = [{ answer_text: answer, weight: 100 }];
+        } else {
+          questionType = 'essay_question';
+          answers = [];
+        }
+
+        const created = await canvas.addQuizQuestion(cid, existingQuizId, {
+          question_name: 'Question',
+          question_text: qText,
+          question_type: questionType,
+          points_possible: pts,
+          answers,
+        });
+        added.push(created);
+      }
+
+      // Publish if requested
+      if (publish) {
+        await canvas.publishQuiz(cid, existingQuizId);
+      }
+
+      return ok(res, {
+        quiz: { id: existingQuizId },
+        questionsAdded: added.length,
+        quizUrl: `${process.env.CANVAS_BASE_URL}/courses/${cid}/quizzes/${existingQuizId}`,
+      });
+    }
 
     // 1. Create the quiz shell
     const quizOpts = {

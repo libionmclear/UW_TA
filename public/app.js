@@ -4207,6 +4207,28 @@ function renderQuizBuilder() {
   }).join('');
 }
 
+let _canvasQuizzes = [];
+
+async function loadCanvasQuizzes() {
+  if (!S.course) { toast('Select a course first.', 'warn'); return; }
+  toast('Loading Canvas quizzes...');
+  try {
+    _canvasQuizzes = await GET(`/api/canvas/quizzes/${S.course.id}`);
+    const sel = document.getElementById('qb-target');
+    if (!sel) return;
+    // Keep the "new" option, add existing quizzes
+    sel.innerHTML = '<option value="__new__">+ Create New Quiz</option>' +
+      _canvasQuizzes.map(q => `<option value="${q.id}">${esc(q.title)} ${q.published ? '(Published)' : '(Draft)'} — ${q.question_count || 0} Q</option>`).join('');
+    toast(`Found ${_canvasQuizzes.length} quizzes on Canvas.`, 'success');
+  } catch (e) { toast('Failed to load quizzes: ' + e.message, 'error'); }
+}
+
+function qbTargetChanged() {
+  const val = document.getElementById('qb-target')?.value;
+  const newWrap = document.getElementById('qb-new-title-wrap');
+  if (newWrap) newWrap.style.display = val === '__new__' ? '' : 'none';
+}
+
 async function saveQuizBuilderDraft() {
   const title = document.getElementById('qb-title')?.value?.trim();
   if (!title) { toast('Enter a quiz name first.', 'warn'); return; }
@@ -4272,13 +4294,20 @@ async function pushQuizBuilderToCanvas() {
   if (!S.course) { toast('Select a course first.', 'warn'); return; }
   if (!_quizBuilderItems.length) { toast('Add questions to the quiz first.', 'warn'); return; }
 
+  const target   = document.getElementById('qb-target')?.value || '__new__';
+  const isExisting = target !== '__new__';
   const title    = document.getElementById('qb-title')?.value?.trim();
   const desc     = document.getElementById('qb-desc')?.value?.trim();
   const timeLimit = Number(document.getElementById('qb-time')?.value) || null;
   const attempts  = Number(document.getElementById('qb-attempts')?.value) || 1;
   const ptsEach   = Number(document.getElementById('qb-pts')?.value) || 1;
 
-  if (!title) { toast('Enter a quiz title.', 'warn'); return; }
+  if (!isExisting && !title) { toast('Enter a quiz name or select an existing Canvas quiz.', 'warn'); return; }
+
+  const existingQuiz = isExisting ? _canvasQuizzes.find(q => String(q.id) === target) : null;
+  const displayName = isExisting ? (existingQuiz?.title || 'Existing Quiz') : title;
+
+  if (isExisting && !confirm(`Add ${_quizBuilderItems.length} questions to "${displayName}" on Canvas and publish (locked)?`)) return;
 
   const questions = _quizBuilderItems.map(q => ({
     question: q.question || '',
@@ -4292,14 +4321,18 @@ async function pushQuizBuilderToCanvas() {
   if (statusEl) statusEl.textContent = `Pushing ${questions.length} questions to Canvas…`;
 
   try {
-    const res = await POST(`/api/canvas/create-quiz/${S.course.id}`, {
-      title, description: desc, timeLimit, allowedAttempts: attempts,
+    const payload = {
+      title: isExisting ? undefined : title,
+      description: desc, timeLimit, allowedAttempts: attempts,
       pointsPossible: questions.length * ptsEach,
       questions, publish: true, lockdown: true,
-    });
-    if (statusEl) statusEl.innerHTML = `<span style="color:var(--success)">✓ Quiz created &amp; published (locked). ${res.questionsAdded} questions.</span>
+    };
+    if (isExisting) payload.existingQuizId = target;
+
+    const res = await POST(`/api/canvas/create-quiz/${S.course.id}`, payload);
+    if (statusEl) statusEl.innerHTML = `<span style="color:var(--success)">✓ ${isExisting ? 'Added to' : 'Created'} "${esc(displayName)}" (locked). ${res.questionsAdded} questions.</span>
       <a href="${esc(res.quizUrl)}" target="_blank" class="quiz-result-link" style="margin-left:8px">Open in Canvas ↗</a>`;
-    toast(`Quiz "${title}" pushed to Canvas (locked)!`, 'success');
+    toast(`Quiz "${displayName}" pushed to Canvas!`, 'success');
   } catch (e) {
     if (statusEl) statusEl.textContent = 'Error: ' + e.message;
     toast('Failed: ' + e.message, 'error');
@@ -4390,11 +4423,22 @@ function renderQuizView(root) {
       </div>
 
       <!-- Quiz name & settings — always visible -->
-      <div style="display:grid;grid-template-columns:1fr auto auto auto;gap:10px;align-items:end;margin-bottom:12px">
-        <div class="field-group" style="margin:0">
-          <label>Quiz Name</label>
+      <div style="display:flex;gap:10px;align-items:end;margin-bottom:10px;flex-wrap:wrap">
+        <div class="field-group" style="margin:0;flex:2;min-width:200px">
+          <label>Push to existing Canvas Quiz or create new</label>
+          <select id="qb-target" class="input" onchange="qbTargetChanged()">
+            <option value="__new__">+ Create New Quiz</option>
+          </select>
+        </div>
+        <button class="btn btn-ghost" style="font-size:11px;padding:4px 10px" onclick="loadCanvasQuizzes()">Refresh List</button>
+      </div>
+      <div id="qb-new-title-wrap">
+        <div class="field-group" style="margin:0 0 10px 0">
+          <label>New Quiz Name</label>
           <input id="qb-title" type="text" class="input" placeholder="Midterm Quiz – Chapters 1–5" />
         </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;align-items:end;margin-bottom:12px">
         <div class="field-group" style="margin:0">
           <label>Time (min)</label>
           <input id="qb-time" type="number" class="input" min="1" placeholder="none" style="max-width:80px" />
@@ -4546,6 +4590,7 @@ function renderQuizView(root) {
   renderQuizBuilder();
   renderQuizDraftsList();
   updateCqCount();
+  if (S.course) loadCanvasQuizzes();
 }
 
 function toggleAllChapterFilters(checked) {

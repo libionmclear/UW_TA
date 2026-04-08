@@ -109,7 +109,11 @@ async function pushGrade(courseId, assignmentId, userId, grade) {
   return res.json();
 }
 
-// ── Canvas Quiz Creation ──────────────────────────────────────────────────────
+// ── Canvas Quizzes ───────────────────────────────────────────────────────────
+async function getQuizzes(courseId) {
+  return canvasGetAll(`/courses/${courseId}/quizzes?per_page=50`);
+}
+
 async function createQuiz(courseId, quizData) {
   // quizData: { title, description, quiz_type, time_limit, allowed_attempts, points_possible, published }
   const url = `${API_URL}/courses/${courseId}/quizzes`;
@@ -222,6 +226,7 @@ module.exports = {
   getFiles,
   pushGrade,
   pushGradesBulk,
+  getQuizzes,
   createQuiz,
   addQuizQuestion,
   publishQuiz,
