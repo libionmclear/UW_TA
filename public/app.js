@@ -777,7 +777,7 @@ function renderOverview(root) {
   }
 
   // Compute class-wide averages
-  const students = allStudents();
+  const students = S.allStudentsList.length ? S.allStudentsList : allStudents();
   const caseAssignments = S.assignments.filter(a => classifyAssignment(a) === 'Cases');
   const actAssignments = S.assignments.filter(a => classifyAssignment(a) === 'Activities');
 
@@ -817,46 +817,39 @@ function renderOverview(root) {
   root.innerHTML = `
     <div class="page-title">Overview — ${esc(S.course?.name || 'No course selected')}</div>
 
-    <!-- Class Averages -->
-    <div class="asgn-stat-cards" style="margin-bottom:14px">
-      <div class="asgn-stat-card" style="border-left-color:#2563eb">
-        <div class="asgn-stat-icon">◆</div>
-        <div class="asgn-stat-value" style="color:#2563eb">${avgCase != null ? avgCase + '%' : '—'}</div>
-        <div class="asgn-stat-label">Avg Case Score</div>
+    <!-- All stats in one row -->
+    <div class="ov-stats-row">
+      <div class="ov-stat" style="background:#eff6ff;border-color:#2563eb">
+        <div class="ov-stat-val" style="color:#2563eb">${S.assignments.length || '—'}</div>
+        <div class="ov-stat-lbl">Assignments</div>
       </div>
-      <div class="asgn-stat-card" style="border-left-color:#16a34a">
-        <div class="asgn-stat-icon">▣</div>
-        <div class="asgn-stat-value" style="color:#16a34a">${avgSim != null ? avgSim + '%' : '—'}</div>
-        <div class="asgn-stat-label">Avg Sim Score</div>
+      <div class="ov-stat" style="background:#fefce8;border-color:#d97706">
+        <div class="ov-stat-val" style="color:#d97706">${needsGrading.length || '0'}</div>
+        <div class="ov-stat-lbl">Need Grading</div>
       </div>
-      <div class="asgn-stat-card" style="border-left-color:#ff6b00">
-        <div class="asgn-stat-icon">●</div>
-        <div class="asgn-stat-value" style="color:#ff6b00">${avgPart != null ? avgPart + '%' : '—'}</div>
-        <div class="asgn-stat-label">Avg Participation</div>
+      <div class="ov-stat" style="background:#fef2f2;border-color:#dc2626">
+        <div class="ov-stat-val" style="color:#dc2626">${allFlags.length || '0'}</div>
+        <div class="ov-stat-lbl">AI Flags</div>
       </div>
-      <div class="asgn-stat-card" style="border-left-color:var(--uw-purple);flex:1.5">
-        <div class="asgn-stat-icon">★</div>
-        <div class="asgn-stat-value" style="color:var(--uw-purple);font-size:28px">${gpaLetter}</div>
-        <div class="asgn-stat-label">Class GPA ${gpaNum !== '—' ? gpaNum + ' / ' + (gpaPct||0) + '%' : ''}</div>
+      <div class="ov-stat" style="background:#dbeafe;border-color:#1d4ed8">
+        <div class="ov-stat-val" style="color:#1d4ed8">${avgCase != null ? avgCase + '%' : '—'}</div>
+        <div class="ov-stat-lbl">Avg Case</div>
       </div>
-    </div>
-
-    <div class="stat-cards">
-      <div class="stat-card">
-        <div class="stat-value">${S.assignments.length || '—'}</div>
-        <div class="stat-label">Assignments</div>
+      <div class="ov-stat" style="background:#dcfce7;border-color:#16a34a">
+        <div class="ov-stat-val" style="color:#16a34a">${avgSim != null ? avgSim + '%' : '—'}</div>
+        <div class="ov-stat-lbl">Avg Sim</div>
       </div>
-      <div class="stat-card stat-card--warn">
-        <div class="stat-value">${needsGrading.length || '0'}</div>
-        <div class="stat-label">Need Grading</div>
+      <div class="ov-stat" style="background:#fff7ed;border-color:#ff6b00">
+        <div class="ov-stat-val" style="color:#ff6b00">${avgPart != null ? avgPart + '%' : '—'}</div>
+        <div class="ov-stat-lbl">Avg Participation</div>
       </div>
-      <div class="stat-card">
-        <div class="stat-value">${allFlags.length || '0'}</div>
-        <div class="stat-label">AI Flags</div>
+      <div class="ov-stat" style="background:#f5f3ff;border-color:var(--uw-purple)">
+        <div class="ov-stat-val" style="color:var(--uw-purple);font-size:16px">${avgHtml}</div>
+        <div class="ov-stat-lbl">Last Avg Score</div>
       </div>
-      <div class="stat-card">
-        <div class="stat-value" style="font-size:16px">${avgHtml}</div>
-        <div class="stat-label">Last Avg Score</div>
+      <div class="ov-stat" style="background:#ede9fe;border-color:var(--uw-purple);flex:1.3">
+        <div class="ov-stat-val" style="color:var(--uw-purple);font-size:26px">${gpaLetter}</div>
+        <div class="ov-stat-lbl">GPA ${gpaNum !== '—' ? gpaNum + ' · ' + (gpaPct||0) + '%' : ''}</div>
       </div>
     </div>
 
