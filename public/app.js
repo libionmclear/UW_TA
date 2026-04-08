@@ -776,8 +776,70 @@ function renderOverview(root) {
     </table>`;
   }
 
+  // Compute class-wide averages
+  const students = allStudents();
+  const caseAssignments = S.assignments.filter(a => classifyAssignment(a) === 'Cases');
+  const actAssignments = S.assignments.filter(a => classifyAssignment(a) === 'Activities');
+
+  function avgByGroup(groupAssignments) {
+    let totalEarned = 0, totalPossible = 0, counted = 0;
+    students.forEach(st => {
+      let earned = 0, possible = 0;
+      groupAssignments.forEach(a => {
+        const g = (S.allGrades[String(a.id)] || {})[st.id];
+        const score = g?.finalScore ?? g?.canvasScore ?? null;
+        if (score != null && a.points_possible) { earned += score; possible += a.points_possible; }
+      });
+      if (possible > 0) { totalEarned += earned; totalPossible += possible; counted++; }
+    });
+    return counted ? Math.round((totalEarned / totalPossible) * 100) : null;
+  }
+
+  // Average participation % (across all participation assignments)
+  const partAssignments = S.assignments.filter(a => classifyAssignment(a) === 'Participation');
+  const avgCase = avgByGroup(caseAssignments);
+  const avgSim = avgByGroup(actAssignments);
+  const avgPart = avgByGroup(partAssignments);
+
+  // Overall GPA: all assignments with grades
+  let gpaEarned = 0, gpaPossible = 0;
+  students.forEach(st => {
+    S.assignments.forEach(a => {
+      const g = (S.allGrades[String(a.id)] || {})[st.id];
+      const score = g?.finalScore ?? g?.canvasScore ?? null;
+      if (score != null && a.points_possible) { gpaEarned += score; gpaPossible += a.points_possible; }
+    });
+  });
+  const gpaPct = gpaPossible ? Math.round((gpaEarned / gpaPossible) * 100) : null;
+  const gpaLetter = gpaPct == null ? '—' : gpaPct>=93?'A':gpaPct>=90?'A-':gpaPct>=87?'B+':gpaPct>=83?'B':gpaPct>=80?'B-':gpaPct>=77?'C+':gpaPct>=73?'C':gpaPct>=70?'C-':gpaPct>=67?'D+':gpaPct>=60?'D':'F';
+  const gpaNum = gpaPct == null ? '—' : (gpaPct>=93?4.0:gpaPct>=90?3.7:gpaPct>=87?3.3:gpaPct>=83?3.0:gpaPct>=80?2.7:gpaPct>=77?2.3:gpaPct>=73?2.0:gpaPct>=70?1.7:gpaPct>=67?1.3:gpaPct>=60?1.0:0.0).toFixed(1);
+
   root.innerHTML = `
     <div class="page-title">Overview — ${esc(S.course?.name || 'No course selected')}</div>
+
+    <!-- Class Averages -->
+    <div class="asgn-stat-cards" style="margin-bottom:14px">
+      <div class="asgn-stat-card" style="border-left-color:#2563eb">
+        <div class="asgn-stat-icon">◆</div>
+        <div class="asgn-stat-value" style="color:#2563eb">${avgCase != null ? avgCase + '%' : '—'}</div>
+        <div class="asgn-stat-label">Avg Case Score</div>
+      </div>
+      <div class="asgn-stat-card" style="border-left-color:#16a34a">
+        <div class="asgn-stat-icon">▣</div>
+        <div class="asgn-stat-value" style="color:#16a34a">${avgSim != null ? avgSim + '%' : '—'}</div>
+        <div class="asgn-stat-label">Avg Sim Score</div>
+      </div>
+      <div class="asgn-stat-card" style="border-left-color:#ff6b00">
+        <div class="asgn-stat-icon">●</div>
+        <div class="asgn-stat-value" style="color:#ff6b00">${avgPart != null ? avgPart + '%' : '—'}</div>
+        <div class="asgn-stat-label">Avg Participation</div>
+      </div>
+      <div class="asgn-stat-card" style="border-left-color:var(--uw-purple);flex:1.5">
+        <div class="asgn-stat-icon">★</div>
+        <div class="asgn-stat-value" style="color:var(--uw-purple);font-size:28px">${gpaLetter}</div>
+        <div class="asgn-stat-label">Class GPA ${gpaNum !== '—' ? gpaNum + ' / ' + (gpaPct||0) + '%' : ''}</div>
+      </div>
+    </div>
 
     <div class="stat-cards">
       <div class="stat-card">
