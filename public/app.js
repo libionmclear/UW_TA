@@ -1607,7 +1607,7 @@ function renderSyllabusView(root) {
 
     return `<tr class="${rowCls}" id="syl-row-${i}">
       <td class="syl-session">
-        ${classNum ? `<span class="syl-class-num">C${classNum}</span>` : ''}
+        ${classNum ? `<span class="syl-class-num">Class ${classNum}</span>` : ''}
         ${si(i,'session',row.session,'placeholder="label"')}
       </td>
       <td class="syl-date">
