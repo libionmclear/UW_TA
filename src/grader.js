@@ -163,12 +163,15 @@ Respond ONLY with valid JSON:
 
 // ── Parse raw text into structured quiz questions ─────────────────────────────
 async function parseQuestionsFromText(rawText) {
-  const prompt = `You are a quiz question extractor. Given raw text that may contain multiple-choice or short-answer questions (possibly messy formatting), extract every question and return a JSON array.
+  const prompt = `You are a quiz question extractor. Given raw text that may contain multiple-choice, true/false, or short-answer questions (possibly messy formatting), extract every question and return a JSON array.
 
 Each object must have:
 - "question": string (the question text, cleaned up)
 - "choices": array of strings (e.g. ["A. True", "B. False"] or ["a) choice1", "b) choice2"] — empty array if no choices)
 - "answer": string (the correct answer letter or text, empty string if not identified)
+- "explanation": string (the explanation for the correct answer if provided in the source text, empty string if none)
+- "difficulty": string (one of "easy", "medium", "hard" — use the difficulty if stated in the source text, otherwise infer from question complexity)
+- "questionType": string (one of "multiple_choice", "true_false", "short_answer" — infer from the question format)
 
 Return ONLY a valid JSON array — no explanation, no markdown fences.
 

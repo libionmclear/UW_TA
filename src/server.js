@@ -498,12 +498,12 @@ app.post('/api/quiz-bank/suggest', async (req, res) => {
 app.post('/api/canvas/create-quiz/:cid', async (req, res) => {
   try {
     const { cid } = req.params;
-    const { title, description, timeLimit, allowedAttempts, pointsPossible, questions, publish } = req.body;
+    const { title, description, timeLimit, allowedAttempts, pointsPossible, questions, publish, lockdown } = req.body;
 
     if (!questions || !questions.length) return fail(res, { message: 'No questions provided.' }, 400);
 
     // 1. Create the quiz shell
-    const quiz = await canvas.createQuiz(cid, {
+    const quizOpts = {
       title: title || 'Quiz',
       description: description || '',
       quiz_type: 'assignment',
@@ -511,8 +511,16 @@ app.post('/api/canvas/create-quiz/:cid', async (req, res) => {
       allowed_attempts: allowedAttempts || 1,
       points_possible: pointsPossible || questions.length * 1,
       published: false, // publish after adding questions
-      show_correct_answers: true,
-    });
+      show_correct_answers: !lockdown, // hide answers when locked
+    };
+    if (lockdown) {
+      quizOpts.lock_questions_after_answering = true;
+      quizOpts.one_question_at_a_time = true;
+      quizOpts.cant_go_back = true;
+      quizOpts.shuffle_answers = true;
+      quizOpts.hide_results = 'always';
+    }
+    const quiz = await canvas.createQuiz(cid, quizOpts);
 
     // 2. Add each question
     const added = [];
@@ -522,14 +530,23 @@ app.post('/api/canvas/create-quiz/:cid', async (req, res) => {
       const choices = typeof q === 'string' ? [] : (q.choices || []);
       const pts     = typeof q === 'object' && q.points ? q.points : 1;
 
+      const qTypeHint = typeof q === 'object' ? (q.questionType || '') : '';
       let questionType = 'multiple_choice_question';
       let answers = [];
 
-      if (choices.length >= 2) {
+      if (qTypeHint === 'true_false' || (choices.length === 2 && choices.some(c => /true/i.test(c)) && choices.some(c => /false/i.test(c)))) {
+        // True/False question
+        questionType = 'true_false_question';
+        const correctIsTrue = /^t/i.test(answer);
+        answers = [
+          { answer_text: 'True',  weight: correctIsTrue ? 100 : 0 },
+          { answer_text: 'False', weight: correctIsTrue ? 0 : 100 },
+        ];
+      } else if (choices.length >= 2) {
         // Multiple choice — mark correct answer by matching answer text or letter
         answers = choices.map((c, i) => {
-          const choiceText = c.replace(/^[a-dA-D][\.\)]\s*/, '').trim();
-          const choiceLetter = String.fromCharCode(65 + i); // A, B, C, D
+          const choiceText = c.replace(/^[a-eA-E][\.\)]\s*/, '').trim();
+          const choiceLetter = String.fromCharCode(65 + i); // A, B, C, D, E
           const isCorrect = answer
             ? (answer.toUpperCase().startsWith(choiceLetter) || answer.toLowerCase().includes(choiceText.toLowerCase().substring(0, 15)))
             : false;

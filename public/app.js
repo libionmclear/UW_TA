@@ -4089,6 +4089,110 @@ function toggleAnswer(i) {
   if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
 }
 
+// ── Quiz Builder state (selected questions for building a quiz) ──
+let _quizBuilderItems = [];
+
+function addToQuizBuilder(bankIndex) {
+  const q = S.quizBank?.questions?.[bankIndex];
+  if (!q) return;
+  // Avoid duplicates
+  if (_quizBuilderItems.some(item => item._bankIndex === bankIndex)) {
+    toast('Already in quiz.', 'warn'); return;
+  }
+  _quizBuilderItems.push({ ...q, _bankIndex: bankIndex });
+  renderQuizBuilder();
+  toast('Added to quiz.', 'success');
+}
+
+function removeFromQuizBuilder(pos) {
+  _quizBuilderItems.splice(pos, 1);
+  renderQuizBuilder();
+}
+
+function moveQuizBuilderItem(pos, dir) {
+  const target = pos + dir;
+  if (target < 0 || target >= _quizBuilderItems.length) return;
+  const tmp = _quizBuilderItems[pos];
+  _quizBuilderItems[pos] = _quizBuilderItems[target];
+  _quizBuilderItems[target] = tmp;
+  renderQuizBuilder();
+}
+
+function clearQuizBuilder() {
+  _quizBuilderItems = [];
+  renderQuizBuilder();
+}
+
+function renderQuizBuilder() {
+  const wrap = document.getElementById('quiz-builder-wrap');
+  if (!wrap) return;
+  const count = _quizBuilderItems.length;
+  if (!count) {
+    wrap.innerHTML = '<p class="muted" style="padding:12px;text-align:center">No questions added yet. Browse the bank below and click <strong>+ Add to Quiz</strong>.</p>';
+    return;
+  }
+  wrap.innerHTML = _quizBuilderItems.map((q, pos) => {
+    const text = qText(q); const choices = qChoices(q); const answer = qAnswer(q);
+    const diff = q.difficulty || '';
+    const qType = q.questionType || '';
+    return `<div class="qb-item">
+      <div class="qb-controls">
+        <button class="btn-icon" title="Move up" onclick="moveQuizBuilderItem(${pos},-1)" ${pos === 0 ? 'disabled' : ''}>▲</button>
+        <span class="qb-pos">${pos + 1}</span>
+        <button class="btn-icon" title="Move down" onclick="moveQuizBuilderItem(${pos},1)" ${pos === count - 1 ? 'disabled' : ''}>▼</button>
+      </div>
+      <div style="flex:1;min-width:0">
+        <div class="quiz-q-text">${esc(text)}</div>
+        ${choices.length ? `<div class="quiz-choices">${choices.map(c => `<div class="quiz-choice">${esc(c)}</div>`).join('')}</div>` : ''}
+        <div class="qb-meta">
+          ${answer ? `<span class="qb-badge qb-badge-answer">Ans: ${esc(answer)}</span>` : ''}
+          ${diff ? `<span class="qb-badge qb-badge-${diff}">${diff}</span>` : ''}
+          ${qType ? `<span class="qb-badge">${qType.replace('_', '/')}</span>` : ''}
+        </div>
+      </div>
+      <button class="btn btn-ghost btn-danger" style="font-size:12px;padding:4px 8px;flex-shrink:0" onclick="removeFromQuizBuilder(${pos})">✕</button>
+    </div>`;
+  }).join('');
+}
+
+async function pushQuizBuilderToCanvas() {
+  if (!S.course) { toast('Select a course first.', 'warn'); return; }
+  if (!_quizBuilderItems.length) { toast('Add questions to the quiz first.', 'warn'); return; }
+
+  const title    = document.getElementById('qb-title')?.value?.trim();
+  const desc     = document.getElementById('qb-desc')?.value?.trim();
+  const timeLimit = Number(document.getElementById('qb-time')?.value) || null;
+  const attempts  = Number(document.getElementById('qb-attempts')?.value) || 1;
+  const ptsEach   = Number(document.getElementById('qb-pts')?.value) || 1;
+
+  if (!title) { toast('Enter a quiz title.', 'warn'); return; }
+
+  const questions = _quizBuilderItems.map(q => ({
+    question: q.question || '',
+    answer: q.answer || '',
+    choices: q.choices || [],
+    points: ptsEach,
+    questionType: q.questionType || '',
+  }));
+
+  const statusEl = document.getElementById('qb-status');
+  if (statusEl) statusEl.textContent = `Pushing ${questions.length} questions to Canvas…`;
+
+  try {
+    const res = await POST(`/api/canvas/create-quiz/${S.course.id}`, {
+      title, description: desc, timeLimit, allowedAttempts: attempts,
+      pointsPossible: questions.length * ptsEach,
+      questions, publish: true, lockdown: true,
+    });
+    if (statusEl) statusEl.innerHTML = `<span style="color:var(--success)">✓ Quiz created &amp; published (locked). ${res.questionsAdded} questions.</span>
+      <a href="${esc(res.quizUrl)}" target="_blank" class="quiz-result-link" style="margin-left:8px">Open in Canvas ↗</a>`;
+    toast(`Quiz "${title}" pushed to Canvas (locked)!`, 'success');
+  } catch (e) {
+    if (statusEl) statusEl.textContent = 'Error: ' + e.message;
+    toast('Failed: ' + e.message, 'error');
+  }
+}
+
 function renderQuizView(root) {
   root = root || document.getElementById('view-root');
   const qs = S.quizBank?.questions || [];
@@ -4104,27 +4208,16 @@ function renderQuizView(root) {
     bankByChapter[ch].push({ q, i });
   });
 
-  const bankHtml = qs.length ? Object.entries(bankByChapter).map(([ch, items]) => `
-    <div class="chapter-block">
-      <div class="chapter-heading">${esc(ch)} <span class="muted">(${items.length})</span></div>
-      ${items.map(({ q, i }) => {
-        const text = qText(q); const answer = qAnswer(q); const choices = qChoices(q);
-        return `<div class="quiz-q-item">
-          <span class="quiz-q-num">${i + 1}.</span>
-          <div style="flex:1">
-            <div class="quiz-q-text">${esc(text)}</div>
-            ${choices.length ? `<div class="quiz-choices">${choices.map(c => `<div class="quiz-choice">${esc(c)}</div>`).join('')}</div>` : ''}
-            ${answer ? `
-              <button class="btn btn-surf-sec" style="font-size:11px;padding:2px 8px;margin-top:4px" onclick="toggleAnswer(${i})">Show / Hide Answer</button>
-              <div id="q-answer-${i}" class="quiz-answer" style="display:none"><strong>Answer:</strong> ${esc(answer)}</div>` : ''}
-          </div>
-          <button class="btn btn-surf-sec" style="font-size:11px;padding:3px 8px;flex-shrink:0" onclick="deleteQuestion(${i})">✕</button>
-        </div>`;
-      }).join('')}
-    </div>`).join('')
-  : '<p class="muted">No questions yet. Upload a test bank file to get started.</p>';
-
   const chapterOptions = chapters.map(c => `<option value="${esc(c)}">${esc(c)} (${bankByChapter[c]?.length || 0} questions)</option>`).join('');
+
+  // Chapter filter checkboxes
+  const chapterFilters = chapters.map(c =>
+    `<label class="ch-filter-label">
+      <input type="checkbox" class="ch-filter-cb" value="${esc(c)}" checked onchange="filterBankByChapter()"/>
+      <span>${esc(c)}</span>
+      <span class="muted">(${bankByChapter[c]?.length || 0})</span>
+    </label>`
+  ).join('');
 
   root.innerHTML = `
     <div class="page-title">Quiz Question Bank
@@ -4145,7 +4238,7 @@ function renderQuizView(root) {
         <div class="field-group">
           <label>Paste your questions below (any format — numbered, Q: style, Word copy-paste…)</label>
           <textarea id="paste-questions-text" class="input" rows="8"
-            placeholder="1. What is marketing?&#10;a) Selling products&#10;b) Understanding customer needs&#10;c) Making ads&#10;d) All of the above&#10;Answer: B&#10;&#10;2. What is a value proposition?..."></textarea>
+            placeholder="1. What is marketing?&#10;a) Selling products&#10;b) Understanding customer needs&#10;c) Making ads&#10;d) All of the above&#10;Answer: B&#10;Explanation: Marketing is about understanding needs...&#10;Difficulty: Easy&#10;&#10;2. True or False: A brand is just a logo.&#10;Answer: False&#10;Explanation: A brand encompasses..."></textarea>
         </div>
         <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
           <button class="btn btn-surf" onclick="parseAndSavePasted()">✦ Parse &amp; Save with Claude</button>
@@ -4174,55 +4267,46 @@ function renderQuizView(root) {
           across <strong>${chapters.length}</strong> chapter${chapters.length !== 1 ? 's' : ''}
         </div>
       </div>
+    </div>
 
-      <!-- ── Create Quiz on Canvas ── -->
-      <div class="card create-quiz-card">
-        <div class="card-title">🎓 Create Quiz on Canvas</div>
-        <div class="create-quiz-grid">
-          <div class="field-group">
-            <label>Quiz Title</label>
-            <input id="cq-title" type="text" class="input" placeholder="Quiz – Chapters 2–3" />
-          </div>
-          <div class="field-group">
-            <label>Time Limit (min)</label>
-            <input id="cq-time" type="number" class="input" min="1" placeholder="none" />
-          </div>
-          <div class="field-group">
-            <label>Attempts</label>
-            <input id="cq-attempts" type="number" class="input" value="1" min="1" />
-          </div>
-          <div class="field-group">
-            <label>Pts per question</label>
-            <input id="cq-pts" type="number" class="input" value="1" min="1" />
-          </div>
-        </div>
-
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
-          <div class="field-group">
-            <label>Chapter(s) to pull from</label>
-            <select id="cq-chapter" class="input" onchange="updateCqCount()">
-              <option value="__all__">All chapters</option>
-              ${chapterOptions}
-            </select>
-          </div>
-          <div class="field-group">
-            <label>Number of questions <span id="cq-avail" class="muted"></span></label>
-            <input id="cq-count" type="number" class="input" value="5" min="1" oninput="updateCqCount()" />
-          </div>
-        </div>
-
-        <div class="field-group">
-          <label>Description (optional)</label>
-          <textarea id="cq-desc" class="input" rows="2" placeholder="Instructions for students…"></textarea>
-        </div>
-
-        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px">
-          <button class="btn btn-surf" onclick="createCanvasQuiz(false)">Create as Draft</button>
-          <button class="btn btn-primary" onclick="createCanvasQuiz(true)">Create &amp; Publish</button>
-          <span id="cq-status" class="muted" style="font-size:12px"></span>
-        </div>
-        <div id="cq-result" style="display:none;margin-top:12px" class="quiz-result-banner"></div>
+    <!-- ── Quiz Builder ── -->
+    <div class="card" style="margin-bottom:12px;border:2px solid var(--primary)">
+      <div class="card-title">🎓 Quiz Builder
+        <span class="muted" style="font-weight:400;font-size:12px;margin-left:8px" id="qb-count-label">${_quizBuilderItems.length} question${_quizBuilderItems.length !== 1 ? 's' : ''}</span>
+        ${_quizBuilderItems.length ? `<button class="btn btn-ghost btn-danger" style="font-size:11px;padding:2px 8px;margin-left:auto" onclick="clearQuizBuilder()">Clear All</button>` : ''}
       </div>
+      <div id="quiz-builder-wrap" style="max-height:400px;overflow-y:auto">
+        ${_quizBuilderItems.length ? '' : '<p class="muted" style="padding:12px;text-align:center">No questions added yet. Browse the bank below and click <strong>+ Add to Quiz</strong>.</p>'}
+      </div>
+      ${_quizBuilderItems.length ? `
+      <div style="border-top:1px solid var(--border);padding-top:12px;margin-top:12px">
+        <div style="display:grid;grid-template-columns:1fr auto auto auto;gap:10px;align-items:end;margin-bottom:10px">
+          <div class="field-group" style="margin:0">
+            <label>Quiz Title</label>
+            <input id="qb-title" type="text" class="input" placeholder="Midterm Quiz – Chapters 1–5" />
+          </div>
+          <div class="field-group" style="margin:0">
+            <label>Time (min)</label>
+            <input id="qb-time" type="number" class="input" min="1" placeholder="none" style="max-width:80px" />
+          </div>
+          <div class="field-group" style="margin:0">
+            <label>Attempts</label>
+            <input id="qb-attempts" type="number" class="input" value="1" min="1" style="max-width:70px" />
+          </div>
+          <div class="field-group" style="margin:0">
+            <label>Pts each</label>
+            <input id="qb-pts" type="number" class="input" value="1" min="1" style="max-width:70px" />
+          </div>
+        </div>
+        <div class="field-group" style="margin:0 0 10px 0">
+          <label>Description (optional)</label>
+          <textarea id="qb-desc" class="input" rows="2" placeholder="Instructions for students…"></textarea>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center">
+          <button class="btn btn-primary" onclick="pushQuizBuilderToCanvas()">Push to Canvas (Locked)</button>
+          <span id="qb-status" class="muted" style="font-size:12px"></span>
+        </div>
+      </div>` : ''}
     </div>
 
     <!-- ── AI Suggest ── -->
@@ -4250,17 +4334,153 @@ function renderQuizView(root) {
       <div id="quiz-suggestions"></div>
     </div>
 
+    <!-- ── Chapter Filter ── -->
+    ${chapters.length ? `
+    <div class="card" style="margin-bottom:12px">
+      <div class="card-title">Filter by Chapter
+        <div style="margin-left:auto;display:flex;gap:8px">
+          <button class="btn btn-surf-sec" style="font-size:11px;padding:2px 8px" onclick="toggleAllChapterFilters(true)">Select All</button>
+          <button class="btn btn-surf-sec" style="font-size:11px;padding:2px 8px" onclick="toggleAllChapterFilters(false)">Deselect All</button>
+        </div>
+      </div>
+      <div class="ch-filter-grid">${chapterFilters}</div>
+    </div>` : ''}
+
     <!-- ── Bank Browser ── -->
     <div class="card">
       <div class="card-title">
-        Bank — ${qs.length} question${qs.length !== 1 ? 's' : ''}
+        Bank — <span id="bank-visible-count">${qs.length}</span> question${qs.length !== 1 ? 's' : ''}
         <span class="card-title-hint">${chapters.length} chapter${chapters.length !== 1 ? 's' : ''}</span>
       </div>
-      <div style="max-height:520px;overflow-y:auto">${bankHtml}</div>
+      <div id="bank-questions-list" style="max-height:600px;overflow-y:auto"></div>
+    </div>
+
+    <!-- ── Legacy Create Quiz on Canvas (random pick) ── -->
+    <div class="card create-quiz-card" style="margin-top:12px">
+      <div class="card-title">Quick Random Quiz on Canvas</div>
+      <div class="create-quiz-grid">
+        <div class="field-group">
+          <label>Quiz Title</label>
+          <input id="cq-title" type="text" class="input" placeholder="Quiz – Chapters 2–3" />
+        </div>
+        <div class="field-group">
+          <label>Time Limit (min)</label>
+          <input id="cq-time" type="number" class="input" min="1" placeholder="none" />
+        </div>
+        <div class="field-group">
+          <label>Attempts</label>
+          <input id="cq-attempts" type="number" class="input" value="1" min="1" />
+        </div>
+        <div class="field-group">
+          <label>Pts per question</label>
+          <input id="cq-pts" type="number" class="input" value="1" min="1" />
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+        <div class="field-group">
+          <label>Chapter(s) to pull from</label>
+          <select id="cq-chapter" class="input" onchange="updateCqCount()">
+            <option value="__all__">All chapters</option>
+            ${chapterOptions}
+          </select>
+        </div>
+        <div class="field-group">
+          <label>Number of questions <span id="cq-avail" class="muted"></span></label>
+          <input id="cq-count" type="number" class="input" value="5" min="1" oninput="updateCqCount()" />
+        </div>
+      </div>
+      <div class="field-group">
+        <label>Description (optional)</label>
+        <textarea id="cq-desc" class="input" rows="2" placeholder="Instructions for students…"></textarea>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px">
+        <button class="btn btn-surf" onclick="createCanvasQuiz(false)">Create as Draft</button>
+        <button class="btn btn-primary" onclick="createCanvasQuiz(true)">Create &amp; Publish</button>
+        <span id="cq-status" class="muted" style="font-size:12px"></span>
+      </div>
+      <div id="cq-result" style="display:none;margin-top:12px" class="quiz-result-banner"></div>
     </div>`;
 
-  // Set initial available count
+  // Render the bank questions list and quiz builder
+  filterBankByChapter();
+  renderQuizBuilder();
   updateCqCount();
+}
+
+function toggleAllChapterFilters(checked) {
+  document.querySelectorAll('.ch-filter-cb').forEach(cb => cb.checked = checked);
+  filterBankByChapter();
+}
+
+function filterBankByChapter() {
+  const checkboxes = document.querySelectorAll('.ch-filter-cb');
+  let selectedChapters;
+  if (checkboxes.length === 0) {
+    // No filter UI — show all
+    selectedChapters = null;
+  } else {
+    selectedChapters = new Set();
+    checkboxes.forEach(cb => { if (cb.checked) selectedChapters.add(cb.value); });
+  }
+
+  const qs = S.quizBank?.questions || [];
+  const listEl = document.getElementById('bank-questions-list');
+  const countEl = document.getElementById('bank-visible-count');
+  if (!listEl) return;
+
+  // Group visible questions by chapter
+  const bankByChapter = {};
+  let visibleCount = 0;
+  qs.forEach((q, i) => {
+    const ch = (typeof q === 'object' && q.chapter) ? q.chapter : 'Uncategorized';
+    if (selectedChapters && !selectedChapters.has(ch)) return;
+    if (!bankByChapter[ch]) bankByChapter[ch] = [];
+    bankByChapter[ch].push({ q, i });
+    visibleCount++;
+  });
+
+  if (countEl) countEl.textContent = visibleCount;
+
+  if (!visibleCount) {
+    listEl.innerHTML = '<p class="muted" style="padding:16px;text-align:center">No questions match the selected chapters.</p>';
+    return;
+  }
+
+  listEl.innerHTML = Object.entries(bankByChapter).map(([ch, items]) => `
+    <div class="chapter-block">
+      <div class="chapter-heading">${esc(ch)} <span class="muted">(${items.length})</span></div>
+      ${items.map(({ q, i }) => {
+        const text = qText(q); const answer = qAnswer(q); const choices = qChoices(q);
+        const explanation = (typeof q === 'object' && q.explanation) ? q.explanation : '';
+        const difficulty = (typeof q === 'object' && q.difficulty) ? q.difficulty : '';
+        const qType = (typeof q === 'object' && q.questionType) ? q.questionType : '';
+        const alreadyInQuiz = _quizBuilderItems.some(item => item._bankIndex === i);
+        return `<div class="quiz-q-item">
+          <span class="quiz-q-num">${i + 1}.</span>
+          <div style="flex:1;min-width:0">
+            <div class="quiz-q-text">${esc(text)}</div>
+            ${choices.length ? `<div class="quiz-choices">${choices.map(c => `<div class="quiz-choice">${esc(c)}</div>`).join('')}</div>` : ''}
+            <div class="qb-meta">
+              ${difficulty ? `<span class="qb-badge qb-badge-${difficulty}">${difficulty}</span>` : ''}
+              ${qType ? `<span class="qb-badge">${qType.replace('_', '/')}</span>` : ''}
+            </div>
+            ${answer || explanation ? `
+              <button class="btn btn-surf-sec" style="font-size:11px;padding:2px 8px;margin-top:4px" onclick="toggleAnswer(${i})">Show / Hide Details</button>
+              <div id="q-answer-${i}" class="quiz-answer" style="display:none">
+                ${answer ? `<div><strong>Answer:</strong> ${esc(answer)}</div>` : ''}
+                ${explanation ? `<div style="margin-top:4px"><strong>Explanation:</strong> ${esc(explanation)}</div>` : ''}
+              </div>` : ''}
+          </div>
+          <div style="display:flex;flex-direction:column;gap:4px;flex-shrink:0">
+            <button class="btn ${alreadyInQuiz ? 'btn-ghost' : 'btn-surf'}" style="font-size:11px;padding:3px 8px;white-space:nowrap"
+              onclick="addToQuizBuilder(${i})" ${alreadyInQuiz ? 'disabled' : ''}>
+              ${alreadyInQuiz ? '✓ In Quiz' : '+ Add to Quiz'}
+            </button>
+            <button class="btn btn-ghost btn-danger" style="font-size:11px;padding:3px 8px" onclick="deleteQuestion(${i})">✕ Delete</button>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>`).join('');
 }
 
 function updateCqCount() {
