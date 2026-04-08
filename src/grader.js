@@ -163,24 +163,31 @@ Respond ONLY with valid JSON:
 
 // ── Parse raw text into structured quiz questions ─────────────────────────────
 async function parseQuestionsFromText(rawText) {
-  const prompt = `You are a quiz question extractor. Given raw text that may contain multiple-choice, true/false, or short-answer questions (possibly messy formatting), extract every question and return a JSON array.
+  const prompt = `You are a quiz question extractor. Given raw text that may contain multiple-choice, true/false, short-answer, or essay questions (possibly messy formatting from textbook test banks), extract EVERY question and return a JSON array.
 
-Each object must have:
+The source text may use "Feedback:" or "Explanation:" for the explanation of the correct answer.
+The source text may use "Difficulty: 1 Easy", "Difficulty: 2 Medium", "Difficulty: 3 Hard" or similar for difficulty level.
+The source text may include metadata like AACSB, Blooms, Topic — extract Topic if present.
+
+Each object MUST have ALL of these fields:
 - "question": string (the question text, cleaned up)
-- "choices": array of strings (e.g. ["A. True", "B. False"] or ["a) choice1", "b) choice2"] — empty array if no choices)
-- "answer": string (the correct answer letter or text, empty string if not identified)
-- "explanation": string (the explanation for the correct answer if provided in the source text, empty string if none)
-- "difficulty": string (one of "easy", "medium", "hard" — use the difficulty if stated in the source text, otherwise infer from question complexity)
-- "questionType": string (one of "multiple_choice", "true_false", "short_answer" — infer from the question format)
+- "choices": array of strings (e.g. ["A. True", "B. False"] or ["A. choice1", "B. choice2"] — empty array if no choices or essay)
+- "answer": string (the correct answer: for T/F use "True" or "False", for MC use the letter like "B", for essay/short answer use the answer text, empty string if not identified)
+- "explanation": string (the Feedback/Explanation text that explains WHY the answer is correct — copy the full feedback text, do NOT leave empty if the source has a Feedback line)
+- "difficulty": string (one of "easy", "medium", "hard" — extract from the source text "Difficulty:" line, otherwise infer from question complexity)
+- "questionType": string (one of "multiple_choice", "true_false", "short_answer", "essay" — infer from the question format)
+- "topic": string (the Topic from the source metadata if present, otherwise empty string)
+
+CRITICAL: Do NOT skip the "explanation" field. If the source has a "Feedback:" line after the answer, that IS the explanation — include it in full.
 
 Return ONLY a valid JSON array — no explanation, no markdown fences.
 
 RAW TEXT:
-${rawText.slice(0, 60000)}`;
+${rawText.slice(0, 120000)}`;
 
   const msg = await client().messages.create({
     model: 'claude-opus-4-6',
-    max_tokens: 8192,
+    max_tokens: 16384,
     messages: [{ role: 'user', content: prompt }],
   });
   const content = msg.content[0].text.trim();

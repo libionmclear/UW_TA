@@ -4454,6 +4454,7 @@ function filterBankByChapter() {
         const explanation = (typeof q === 'object' && q.explanation) ? q.explanation : '';
         const difficulty = (typeof q === 'object' && q.difficulty) ? q.difficulty : '';
         const qType = (typeof q === 'object' && q.questionType) ? q.questionType : '';
+        const topic = (typeof q === 'object' && q.topic) ? q.topic : '';
         const alreadyInQuiz = _quizBuilderItems.some(item => item._bankIndex === i);
         return `<div class="quiz-q-item">
           <span class="quiz-q-num">${i + 1}.</span>
@@ -4463,6 +4464,7 @@ function filterBankByChapter() {
             <div class="qb-meta">
               ${difficulty ? `<span class="qb-badge qb-badge-${difficulty}">${difficulty}</span>` : ''}
               ${qType ? `<span class="qb-badge">${qType.replace('_', '/')}</span>` : ''}
+              ${topic ? `<span class="qb-badge" style="background:#e0e7ff;color:#3730a3">${esc(topic)}</span>` : ''}
             </div>
             ${answer || explanation ? `
               <button class="btn btn-surf-sec" style="font-size:11px;padding:2px 8px;margin-top:4px" onclick="toggleAnswer(${i})">Show / Hide Details</button>
