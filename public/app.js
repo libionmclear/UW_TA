@@ -4975,7 +4975,7 @@ async function renderSurveyCreatorView(root) {
     const responded = Object.keys(s.responses || {}).length;
     const total = Object.keys(s.tokens || {}).length;
     return `<div class="card" style="margin-bottom:10px">
-      <div class="card-title">${esc(s.title)} ${s.forPoints ? '<span class="status-badge status--graded">For Points</span>' : '<span class="status-badge status--pending">Info Only</span>'}
+      <div class="card-title">${esc(s.title)} ${s.isQuiz ? '<span class="status-badge status--reviewed">Quiz</span>' : ''} ${s.forPoints ? '<span class="status-badge status--graded">For Points</span>' : '<span class="status-badge status--pending">Info Only</span>'}
         <div style="margin-left:auto;display:flex;gap:6px">
           <button class="btn btn-ghost" style="font-size:11px;padding:3px 8px" onclick="viewSurveyResults('${esc(s.id)}')">Results (${responded}/${total})</button>
           <button class="btn btn-ghost" style="font-size:11px;padding:3px 8px" onclick="viewSurveyLinks('${esc(s.id)}')">Links</button>
@@ -4993,14 +4993,16 @@ async function renderSurveyCreatorView(root) {
     <!-- Existing surveys -->
     ${surveyCards || '<p class="muted" style="margin-bottom:14px">No surveys created yet.</p>'}
 
-    <!-- Create new survey -->
+    <!-- Create new survey/quiz -->
     <div class="card">
-      <div class="card-title">Create New Survey</div>
-      <div class="field-group"><label>Title</label><input id="srv-title" class="input" placeholder="e.g. Course Feedback Survey" /></div>
+      <div class="card-title">Create New Survey or Quiz</div>
+      <div class="field-group"><label>Title</label><input id="srv-title" class="input" placeholder="e.g. Course Feedback Survey or Pop Quiz" /></div>
       <div class="field-group"><label>Description (optional)</label><input id="srv-desc" class="input" placeholder="Brief description shown to students" /></div>
       <div class="field-row">
-        <label class="checkbox-label"><input id="srv-points" type="checkbox" /> For points (responses count toward grade)</label>
+        <label class="checkbox-label"><input id="srv-mode" type="checkbox" onchange="document.getElementById('srv-quiz-hint').style.display=this.checked?'':'none'"> <strong>Quiz Mode</strong> (auto-graded: requires correct answers & points per question)</label>
+        <label class="checkbox-label"><input id="srv-points" type="checkbox" /> For points</label>
       </div>
+      <div id="srv-quiz-hint" class="muted" style="display:none;font-size:11px;margin-bottom:8px;color:var(--warn)">Quiz mode: each question needs a correct answer and point value. Students see their score after submitting.</div>
 
       <div style="font-size:12px;font-weight:700;color:var(--uw-purple);margin:12px 0 6px">Questions</div>
       <div id="srv-questions"></div>
@@ -5030,7 +5032,7 @@ function addSurveyQuestion() {
       <span style="font-weight:700;color:var(--uw-purple);min-width:20px">Q${_srvQCount}</span>
       <div style="flex:1">
         <input class="input srv-q-text" placeholder="Question text" style="margin-bottom:4px" />
-        <div style="display:flex;gap:8px;align-items:center">
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:4px">
           <select class="input srv-q-type" style="width:140px;font-size:11px">
             <option value="text">Short Answer</option>
             <option value="textarea">Long Answer</option>
@@ -5039,6 +5041,10 @@ function addSurveyQuestion() {
             <option value="choice">Multiple Choice</option>
           </select>
           <input class="input srv-q-choices" placeholder="Choices (comma separated, for MC only)" style="flex:1;font-size:11px" />
+        </div>
+        <div class="srv-q-quiz-fields" style="display:flex;gap:8px;align-items:center">
+          <input class="input srv-q-answer" placeholder="Correct answer (for quiz)" style="flex:1;font-size:11px" />
+          <input class="input srv-q-points" type="number" min="0" placeholder="Pts" style="width:55px;font-size:11px;text-align:center" />
         </div>
       </div>
       <button class="btn btn-ghost btn-danger" style="font-size:11px;padding:2px 6px" onclick="this.closest('.srv-q-row').remove()">✕</button>
@@ -5051,6 +5057,7 @@ async function createSurvey() {
   if (!title) { toast('Enter a title.', 'warn'); return; }
   const description = document.getElementById('srv-desc')?.value?.trim() || '';
   const forPoints = document.getElementById('srv-points')?.checked || false;
+  const isQuiz = document.getElementById('srv-mode')?.checked || false;
 
   // Collect questions
   const qRows = document.querySelectorAll('.srv-q-row');
@@ -5059,7 +5066,14 @@ async function createSurvey() {
     const text = row.querySelector('.srv-q-text')?.value?.trim();
     const type = row.querySelector('.srv-q-type')?.value || 'text';
     const choices = row.querySelector('.srv-q-choices')?.value?.trim();
-    if (text) questions.push({ text, type, choices: type === 'choice' ? choices.split(',').map(c => c.trim()).filter(Boolean) : [] });
+    const answer = row.querySelector('.srv-q-answer')?.value?.trim() || '';
+    const points = Number(row.querySelector('.srv-q-points')?.value) || 0;
+    if (text) questions.push({
+      text, type,
+      choices: type === 'choice' ? choices.split(',').map(c => c.trim()).filter(Boolean) : [],
+      correctAnswer: isQuiz ? answer : '',
+      points: isQuiz ? points : 0,
+    });
   });
   if (!questions.length) { toast('Add at least one question.', 'warn'); return; }
 
@@ -5071,7 +5085,7 @@ async function createSurvey() {
 
   toast('Creating survey...');
   try {
-    await POST('/api/surveys', { title, description, forPoints, questions, studentIds, studentNames });
+    await POST('/api/surveys', { title, description, forPoints, isQuiz, questions, studentIds, studentNames });
     toast('Survey created with links for all students!', 'success');
     renderSurveyCreatorView();
   } catch (e) { toast('Create failed: ' + e.message, 'error'); }
@@ -5113,13 +5127,21 @@ function viewSurveyResults(id) {
   const allStudents = Object.values(tokens);
 
   // Build results table
-  const headerCols = questions.map((q, i) => `<th style="font-size:10px;max-width:120px;white-space:normal;line-height:1.2">Q${i + 1}: ${esc(q.text.substring(0, 30))}</th>`).join('');
+  const isQuiz = survey.isQuiz;
+  const totalPossible = isQuiz ? questions.reduce((s, q) => s + (q.points || 0), 0) : 0;
+  const headerCols = questions.map((q, i) => `<th style="font-size:10px;max-width:120px;white-space:normal;line-height:1.2">Q${i + 1}: ${esc(q.text.substring(0, 30))}${isQuiz ? ` (${q.points || 0}pt)` : ''}</th>`).join('');
 
   const rows = allStudents.map(t => {
     const r = responses[t.studentId];
+    let earned = 0;
     const cells = questions.map((q, i) => {
       const ans = r?.answers?.[i];
       if (ans == null) return '<td class="ldg-cell ldg-empty">—</td>';
+      if (isQuiz && q.correctAnswer) {
+        const correct = String(ans).trim().toLowerCase() === String(q.correctAnswer).trim().toLowerCase();
+        if (correct) earned += (q.points || 0);
+        return `<td class="ldg-cell" style="text-align:center;font-weight:700;color:${correct ? 'var(--success)' : 'var(--danger)'}">${esc(String(ans))} ${correct ? '✓' : '✗'}</td>`;
+      }
       if (q.type === 'rating') return `<td class="ldg-cell" style="text-align:center;font-weight:700;color:var(--uw-purple)">${ans}/5</td>`;
       return `<td class="ldg-cell" style="font-size:11px">${esc(String(ans).substring(0, 60))}</td>`;
     }).join('');
@@ -5127,6 +5149,7 @@ function viewSurveyResults(id) {
       <td style="font-weight:600;font-size:12px">${esc(t.studentName)}</td>
       <td>${r ? '<span class="status-badge status--graded">Yes</span>' : '<span class="status-badge status--pending">No</span>'}</td>
       ${cells}
+      ${isQuiz ? `<td style="text-align:center;font-weight:800;color:var(--uw-purple);font-size:14px">${r ? earned + '/' + totalPossible : '—'}</td>` : ''}
     </tr>`;
   }).join('');
 
@@ -5141,7 +5164,7 @@ function viewSurveyResults(id) {
   area.innerHTML = `<div class="card" style="margin-top:12px">
     <div class="card-title">Results — ${esc(survey.title)} (${Object.keys(responses).length}/${allStudents.length} responded)</div>
     <div class="table-wrap"><table style="font-size:12px">
-      <thead><tr><th>Student</th><th>Submitted</th>${headerCols}</tr></thead>
+      <thead><tr><th>Student</th><th>Submitted</th>${headerCols}${isQuiz ? `<th style="text-align:center;background:var(--uw-gold);color:var(--uw-purple)">Score /${totalPossible}</th>` : ''}</tr></thead>
       <tbody>${rows}
         <tr style="background:var(--bg);font-weight:700"><td>Average</td><td></td>${avgRow}</tr>
       </tbody>

@@ -1069,11 +1069,16 @@ app.get('/api/survey-submit/:surveyId/:token', (req, res) => {
   if (!survey) return fail(res, { message: 'Survey not found' }, 404);
   const tokenData = survey.tokens?.[req.params.token];
   if (!tokenData) return fail(res, { message: 'Invalid link' }, 404);
+  // For quiz mode, strip correct answers from questions sent to student
+  const safeQuestions = (survey.questions || []).map(q => ({
+    text: q.text, type: q.type, choices: q.choices, points: q.points || 0,
+  }));
   ok(res, {
     title: survey.title,
     description: survey.description,
-    questions: survey.questions,
+    questions: safeQuestions,
     forPoints: survey.forPoints,
+    isQuiz: survey.isQuiz || false,
     studentName: tokenData.studentName,
     existingResponse: survey.responses?.[tokenData.studentId] || null,
   });
@@ -1084,9 +1089,21 @@ app.post('/api/survey-submit/:surveyId/:token', (req, res) => {
   const tokenData = survey.tokens?.[req.params.token];
   if (!tokenData) return fail(res, { message: 'Invalid link' }, 404);
   if (!survey.responses) survey.responses = {};
-  survey.responses[tokenData.studentId] = { answers: req.body.answers, submittedAt: new Date().toISOString() };
+  // Auto-grade if quiz
+  let score = null, totalPossible = null;
+  if (survey.isQuiz) {
+    score = 0; totalPossible = 0;
+    (survey.questions || []).forEach((q, i) => {
+      totalPossible += (q.points || 0);
+      const ans = req.body.answers?.[i];
+      if (q.correctAnswer && ans != null && String(ans).trim().toLowerCase() === String(q.correctAnswer).trim().toLowerCase()) {
+        score += (q.points || 0);
+      }
+    });
+  }
+  survey.responses[tokenData.studentId] = { answers: req.body.answers, submittedAt: new Date().toISOString(), score, totalPossible };
   save();
-  ok(res, { ok: true });
+  ok(res, { ok: true, score, totalPossible });
 });
 
 // ── Data Backup/Restore ──────────────────────────────────────────────────────
