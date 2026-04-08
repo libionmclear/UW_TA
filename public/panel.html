@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Panel Grading — UW TA Companion</title>
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    body { background: var(--bg); padding: 20px; }
+    .panel-page { max-width: 700px; margin: 0 auto; }
+    .panel-header { background: var(--uw-purple); color: #fff; padding: 16px 20px; border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
+    .panel-body { background: var(--surface); padding: 20px; border-radius: 0 0 var(--radius-lg) var(--radius-lg); box-shadow: var(--shadow-lg); }
+    .panel-criterion { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+    .panel-criterion:last-child { border-bottom: none; }
+    .panel-cr-name { flex: 1; font-size: 13px; font-weight: 600; }
+    .panel-cr-max { font-size: 11px; color: var(--text-muted); min-width: 40px; }
+    .panel-cr-input { width: 60px; text-align: center; font-size: 14px; font-weight: 700; }
+    .panel-team-select { margin: 12px 0; }
+  </style>
+</head>
+<body>
+  <div class="panel-page" id="panel-root">
+    <div class="panel-header">
+      <h2 style="margin:0">Panel Grading</h2>
+      <p style="opacity:.7;margin:4px 0 0;font-size:13px">Loading...</p>
+    </div>
+    <div class="panel-body"><p class="muted">Loading grading form...</p></div>
+  </div>
+  <script>
+    const token = new URLSearchParams(location.search).get('token');
+    if (!token) { document.getElementById('panel-root').innerHTML = '<p style="padding:40px;text-align:center;color:#dc2626">No access token provided.</p>'; }
+    else loadPanel();
+
+    async function loadPanel() {
+      try {
+        const resp = await fetch(`/api/panel-grade/${token}`);
+        if (!resp.ok) throw new Error('Invalid or expired link');
+        const data = await resp.json();
+        renderPanel(data);
+      } catch (e) {
+        document.getElementById('panel-root').innerHTML = `<div class="panel-header"><h2 style="margin:0">Access Error</h2></div><div class="panel-body"><p style="color:#dc2626">${e.message}</p></div>`;
+      }
+    }
+
+    function renderPanel(data) {
+      const rubric = data.rubric || [];
+      const teams = Object.keys(data.teams || {}).sort();
+      const scores = data.scores || {};
+
+      const teamOpts = teams.map(t => `<option value="${t}">Team ${t} — ${data.teams[t]?.name || ''}</option>`).join('');
+
+      document.getElementById('panel-root').innerHTML = `
+        <div class="panel-header">
+          <h2 style="margin:0">Panel Grading</h2>
+          <p style="opacity:.7;margin:4px 0 0;font-size:13px">Welcome, <strong>${data.panelist.name}</strong></p>
+        </div>
+        <div class="panel-body">
+          <div class="panel-team-select">
+            <label style="font-weight:700;color:#4B2E83">Select Team:</label>
+            <select class="input" id="panel-team" style="width:240px;margin-left:8px" onchange="renderTeamForm()">
+              <option value="">— Select —</option>
+              ${teamOpts}
+            </select>
+          </div>
+          <div id="panel-form"></div>
+        </div>`;
+
+      window._panelData = data;
+      window._panelScores = scores;
+    }
+
+    function renderTeamForm() {
+      const team = document.getElementById('panel-team').value;
+      const form = document.getElementById('panel-form');
+      if (!team) { form.innerHTML = '<p class="muted">Select a team to grade.</p>'; return; }
+
+      const rubric = window._panelData.rubric || [];
+      const teamScores = window._panelScores[`t${team}`] || {};
+
+      form.innerHTML = rubric.map(cr => `
+        <div class="panel-criterion">
+          <div class="panel-cr-name">${cr.name}</div>
+          <div class="panel-cr-max">/ ${cr.maxPoints}</div>
+          <input class="input panel-cr-input" type="number" min="0" max="${cr.maxPoints}"
+            value="${teamScores[cr.id] != null ? teamScores[cr.id] : ''}" placeholder="—"
+            data-team="${team}" data-cr="${cr.id}" data-max="${cr.maxPoints}"
+            onchange="onPanelScore(this)" />
+        </div>`).join('') +
+        `<div style="margin-top:14px;display:flex;gap:8px">
+          <button class="btn btn-primary" onclick="submitPanelScores()">Save Scores</button>
+          <span id="panel-status" class="muted" style="font-size:12px"></span>
+        </div>`;
+    }
+
+    function onPanelScore(input) {
+      const team = input.dataset.team;
+      const cr = input.dataset.cr;
+      let v = input.value.trim() === '' ? null : Math.max(0, Math.min(Number(input.dataset.max), Number(input.value)));
+      if (!window._panelScores[`t${team}`]) window._panelScores[`t${team}`] = {};
+      if (v === null) delete window._panelScores[`t${team}`][cr];
+      else window._panelScores[`t${team}`][cr] = v;
+    }
+
+    async function submitPanelScores() {
+      const status = document.getElementById('panel-status');
+      try {
+        const resp = await fetch(`/api/panel-grade/${token}`, {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(window._panelScores),
+        });
+        if (!resp.ok) throw new Error('Save failed');
+        if (status) { status.textContent = '✓ Saved!'; status.style.color = '#16a34a'; }
+      } catch (e) {
+        if (status) { status.textContent = 'Error: ' + e.message; status.style.color = '#dc2626'; }
+      }
+    }
+  </script>
+</body>
+</html>

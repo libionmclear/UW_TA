@@ -1048,6 +1048,10 @@ tbody td { padding: 7px 10px; vertical-align: middle; }
 }
 .part-student:active { cursor: grabbing; opacity: .7; }
 
+/* ── Panel Grading ──────────────────────────────────────────────────────────── */
+.panel-members { display: flex; flex-direction: column; gap: 4px; }
+.panel-member { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 12px; }
+
 /* ── Syncing Badge ──────────────────────────────────────────────────────────── */
 .syncing-badge {
   display: inline-flex; align-items: center; gap: 2px;

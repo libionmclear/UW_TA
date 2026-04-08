@@ -636,7 +636,9 @@ function showView(name) {
     case 'quiz':        renderQuizView(root); break;
     case 'content':     renderContentView(root); loadCourseContent(); break;
     case 'syllabus':    renderSyllabusView(root); break;
-    case 'manual':      renderManualView(root); break;
+    case 'panelgrading': renderPanelGradingView(root); break;
+    case 'peereval':     renderPeerEvalView(root); break;
+    case 'manual':       renderManualView(root); break;
     case 'caseparticipation': renderCaseParticipationView(root); break;
     case 'simparticipation': renderSimParticipationView(root); break;
     case 'classpresence': renderClassPresenceView(root); break;
@@ -4959,6 +4961,295 @@ function renderCaseParticipationView(root) {
         <tbody>${rows}</tbody>
       </table>
     </div>`;
+}
+
+/* ── Panel Grading (BETA) ───────────────────────────────────────────────────── */
+const PANEL_RUBRIC = [
+  { id: 'pr1', name: 'Understanding of buyer and why', maxPoints: 10 },
+  { id: 'pr2', name: 'Solid launch strategy', maxPoints: 10 },
+  { id: 'pr3', name: 'Promotional plan appropriate', maxPoints: 10 },
+  { id: 'pr4', name: 'Financial projections reasonable', maxPoints: 10 },
+  { id: 'pr5', name: 'Overall Structure & Demeanor', maxPoints: 5 },
+  { id: 'pr6', name: 'Executive Summary concise', maxPoints: 5 },
+  { id: 'pr7', name: 'Idea Generation process', maxPoints: 5 },
+  { id: 'pr8', name: 'Market Analysis', maxPoints: 5 },
+  { id: 'pr9', name: 'Gating & Success metrics', maxPoints: 5 },
+];
+const PANEL_TOTAL = PANEL_RUBRIC.reduce((s, c) => s + c.maxPoints, 0);
+
+let _panelData = null;
+let _panelTeam = 'all';
+
+async function renderPanelGradingView(root) {
+  root = root || document.getElementById('view-root');
+  try { _panelData = await GET('/api/panel-grading'); } catch { _panelData = { panelists: [], scores: {} }; }
+  if (!_panelData.rubric) _panelData.rubric = PANEL_RUBRIC;
+  _renderPanelUI(root);
+}
+
+function _renderPanelUI(root) {
+  root = root || document.getElementById('view-root');
+  const pg = _panelData;
+  const panelists = pg.panelists || [];
+  const teamNums = Object.keys(S.teamMeta).map(Number).sort((a, b) => a - b);
+
+  // Team selector
+  const teamOpts = `<option value="all" ${_panelTeam === 'all' ? 'selected' : ''}>All Teams</option>` +
+    teamNums.map(t => `<option value="${t}" ${String(_panelTeam) === String(t) ? 'selected' : ''}>Team ${t} — ${esc(S.teamMeta[String(t)]?.name || '')}</option>`).join('');
+
+  // Panelist management
+  const panelistRows = panelists.map((p, i) => {
+    const link = `${location.origin}/panel.html?token=${p.token}`;
+    return `<div class="panel-member">
+      <span style="font-weight:700">${esc(p.name)}</span>
+      <input class="input" style="font-size:10px;width:200px;padding:2px 4px" readonly value="${link}" onclick="this.select();navigator.clipboard.writeText(this.value);toast('Link copied!','success')" />
+      <button class="btn btn-ghost btn-danger" style="font-size:10px;padding:2px 6px" onclick="removePanelist(${i})">✕</button>
+    </div>`;
+  }).join('');
+
+  // Scoring table — show teams
+  const teamsToShow = _panelTeam === 'all' ? teamNums : [Number(_panelTeam)];
+  const students = S.allStudentsList.length ? S.allStudentsList : allStudents();
+
+  const teamBlocks = teamsToShow.map(tNum => {
+    const meta = S.teamMeta[String(tNum)] || {};
+    const members = students.filter(st => S.teams[st.id]?.team === tNum);
+
+    // Per-panelist columns
+    const headerCols = panelists.map(p => `<th style="text-align:center;font-size:10px;min-width:60px">${esc(p.name)}</th>`).join('');
+
+    const rubricRows = PANEL_RUBRIC.map(cr => {
+      const pScores = panelists.map(p => {
+        const score = pg.scores?.[p.id]?.[`t${tNum}`]?.[cr.id];
+        return `<td style="text-align:center">
+          <input class="input" type="number" min="0" max="${cr.maxPoints}" style="width:45px;text-align:center;font-size:11px;padding:2px"
+            value="${score != null ? score : ''}" placeholder="—"
+            onchange="panelScoreChange('${p.id}',${tNum},'${cr.id}',this.value,${cr.maxPoints})" />
+        </td>`;
+      }).join('');
+      // Average
+      const vals = panelists.map(p => pg.scores?.[p.id]?.[`t${tNum}`]?.[cr.id]).filter(v => v != null);
+      const avg = vals.length ? (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1) : '—';
+      return `<tr>
+        <td style="font-size:11px;font-weight:600">${esc(cr.name)}</td>
+        <td style="text-align:center;font-size:10px;color:var(--text-muted)">/${cr.maxPoints}</td>
+        ${pScores}
+        <td style="text-align:center;font-weight:700;color:var(--uw-purple)">${avg}</td>
+      </tr>`;
+    }).join('');
+
+    // Total row
+    const totalCols = panelists.map(p => {
+      const total = PANEL_RUBRIC.reduce((s, cr) => s + (pg.scores?.[p.id]?.[`t${tNum}`]?.[cr.id] || 0), 0);
+      return `<td style="text-align:center;font-weight:800;color:var(--uw-purple)">${total}</td>`;
+    }).join('');
+    const allTotals = panelists.map(p => PANEL_RUBRIC.reduce((s, cr) => s + (pg.scores?.[p.id]?.[`t${tNum}`]?.[cr.id] || 0), 0));
+    const grandAvg = allTotals.length ? (allTotals.reduce((a, b) => a + b, 0) / allTotals.length).toFixed(1) : '—';
+
+    return `<div class="card" style="margin-bottom:12px">
+      <div class="card-title">Team ${tNum} — ${esc(meta.name || '')}
+        <span class="muted" style="font-size:11px;margin-left:8px">${members.map(m => m.name?.split(' ')[0]).join(', ')}</span>
+      </div>
+      <div class="table-wrap"><table style="font-size:12px">
+        <thead><tr><th>Criterion</th><th>Max</th>${headerCols}<th style="text-align:center;background:var(--uw-gold);color:var(--uw-purple)">Avg</th></tr></thead>
+        <tbody>${rubricRows}
+          <tr style="background:var(--bg);font-weight:800"><td>TOTAL</td><td>/${PANEL_TOTAL}</td>${totalCols}<td style="text-align:center;font-size:15px;color:var(--uw-purple)">${grandAvg}</td></tr>
+        </tbody>
+      </table></div>
+    </div>`;
+  }).join('');
+
+  root.innerHTML = `
+    <div class="page-title">Panel Grading <span style="font-size:11px;background:#d97706;color:#fff;padding:2px 8px;border-radius:6px;margin-left:6px">BETA</span></div>
+
+    <div style="display:flex;gap:12px;align-items:center;margin-bottom:14px;flex-wrap:wrap">
+      <label style="font-weight:700;color:var(--uw-purple)">Team:</label>
+      <select class="input" style="width:240px" onchange="_panelTeam=this.value;_renderPanelUI()">${teamOpts}</select>
+    </div>
+
+    <!-- Panelists -->
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-title">Panel Members (up to 8)</div>
+      <div class="panel-members">${panelistRows || '<p class="muted">No panelists added yet.</p>'}</div>
+      <div style="display:flex;gap:6px;margin-top:8px;align-items:center">
+        <input class="input" id="panel-new-name" placeholder="Panelist name" style="width:160px" />
+        <button class="btn btn-surf" onclick="addPanelist()">+ Add Panelist</button>
+        <button class="btn btn-ghost" onclick="savePanelData()">Save All Scores</button>
+      </div>
+    </div>
+
+    ${teamBlocks}`;
+}
+
+async function addPanelist() {
+  const name = document.getElementById('panel-new-name')?.value?.trim();
+  if (!name) { toast('Enter a name.', 'warn'); return; }
+  if (_panelData.panelists.length >= 8) { toast('Max 8 panelists.', 'warn'); return; }
+  const token = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  _panelData.panelists.push({ id: 'p_' + token.slice(0, 6), name, token });
+  await savePanelData();
+  _renderPanelUI();
+}
+
+async function removePanelist(idx) {
+  if (!confirm('Remove this panelist?')) return;
+  _panelData.panelists.splice(idx, 1);
+  await savePanelData();
+  _renderPanelUI();
+}
+
+async function panelScoreChange(panelistId, teamNum, criterionId, value, max) {
+  let v = value.trim() === '' ? null : Math.max(0, Math.min(max, Number(value)));
+  if (!_panelData.scores) _panelData.scores = {};
+  if (!_panelData.scores[panelistId]) _panelData.scores[panelistId] = {};
+  if (!_panelData.scores[panelistId][`t${teamNum}`]) _panelData.scores[panelistId][`t${teamNum}`] = {};
+  if (v === null) delete _panelData.scores[panelistId][`t${teamNum}`][criterionId];
+  else _panelData.scores[panelistId][`t${teamNum}`][criterionId] = v;
+  await savePanelData();
+}
+
+async function savePanelData() {
+  try { await PUT('/api/panel-grading', _panelData); } catch (e) { toast('Save failed: ' + e.message, 'error'); }
+}
+
+/* ── Peer Evaluation (BETA) ────────────────────────────────────────────────── */
+let _peerData = null;
+
+async function renderPeerEvalView(root) {
+  root = root || document.getElementById('view-root');
+  try { _peerData = await GET('/api/peer-eval'); } catch { _peerData = { responses: {}, tokens: {} }; }
+  _renderPeerUI(root);
+}
+
+function _renderPeerUI(root) {
+  root = root || document.getElementById('view-root');
+  const students = S.allStudentsList.length ? S.allStudentsList : allStudents();
+  const teamNums = Object.keys(S.teamMeta).map(Number).sort((a, b) => a - b);
+  const responses = _peerData.responses || {};
+  const tokens = _peerData.tokens || {};
+
+  // Generate tokens if not exists
+  let needsSave = false;
+  teamNums.forEach(tNum => {
+    const members = students.filter(st => S.teams[st.id]?.team === tNum);
+    members.forEach(st => {
+      if (!Object.values(tokens).find(t => t.studentId === st.id)) {
+        const token = Date.now().toString(36) + Math.random().toString(36).slice(2, 8) + st.id;
+        tokens[token] = {
+          studentId: st.id, studentName: st.name, teamNum: tNum,
+          teamMembers: members.map(m => ({ id: m.id, name: m.name })),
+        };
+        needsSave = true;
+      }
+    });
+  });
+  if (needsSave) { _peerData.tokens = tokens; savePeerData(); }
+
+  // Results table
+  const rows = students.map(st => {
+    const teamNum = S.teams[st.id]?.team || 0;
+    const teamMembers = students.filter(m => S.teams[m.id]?.team === teamNum && m.id !== st.id);
+    const groupSize = teamMembers.length + 1;
+
+    // Gather ratings from teammates
+    const ratings = [];
+    let mostWorkVotes = 0, leastWorkVotes = 0;
+    teamMembers.forEach(tm => {
+      const r = responses[tm.id];
+      if (!r) return;
+      const rating = r.ratings?.[st.id];
+      if (rating != null) ratings.push(rating);
+      if (r.mostWork === st.id) mostWorkVotes++;
+      if (r.leastWork === st.id) leastWorkVotes++;
+    });
+
+    const avgRating = ratings.length ? (ratings.reduce((a, b) => a + b, 0) / ratings.length) : null;
+    const submitted = !!responses[st.id];
+
+    // Formula
+    const basePts = 2;
+    const ratingComponent = avgRating != null ? ((avgRating - 1) / 4) * 6 : 0;
+    const mostWorkBonus = groupSize > 1 ? (mostWorkVotes / (groupSize - 1)) * 2 : 0;
+    const leastWorkPenalty = (leastWorkVotes >= 2 && groupSize > 1) ? -((leastWorkVotes / (groupSize - 1)) * 2) : 0;
+    const submissionPenalty = submitted ? 0 : -1;
+    const rawScore = basePts + ratingComponent + mostWorkBonus + leastWorkPenalty + submissionPenalty;
+    const finalScore = Math.max(0, Math.min(10, rawScore));
+    const scaledScore = avgRating != null ? (finalScore / 10 * 20).toFixed(1) : '—';
+
+    return `<tr>
+      <td><span class="stu-avatar-wrap">${studentAvatar(st, 18)}<strong>${esc(st.name)}</strong></span></td>
+      <td style="text-align:center">Team ${teamNum}</td>
+      <td style="text-align:center;font-weight:700">${avgRating != null ? avgRating.toFixed(2) : '—'}</td>
+      <td style="text-align:center">${avgRating != null ? (ratingComponent).toFixed(1) : '—'}</td>
+      <td style="text-align:center">${mostWorkVotes}</td>
+      <td style="text-align:center;color:var(--success)">${mostWorkBonus.toFixed(1)}</td>
+      <td style="text-align:center">${leastWorkVotes}</td>
+      <td style="text-align:center;color:${leastWorkPenalty < 0 ? 'var(--danger)' : 'var(--text-muted)'}">${leastWorkPenalty.toFixed(1)}</td>
+      <td style="text-align:center">${submitted ? '<span class="status-badge status--graded">Yes</span>' : '<span class="status-badge status--late">NO</span>'}</td>
+      <td style="text-align:center;color:${submissionPenalty < 0 ? 'var(--danger)' : ''}">${submissionPenalty}</td>
+      <td style="text-align:center;font-weight:800;color:var(--uw-purple)">${avgRating != null ? finalScore.toFixed(2) : '—'}</td>
+      <td style="text-align:center;font-weight:800;font-size:14px;color:var(--uw-purple)">${scaledScore}</td>
+    </tr>`;
+  }).join('');
+
+  // Count responses
+  const totalStudents = students.length;
+  const responded = Object.keys(responses).length;
+
+  // Links list
+  const linksList = Object.entries(tokens).slice(0, 5).map(([token, t]) => {
+    const link = `${location.origin}/peer-eval.html?token=${token}`;
+    return `<div style="display:flex;gap:6px;align-items:center;font-size:11px;margin-bottom:3px">
+      <span style="min-width:120px">${esc(t.studentName)}</span>
+      <input class="input" style="font-size:10px;flex:1;padding:2px 4px" readonly value="${link}" onclick="this.select();navigator.clipboard.writeText(this.value);toast('Copied!','success')" />
+    </div>`;
+  }).join('');
+
+  root.innerHTML = `
+    <div class="page-title">Peer Evaluation <span style="font-size:11px;background:#d97706;color:#fff;padding:2px 8px;border-radius:6px;margin-left:6px">BETA</span></div>
+
+    <div class="asgn-stat-cards" style="margin-bottom:14px">
+      <div class="asgn-stat-card" style="border-left-color:var(--uw-purple)"><div class="asgn-stat-value">${totalStudents}</div><div class="asgn-stat-label">Students</div></div>
+      <div class="asgn-stat-card" style="border-left-color:var(--success)"><div class="asgn-stat-value">${responded}</div><div class="asgn-stat-label">Responded</div></div>
+      <div class="asgn-stat-card" style="border-left-color:var(--danger)"><div class="asgn-stat-value">${totalStudents - responded}</div><div class="asgn-stat-label">Pending</div></div>
+    </div>
+
+    <!-- Student Links -->
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-title">Student Evaluation Links
+        <span class="card-title-hint">Each student gets a unique link — click to copy</span>
+      </div>
+      ${linksList}
+      ${Object.keys(tokens).length > 5 ? `<p class="muted" style="font-size:11px">…and ${Object.keys(tokens).length - 5} more. <button class="link-btn" onclick="showAllPeerLinks()">Show all</button></p>` : ''}
+    </div>
+
+    <!-- Results -->
+    <div class="card">
+      <div class="card-title">Peer Evaluation Results</div>
+      <p class="muted" style="margin-bottom:8px;font-size:11px">Base (2) + Rating Component (0-6) + Most Work Bonus (0-2) + Least Work Penalty (0 to -2) + Submission Penalty (0 or -1)</p>
+      <div class="table-wrap"><table style="font-size:11px">
+        <thead><tr>
+          <th>Student</th><th>Team</th><th>Avg Rating</th><th>Rating Pts</th>
+          <th>Most Votes</th><th>Bonus</th><th>Least Votes</th><th>Penalty</th>
+          <th>Submitted</th><th>Sub Pen.</th><th>Raw /10</th><th>Scaled /20</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>
+    </div>`;
+}
+
+function showAllPeerLinks() {
+  const tokens = _peerData.tokens || {};
+  const all = Object.entries(tokens).map(([token, t]) => {
+    const link = `${location.origin}/peer-eval.html?token=${token}`;
+    return `${t.studentName}: ${link}`;
+  }).join('\n');
+  const w = window.open('', '_blank');
+  w.document.write(`<pre style="font-size:12px;padding:20px">${esc(all)}</pre>`);
+}
+
+async function savePeerData() {
+  try { await PUT('/api/peer-eval', _peerData); } catch (e) { toast('Save failed: ' + e.message, 'error'); }
 }
 
 /* ── Canvas Grade Sync ───────────────────────────────────────────────────────── */

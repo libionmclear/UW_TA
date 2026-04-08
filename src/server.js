@@ -68,7 +68,7 @@ function requireAuth(req, res, next) {
 }
 
 app.use((req, res, next) => {
-  if (req.path === '/login.html' || req.path.startsWith('/auth/')) return next();
+  if (req.path === '/login.html' || req.path === '/panel.html' || req.path === '/peer-eval.html' || req.path.startsWith('/auth/') || req.path.startsWith('/api/panel-grade/') || req.path.startsWith('/api/peer-eval-submit/')) return next();
   requireAuth(req, res, next);
 });
 
@@ -963,6 +963,71 @@ app.post('/api/user-photo/:username', requireAuth, upload.single('photo'), (req,
   store.photos[key] = { data: req.file.buffer.toString('base64'), mime: req.file.mimetype || 'image/jpeg' };
   save();
   console.log(`  ✓ User photo saved for ${key} (${req.file.buffer.length} bytes)`);
+  ok(res, { ok: true });
+});
+
+// ── Panel Grading ────────────────────────────────────────────────────────────
+if (!store.panelGrading) store.panelGrading = { panelists: [], scores: {} };
+app.get('/api/panel-grading', requireAuth, (_req, res) => ok(res, store.panelGrading));
+app.put('/api/panel-grading', requireAuth, (req, res) => {
+  store.panelGrading = req.body;
+  save();
+  ok(res, store.panelGrading);
+});
+
+// External panel access via token
+app.get('/api/panel-grade/:token', (req, res) => {
+  const pg = store.panelGrading;
+  const panelist = (pg.panelists || []).find(p => p.token === req.params.token);
+  if (!panelist) return fail(res, { message: 'Invalid or expired link' }, 404);
+  // Return rubric + teams + this panelist's scores only
+  ok(res, {
+    panelist: { name: panelist.name, id: panelist.id },
+    rubric: pg.rubric || [],
+    teams: pg.teams || {},
+    scores: (pg.scores || {})[panelist.id] || {},
+  });
+});
+app.put('/api/panel-grade/:token', (req, res) => {
+  const pg = store.panelGrading;
+  const panelist = (pg.panelists || []).find(p => p.token === req.params.token);
+  if (!panelist) return fail(res, { message: 'Invalid link' }, 404);
+  if (!pg.scores) pg.scores = {};
+  pg.scores[panelist.id] = req.body;
+  save();
+  ok(res, { ok: true });
+});
+
+// ── Peer Evaluation ──────────────────────────────────────────────────────────
+if (!store.peerEval) store.peerEval = { responses: {}, tokens: {} };
+app.get('/api/peer-eval', requireAuth, (_req, res) => ok(res, store.peerEval));
+app.put('/api/peer-eval', requireAuth, (req, res) => {
+  store.peerEval = req.body;
+  save();
+  ok(res, store.peerEval);
+});
+// External peer eval access
+app.get('/api/peer-eval-submit/:token', (req, res) => {
+  const pe = store.peerEval;
+  const tokenData = (pe.tokens || {})[req.params.token];
+  if (!tokenData) return fail(res, { message: 'Invalid link' }, 404);
+  // Return this student's team members (excluding self) + any existing response
+  const teamMembers = (tokenData.teamMembers || []).filter(m => m.id !== tokenData.studentId);
+  ok(res, {
+    studentName: tokenData.studentName,
+    studentId: tokenData.studentId,
+    teamNum: tokenData.teamNum,
+    teamMembers,
+    existingResponse: (pe.responses || {})[tokenData.studentId] || null,
+  });
+});
+app.post('/api/peer-eval-submit/:token', (req, res) => {
+  const pe = store.peerEval;
+  const tokenData = (pe.tokens || {})[req.params.token];
+  if (!tokenData) return fail(res, { message: 'Invalid link' }, 404);
+  if (!pe.responses) pe.responses = {};
+  pe.responses[tokenData.studentId] = { ...req.body, submittedAt: new Date().toISOString() };
+  save();
   ok(res, { ok: true });
 });
 

@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Peer Evaluation — UW TA Companion</title>
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    body { background: var(--bg); padding: 20px; }
+    .pe-page { max-width: 600px; margin: 0 auto; }
+    .pe-header { background: var(--uw-purple); color: #fff; padding: 16px 20px; border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
+    .pe-body { background: var(--surface); padding: 20px; border-radius: 0 0 var(--radius-lg) var(--radius-lg); box-shadow: var(--shadow-lg); }
+    .pe-member { padding: 12px; border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 8px; }
+    .pe-member-name { font-weight: 700; font-size: 14px; color: var(--uw-purple); margin-bottom: 6px; }
+    .pe-rating { display: flex; gap: 6px; align-items: center; }
+    .pe-rating label { font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 3px; }
+    .pe-question { margin: 16px 0; padding: 12px; background: var(--bg); border-radius: var(--radius); }
+    .pe-q-title { font-weight: 700; font-size: 13px; color: var(--uw-purple); margin-bottom: 6px; }
+    .pe-success { text-align: center; padding: 40px; color: var(--success); font-size: 18px; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <div class="pe-page" id="pe-root">
+    <div class="pe-header">
+      <h2 style="margin:0">Peer Evaluation</h2>
+      <p style="opacity:.7;margin:4px 0 0;font-size:13px">Loading...</p>
+    </div>
+    <div class="pe-body"><p class="muted">Loading evaluation form...</p></div>
+  </div>
+  <script>
+    const token = new URLSearchParams(location.search).get('token');
+    if (!token) { document.getElementById('pe-root').innerHTML = '<p style="padding:40px;text-align:center;color:#dc2626">No access token provided.</p>'; }
+    else loadPeerEval();
+
+    let _peData = null;
+
+    async function loadPeerEval() {
+      try {
+        const resp = await fetch(`/api/peer-eval-submit/${token}`);
+        if (!resp.ok) throw new Error('Invalid or expired link');
+        _peData = await resp.json();
+        if (_peData.existingResponse) renderAlreadySubmitted();
+        else renderForm();
+      } catch (e) {
+        document.getElementById('pe-root').innerHTML = `<div class="pe-header"><h2 style="margin:0">Access Error</h2></div><div class="pe-body"><p style="color:#dc2626">${e.message}</p></div>`;
+      }
+    }
+
+    function renderAlreadySubmitted() {
+      document.getElementById('pe-root').innerHTML = `
+        <div class="pe-header"><h2 style="margin:0">Peer Evaluation</h2><p style="opacity:.7;margin:4px 0 0;font-size:13px">${_peData.studentName} — Team ${_peData.teamNum}</p></div>
+        <div class="pe-body"><div class="pe-success">✓ You have already submitted your evaluation.<br><span style="font-size:13px;color:var(--text-muted)">Submitted at ${new Date(_peData.existingResponse.submittedAt).toLocaleString()}</span></div></div>`;
+    }
+
+    function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+    function renderForm() {
+      const members = _peData.teamMembers || [];
+
+      const memberRatings = members.map(m => `
+        <div class="pe-member">
+          <div class="pe-member-name">${esc(m.name)}</div>
+          <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">Rate this teammate's overall contribution (1=poor, 5=excellent):</div>
+          <div class="pe-rating">
+            ${[1,2,3,4,5].map(v => `<label><input type="radio" name="rate_${m.id}" value="${v}" /> ${v}</label>`).join('')}
+          </div>
+        </div>`).join('');
+
+      const mostWorkOpts = members.map(m => `<option value="${m.id}">${esc(m.name)}</option>`).join('');
+
+      document.getElementById('pe-root').innerHTML = `
+        <div class="pe-header">
+          <h2 style="margin:0">Peer Evaluation</h2>
+          <p style="opacity:.7;margin:4px 0 0;font-size:13px">${esc(_peData.studentName)} — Team ${_peData.teamNum}</p>
+        </div>
+        <div class="pe-body">
+          <p style="font-size:13px;margin-bottom:14px;line-height:1.5">Rate each of your teammates on their contribution to the group project. Your responses are <strong>completely confidential</strong> — no one will see your individual ratings.</p>
+
+          <h3 style="font-size:14px;color:var(--uw-purple)">Q1: Rate each teammate (1-5)</h3>
+          ${memberRatings}
+
+          <div class="pe-question">
+            <div class="pe-q-title">Q2: Who did the MOST work on the project?</div>
+            <select class="input" id="pe-most-work"><option value="">— Select —</option>${mostWorkOpts}</select>
+          </div>
+
+          <div class="pe-question">
+            <div class="pe-q-title">Q3: Who did the LEAST work on the project?</div>
+            <select class="input" id="pe-least-work"><option value="">— Select —</option>${mostWorkOpts}</select>
+          </div>
+
+          <div style="margin-top:16px;display:flex;gap:8px;align-items:center">
+            <button class="btn btn-primary" style="font-size:14px;padding:10px 24px" onclick="submitPeerEval()">Submit Evaluation</button>
+            <span id="pe-status" class="muted" style="font-size:12px"></span>
+          </div>
+        </div>`;
+    }
+
+    async function submitPeerEval() {
+      const members = _peData.teamMembers || [];
+      const ratings = {};
+      let allRated = true;
+      members.forEach(m => {
+        const checked = document.querySelector(`input[name="rate_${m.id}"]:checked`);
+        if (checked) ratings[m.id] = Number(checked.value);
+        else allRated = false;
+      });
+
+      if (!allRated) { document.getElementById('pe-status').textContent = 'Please rate all teammates.'; return; }
+
+      const mostWork = document.getElementById('pe-most-work').value;
+      const leastWork = document.getElementById('pe-least-work').value;
+
+      const status = document.getElementById('pe-status');
+      try {
+        const resp = await fetch(`/api/peer-eval-submit/${token}`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ratings, mostWork, leastWork }),
+        });
+        if (!resp.ok) throw new Error('Submit failed');
+        document.getElementById('pe-root').innerHTML = `
+          <div class="pe-header"><h2 style="margin:0">Peer Evaluation</h2></div>
+          <div class="pe-body"><div class="pe-success">✓ Thank you! Your evaluation has been submitted.<br><span style="font-size:13px;color:var(--text-muted)">Your responses are confidential.</span></div></div>`;
+      } catch (e) {
+        if (status) { status.textContent = 'Error: ' + e.message; status.style.color = '#dc2626'; }
+      }
+    }
+  </script>
+</body>
+</html>
