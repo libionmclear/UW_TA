@@ -1123,6 +1123,49 @@ tbody td { padding: 7px 10px; vertical-align: middle; }
 }
 .manage-photo-btn:hover { filter: brightness(1.1); }
 
+/* ── Rompipalle Competition ─────────────────────────────────────────────────── */
+.nav-btn-rompipalle {
+  background: #bfdbfe !important; color: #1d4ed8 !important; font-weight: 800 !important;
+  font-size: 13px !important; padding: 10px 12px !important; border-radius: var(--radius) !important;
+  margin-top: 6px;
+}
+.nav-btn-rompipalle:hover { background: #93c5fd !important; }
+.nav-btn-rompipalle.active { background: #2563eb !important; color: #fff !important; }
+.nav-btn-rompipalle .nav-icon { color: inherit !important; }
+
+.rompi-podium {
+  display: flex; justify-content: center; align-items: flex-end; gap: 16px;
+  margin-bottom: 20px; padding: 20px 0;
+}
+.rompi-podium-spot { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.rompi-podium-photo { margin-bottom: 4px; }
+.rompi-podium-name { font-size: 13px; font-weight: 700; color: var(--text); }
+.rompi-podium-votes { font-size: 12px; font-weight: 800; color: var(--uw-purple); }
+.rompi-pedestal {
+  font-size: 14px; font-weight: 900; color: #fff; padding: 8px 20px;
+  border-radius: var(--radius) var(--radius) 0 0; min-width: 70px; text-align: center;
+}
+.rompi-pedestal-1 { background: #eab308; height: 60px; display: grid; place-items: center; }
+.rompi-pedestal-2 { background: #94a3b8; height: 40px; display: grid; place-items: center; }
+.rompi-pedestal-3 { background: #b45309; height: 28px; display: grid; place-items: center; }
+.rompi-prize { font-size: 24px; margin-top: 4px; }
+.rompi-1st .rompi-podium-name { font-size: 15px; }
+
+.rompi-roster {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px;
+}
+.rompi-student {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 12px 6px; border-radius: var(--radius-lg); cursor: pointer;
+  background: var(--bg); border: 2px solid var(--border); transition: all .15s;
+  text-align: center;
+}
+.rompi-student:hover { border-color: var(--uw-purple); background: #f5f3ff; transform: scale(1.05); }
+.rompi-student:active { transform: scale(0.95); }
+.rompi-student-photo { margin-bottom: 2px; }
+.rompi-student-name { font-size: 10px; font-weight: 600; color: var(--text); line-height: 1.2; min-height: 24px; }
+.rompi-student-votes { font-size: 14px; font-weight: 900; color: var(--uw-purple); }
+
 /* ── Misc ────────────────────────────────────────────────────────────────────── */
 .muted   { color: var(--text-muted); font-size: 13px; }
 .padded  { padding: 12px 0; }

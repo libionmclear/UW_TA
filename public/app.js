@@ -640,6 +640,7 @@ function showView(name) {
     case 'surveycreator': renderSurveyCreatorView(root); break;
     case 'peereval':     renderPeerEvalView(root); break;
     case 'manual':       renderManualView(root); break;
+    case 'rompipalle':   renderRompipalleView(root); break;
     case 'caseparticipation': renderCaseParticipationView(root); break;
     case 'simparticipation': renderSimParticipationView(root); break;
     case 'classpresence': renderClassPresenceView(root); break;
@@ -5491,6 +5492,7 @@ function _renderPeerUI(root) {
     <div class="card" style="margin-bottom:14px">
       <div class="card-title">Student Evaluation Links
         <span class="card-title-hint">Each student gets a unique link — click to copy</span>
+        <button class="btn btn-surf" style="font-size:11px;padding:3px 10px;margin-left:auto" onclick="sendPeerEvalViaCanvas()">✉ Send All via Canvas</button>
       </div>
       ${linksList}
       ${Object.keys(tokens).length > 5 ? `<p class="muted" style="font-size:11px">…and ${Object.keys(tokens).length - 5} more. <button class="link-btn" onclick="showAllPeerLinks()">Show all</button></p>` : ''}
@@ -5521,8 +5523,101 @@ function showAllPeerLinks() {
   w.document.write(`<pre style="font-size:12px;padding:20px">${esc(all)}</pre>`);
 }
 
+async function sendPeerEvalViaCanvas() {
+  const pending = Object.keys(_peerData.tokens || {}).length - Object.keys(_peerData.responses || {}).length;
+  if (!confirm(`Send peer evaluation links to ${pending} students who haven't responded yet via Canvas Messages?`)) return;
+  toast('Sending peer eval links via Canvas...');
+  try {
+    const res = await POST('/api/peer-eval/send-links', { baseUrl: location.origin });
+    toast(`Sent ${res.sent} messages!${res.errors ? ` (${res.errors} failed)` : ''}`, 'success');
+  } catch (e) { toast('Send failed: ' + e.message, 'error'); }
+}
+
 async function savePeerData() {
   try { await PUT('/api/peer-eval', _peerData); } catch (e) { toast('Save failed: ' + e.message, 'error'); }
+}
+
+/* ── Rompipalle Competition ─────────────────────────────────────────────────── */
+let _rompiData = {};
+
+async function renderRompipalleView(root) {
+  root = root || document.getElementById('view-root');
+  try { _rompiData = await GET('/api/rompipalle'); } catch { _rompiData = {}; }
+  _renderRompiUI(root);
+}
+
+function _renderRompiUI(root) {
+  root = root || document.getElementById('view-root');
+  const students = S.allStudentsList.length ? S.allStudentsList : allStudents();
+
+  // Sort by votes descending for podium
+  const ranked = students.map(st => ({ ...st, votes: _rompiData[st.id] || 0 })).sort((a, b) => b.votes - a.votes);
+  const first = ranked[0];
+  const second = ranked[1];
+  const third = ranked[2];
+
+  // Podium
+  const podiumHtml = `
+    <div class="rompi-podium">
+      <div class="rompi-podium-spot rompi-2nd">
+        <div class="rompi-podium-photo">${second ? studentAvatar(second, 50) : ''}</div>
+        <div class="rompi-podium-name">${second ? esc(second.name.split(' ')[0]) : '—'}</div>
+        <div class="rompi-podium-votes">${second ? second.votes : 0} pts</div>
+        <div class="rompi-pedestal rompi-pedestal-2">2nd</div>
+        <div class="rompi-prize">📦💥</div>
+      </div>
+      <div class="rompi-podium-spot rompi-1st">
+        <div class="rompi-podium-photo">${first ? studentAvatar(first, 60) : ''}</div>
+        <div class="rompi-podium-name">${first ? esc(first.name.split(' ')[0]) : '—'}</div>
+        <div class="rompi-podium-votes">${first ? first.votes : 0} pts</div>
+        <div class="rompi-pedestal rompi-pedestal-1">1st</div>
+        <div class="rompi-prize">🏆🎾🎾</div>
+      </div>
+      <div class="rompi-podium-spot rompi-3rd">
+        <div class="rompi-podium-photo">${third ? studentAvatar(third, 45) : ''}</div>
+        <div class="rompi-podium-name">${third ? esc(third.name.split(' ')[0]) : '—'}</div>
+        <div class="rompi-podium-votes">${third ? third.votes : 0} pts</div>
+        <div class="rompi-pedestal rompi-pedestal-3">3rd</div>
+        <div class="rompi-prize">🥱😴</div>
+      </div>
+    </div>`;
+
+  // Student roster grid
+  const rosterHtml = ranked.map(st => `
+    <div class="rompi-student" onclick="rompiVote('${esc(st.id)}')">
+      <div class="rompi-student-photo">${studentAvatar(st, 56)}</div>
+      <div class="rompi-student-name">${esc(st.name.split(' ')[0])}<br>${esc(st.name.split(' ').slice(1).join(' '))}</div>
+      <div class="rompi-student-votes">${st.votes} pts</div>
+    </div>`).join('');
+
+  root.innerHTML = `
+    <div class="page-title">🏆 Rompipalle Competition
+      <div class="page-actions">
+        <button class="btn btn-ghost" onclick="renderRompipalleView()">⟳ Refresh</button>
+        <button class="btn btn-ghost btn-danger" onclick="rompiReset()">Reset All Votes</button>
+      </div>
+    </div>
+    ${podiumHtml}
+    <div class="card">
+      <div class="card-title">Roster — Click a student to give them a point!</div>
+      <div class="rompi-roster">${rosterHtml}</div>
+    </div>`;
+}
+
+async function rompiVote(studentId) {
+  if (!_rompiData[studentId]) _rompiData[studentId] = 0;
+  _rompiData[studentId]++;
+  await PUT('/api/rompipalle', _rompiData);
+  _renderRompiUI();
+  toast('+1 point!', 'success');
+}
+
+async function rompiReset() {
+  if (!confirm('Reset all Rompipalle votes to zero?')) return;
+  _rompiData = {};
+  await PUT('/api/rompipalle', _rompiData);
+  _renderRompiUI();
+  toast('All votes reset.', 'success');
 }
 
 /* ── Canvas Grade Sync ───────────────────────────────────────────────────────── */

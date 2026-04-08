@@ -1006,6 +1006,24 @@ app.put('/api/peer-eval', requireAuth, (req, res) => {
   save();
   ok(res, store.peerEval);
 });
+// Send peer eval links via Canvas
+app.post('/api/peer-eval/send-links', requireAuth, async (req, res) => {
+  const pe = store.peerEval;
+  const tokens = pe.tokens || {};
+  const responses = pe.responses || {};
+  const baseUrl = req.body.baseUrl || `${req.protocol}://${req.get('host')}`;
+  let sent = 0, errors = 0;
+  for (const [token, t] of Object.entries(tokens)) {
+    if (responses[t.studentId]) continue;
+    const link = `${baseUrl}/peer-eval.html?token=${token}`;
+    try {
+      await canvas.sendMessage([t.studentId], 'Peer Evaluation', `Hi ${t.studentName},\n\nPlease complete your confidential peer evaluation for your team project.\n\nClick here: ${link}\n\nYour responses are completely confidential — no one will see your individual ratings.\n\nThank you!`);
+      sent++;
+    } catch { errors++; }
+  }
+  ok(res, { sent, errors });
+});
+
 // External peer eval access
 app.get('/api/peer-eval-submit/:token', (req, res) => {
   const pe = store.peerEval;
@@ -1125,6 +1143,15 @@ app.post('/api/survey-submit/:surveyId/:token', (req, res) => {
   survey.responses[tokenData.studentId] = { answers: req.body.answers, submittedAt: new Date().toISOString(), score, totalPossible };
   save();
   ok(res, { ok: true, score, totalPossible });
+});
+
+// ── Rompipalle Competition ───────────────────────────────────────────────────
+if (!store.rompipalle) store.rompipalle = {};
+app.get('/api/rompipalle', requireAuth, (_req, res) => ok(res, store.rompipalle));
+app.put('/api/rompipalle', requireAuth, (req, res) => {
+  store.rompipalle = req.body;
+  save();
+  ok(res, store.rompipalle);
 });
 
 // ── Data Backup/Restore ──────────────────────────────────────────────────────
