@@ -4979,6 +4979,7 @@ async function renderSurveyCreatorView(root) {
         <div style="margin-left:auto;display:flex;gap:6px">
           <button class="btn btn-ghost" style="font-size:11px;padding:3px 8px" onclick="viewSurveyResults('${esc(s.id)}')">Results (${responded}/${total})</button>
           <button class="btn btn-ghost" style="font-size:11px;padding:3px 8px" onclick="viewSurveyLinks('${esc(s.id)}')">Links</button>
+          <button class="btn btn-surf" style="font-size:11px;padding:3px 8px" onclick="sendSurveyLinksViaCanvas('${esc(s.id)}')">✉ Send via Canvas</button>
           <button class="btn btn-ghost btn-danger" style="font-size:11px;padding:3px 8px" onclick="deleteSurvey('${esc(s.id)}')">✕</button>
         </div>
       </div>
@@ -4988,7 +4989,7 @@ async function renderSurveyCreatorView(root) {
   }).join('');
 
   root.innerHTML = `
-    <div class="page-title">Surveys <span style="font-size:11px;background:#d97706;color:#fff;padding:2px 8px;border-radius:6px;margin-left:6px">BETA</span></div>
+    <div class="page-title">Surveys & Quizzes <span style="font-size:11px;background:#d97706;color:#fff;padding:2px 8px;border-radius:6px;margin-left:6px">BETA</span></div>
 
     <!-- Existing surveys -->
     ${surveyCards || '<p class="muted" style="margin-bottom:14px">No surveys created yet.</p>'}
@@ -5028,28 +5029,73 @@ function addSurveyQuestion() {
   const div = document.createElement('div');
   div.className = 'srv-q-row';
   div.innerHTML = `
-    <div style="display:flex;gap:6px;align-items:flex-start;margin-bottom:8px">
+    <div style="display:flex;gap:6px;align-items:flex-start;margin-bottom:10px;padding:8px;background:var(--bg);border-radius:var(--radius)">
       <span style="font-weight:700;color:var(--uw-purple);min-width:20px">Q${_srvQCount}</span>
       <div style="flex:1">
         <input class="input srv-q-text" placeholder="Question text" style="margin-bottom:4px" />
         <div style="display:flex;gap:8px;align-items:center;margin-bottom:4px">
-          <select class="input srv-q-type" style="width:140px;font-size:11px">
+          <select class="input srv-q-type" style="width:140px;font-size:11px" onchange="srvTypeChanged(this)">
             <option value="text">Short Answer</option>
             <option value="textarea">Long Answer</option>
             <option value="rating">Rating (1-5)</option>
             <option value="yesno">Yes / No</option>
+            <option value="truefalse">True / False</option>
             <option value="choice">Multiple Choice</option>
           </select>
-          <input class="input srv-q-choices" placeholder="Choices (comma separated, for MC only)" style="flex:1;font-size:11px" />
+          <input class="input srv-q-choices" placeholder="Choices (comma separated)" style="flex:1;font-size:11px" />
         </div>
+        <div class="srv-q-mc-correct" style="display:none;margin-bottom:4px"></div>
         <div class="srv-q-quiz-fields" style="display:flex;gap:8px;align-items:center">
-          <input class="input srv-q-answer" placeholder="Correct answer (for quiz)" style="flex:1;font-size:11px" />
+          <input class="input srv-q-answer" placeholder="Correct answer (for quiz, text/rating)" style="flex:1;font-size:11px" />
           <input class="input srv-q-points" type="number" min="0" placeholder="Pts" style="width:55px;font-size:11px;text-align:center" />
         </div>
       </div>
       <button class="btn btn-ghost btn-danger" style="font-size:11px;padding:2px 6px" onclick="this.closest('.srv-q-row').remove()">✕</button>
     </div>`;
   wrap.appendChild(div);
+}
+
+function srvTypeChanged(select) {
+  const row = select.closest('.srv-q-row');
+  const type = select.value;
+  const mcCorrect = row.querySelector('.srv-q-mc-correct');
+  const choicesInput = row.querySelector('.srv-q-choices');
+  const answerInput = row.querySelector('.srv-q-answer');
+
+  if (type === 'truefalse') {
+    mcCorrect.style.display = 'block';
+    mcCorrect.innerHTML = `<span style="font-size:11px;font-weight:600;color:var(--uw-purple)">Correct answer:</span>
+      <label style="font-size:11px;margin-left:8px"><input type="radio" name="mc_${Date.now()}" class="srv-mc-correct" value="True" /> True</label>
+      <label style="font-size:11px;margin-left:6px"><input type="radio" name="mc_${Date.now()}" class="srv-mc-correct" value="False" /> False</label>`;
+    answerInput.style.display = 'none';
+    choicesInput.style.display = 'none';
+  } else if (type === 'choice') {
+    // Show choices input, and when they type choices, show radio buttons for correct
+    mcCorrect.style.display = 'block';
+    mcCorrect.innerHTML = '<span class="muted" style="font-size:10px">Type choices above, then select the correct one here</span>';
+    answerInput.style.display = 'none';
+    choicesInput.style.display = '';
+    choicesInput.oninput = () => {
+      const choices = choicesInput.value.split(',').map(c => c.trim()).filter(Boolean);
+      if (choices.length) {
+        const radioName = 'mc_' + Date.now();
+        mcCorrect.innerHTML = `<span style="font-size:11px;font-weight:600;color:var(--uw-purple)">Correct:</span> ` +
+          choices.map(c => `<label style="font-size:11px;margin-left:6px"><input type="radio" name="${radioName}" class="srv-mc-correct" value="${esc(c)}" /> ${esc(c)}</label>`).join('');
+      }
+    };
+  } else if (type === 'yesno') {
+    mcCorrect.style.display = 'block';
+    mcCorrect.innerHTML = `<span style="font-size:11px;font-weight:600;color:var(--uw-purple)">Correct answer:</span>
+      <label style="font-size:11px;margin-left:8px"><input type="radio" name="mc_${Date.now()}" class="srv-mc-correct" value="Yes" /> Yes</label>
+      <label style="font-size:11px;margin-left:6px"><input type="radio" name="mc_${Date.now()}" class="srv-mc-correct" value="No" /> No</label>`;
+    answerInput.style.display = 'none';
+    choicesInput.style.display = 'none';
+  } else {
+    mcCorrect.style.display = 'none';
+    mcCorrect.innerHTML = '';
+    answerInput.style.display = '';
+    choicesInput.style.display = type === 'text' || type === 'textarea' ? 'none' : '';
+  }
 }
 
 async function createSurvey() {
@@ -5066,11 +5112,17 @@ async function createSurvey() {
     const text = row.querySelector('.srv-q-text')?.value?.trim();
     const type = row.querySelector('.srv-q-type')?.value || 'text';
     const choices = row.querySelector('.srv-q-choices')?.value?.trim();
-    const answer = row.querySelector('.srv-q-answer')?.value?.trim() || '';
+    // Get correct answer: from MC/TF radio or from text input
+    const mcChecked = row.querySelector('.srv-mc-correct:checked');
+    const answerText = row.querySelector('.srv-q-answer')?.value?.trim() || '';
+    const answer = mcChecked ? mcChecked.value : answerText;
     const points = Number(row.querySelector('.srv-q-points')?.value) || 0;
+    const qChoices = type === 'choice' ? choices.split(',').map(c => c.trim()).filter(Boolean)
+                   : type === 'truefalse' ? ['True', 'False']
+                   : type === 'yesno' ? ['Yes', 'No'] : [];
     if (text) questions.push({
-      text, type,
-      choices: type === 'choice' ? choices.split(',').map(c => c.trim()).filter(Boolean) : [],
+      text, type: type === 'truefalse' ? 'choice' : type,
+      choices: qChoices,
       correctAnswer: isQuiz ? answer : '',
       points: isQuiz ? points : 0,
     });
@@ -5089,6 +5141,18 @@ async function createSurvey() {
     toast('Survey created with links for all students!', 'success');
     renderSurveyCreatorView();
   } catch (e) { toast('Create failed: ' + e.message, 'error'); }
+}
+
+async function sendSurveyLinksViaCanvas(id) {
+  const survey = _surveys.find(s => s.id === id);
+  if (!survey) return;
+  const pending = Object.keys(survey.tokens || {}).length - Object.keys(survey.responses || {}).length;
+  if (!confirm(`Send ${survey.isQuiz ? 'quiz' : 'survey'} links to ${pending} students who haven't responded yet via Canvas Messages?`)) return;
+  toast('Sending links via Canvas...');
+  try {
+    const res = await POST(`/api/surveys/${id}/send-links`, { baseUrl: location.origin });
+    toast(`Sent ${res.sent} messages via Canvas!${res.errors ? ` (${res.errors} failed)` : ''}`, 'success');
+  } catch (e) { toast('Send failed: ' + e.message, 'error'); }
 }
 
 async function deleteSurvey(id) {

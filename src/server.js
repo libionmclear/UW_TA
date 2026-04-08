@@ -1063,6 +1063,27 @@ app.delete('/api/surveys/:id', requireAuth, (req, res) => {
   save();
   ok(res, { ok: true });
 });
+// Send survey links via Canvas messages
+app.post('/api/surveys/:id/send-links', requireAuth, async (req, res) => {
+  const survey = store.surveys.find(s => s.id === req.params.id);
+  if (!survey) return fail(res, { message: 'Survey not found' }, 404);
+  const tokens = survey.tokens || {};
+  const baseUrl = req.body.baseUrl || `${req.protocol}://${req.get('host')}`;
+  let sent = 0, errors = 0;
+  for (const [token, t] of Object.entries(tokens)) {
+    // Skip already-responded students
+    if (survey.responses?.[t.studentId]) continue;
+    const link = `${baseUrl}/survey.html?s=${survey.id}&t=${token}`;
+    const subject = survey.isQuiz ? `Quiz: ${survey.title}` : `Survey: ${survey.title}`;
+    const body = `Hi ${t.studentName},\n\nPlease complete this ${survey.isQuiz ? 'quiz' : 'survey'}: ${survey.title}\n\n${survey.description ? survey.description + '\n\n' : ''}Click here to ${survey.isQuiz ? 'take the quiz' : 'respond'}: ${link}\n\nThank you!`;
+    try {
+      await canvas.sendMessage([t.studentId], subject, body);
+      sent++;
+    } catch { errors++; }
+  }
+  ok(res, { sent, errors });
+});
+
 // External survey access
 app.get('/api/survey-submit/:surveyId/:token', (req, res) => {
   const survey = store.surveys.find(s => s.id === req.params.surveyId);

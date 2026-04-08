@@ -171,6 +171,18 @@ async function getCourseActivity(courseId) {
   return canvasGet(`/courses/${courseId}/analytics/activity`);
 }
 
+// ── Canvas Send New Message ──────────────────────────────────────────────────
+async function sendMessage(recipientIds, subject, body) {
+  const url = `${API_URL}/conversations`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ recipients: recipientIds, subject, body, group_conversation: false, force_new: true }),
+  });
+  if (!res.ok) throw new Error(`Canvas API error ${res.status}: ${await res.text()}`);
+  return res.json();
+}
+
 // ── Canvas Conversations (Messages) ──────────────────────────────────────────
 async function getConversations(scope = 'inbox') {
   return canvasGet(`/conversations?scope=${scope}&per_page=30`);
@@ -214,6 +226,7 @@ module.exports = {
   addQuizQuestion,
   publishQuiz,
   getAllSubmissions,
+  sendMessage,
   getConversations,
   getConversation,
   replyToConversation,
