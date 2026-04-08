@@ -506,7 +506,7 @@ app.get('/api/canvas/quizzes/:cid', requireAuth, async (req, res) => {
 app.post('/api/canvas/create-quiz/:cid', async (req, res) => {
   try {
     const { cid } = req.params;
-    const { title, description, timeLimit, allowedAttempts, pointsPossible, questions, publish, lockdown, existingQuizId } = req.body;
+    const { title, description, timeLimit, allowedAttempts, pointsPossible, questions, publish, lockdown, existingQuizId, assignmentId } = req.body;
 
     if (!questions || !questions.length) return fail(res, { message: 'No questions provided.' }, 400);
 
@@ -580,6 +580,8 @@ app.post('/api/canvas/create-quiz/:cid', async (req, res) => {
       published: false, // publish after adding questions
       show_correct_answers: !lockdown, // hide answers when locked
     };
+    // Link to existing assignment so grades flow to the right place
+    if (assignmentId) quizOpts.assignment_id = assignmentId;
     if (lockdown) {
       quizOpts.lock_questions_after_answering = true;
       quizOpts.one_question_at_a_time = true;

@@ -4216,9 +4216,30 @@ async function loadCanvasQuizzes() {
     _canvasQuizzes = await GET(`/api/canvas/quizzes/${S.course.id}`);
     const sel = document.getElementById('qb-target');
     if (!sel) return;
-    // Keep the "new" option, add existing quizzes
+
+    // Match quizzes to assignments so grades flow to the right place
+    const quizAssignments = (S.assignments || []).filter(a => classifyAssignment(a) === 'Quizzes');
+
+    // Build options: show assignment match if found
+    const quizOptions = _canvasQuizzes.map(q => {
+      const matchedAssignment = quizAssignments.find(a => a.quiz_id === q.id || a.name === q.title);
+      const matchLabel = matchedAssignment
+        ? ` → Assignment: ${matchedAssignment.name} (${matchedAssignment.points_possible || 0} pts)`
+        : '';
+      return `<option value="${q.id}">${esc(q.title)} ${q.published ? '(Published)' : '(Draft)'} — ${q.question_count || 0} Q${esc(matchLabel)}</option>`;
+    }).join('');
+
+    // Also show quiz-type assignments that don't have a Canvas quiz yet (placeholders)
+    const unmatchedAssignments = quizAssignments.filter(a =>
+      !_canvasQuizzes.some(q => q.id === a.quiz_id || q.title === a.name)
+    );
+    const assignmentOptions = unmatchedAssignments.map(a =>
+      `<option value="assign_${a.id}" data-assignment-name="${esc(a.name)}">${esc(a.name)} (${a.points_possible || 0} pts) — No quiz yet, will create & link</option>`
+    ).join('');
+
     sel.innerHTML = '<option value="__new__">+ Create New Quiz</option>' +
-      _canvasQuizzes.map(q => `<option value="${q.id}">${esc(q.title)} ${q.published ? '(Published)' : '(Draft)'} — ${q.question_count || 0} Q</option>`).join('');
+      (quizOptions ? `<optgroup label="Existing Canvas Quizzes">${quizOptions}</optgroup>` : '') +
+      (assignmentOptions ? `<optgroup label="Quiz Assignments (no quiz created yet)">${assignmentOptions}</optgroup>` : '');
     toast(`Found ${_canvasQuizzes.length} quizzes on Canvas.`, 'success');
   } catch (e) { toast('Failed to load quizzes: ' + e.message, 'error'); }
 }
@@ -4226,8 +4247,10 @@ async function loadCanvasQuizzes() {
 function qbTargetChanged() {
   const val = document.getElementById('qb-target')?.value;
   const newWrap = document.getElementById('qb-new-title-wrap');
+  // Show title field only when creating a brand new quiz
   if (newWrap) newWrap.style.display = val === '__new__' ? '' : 'none';
 }
+
 
 async function saveQuizBuilderDraft() {
   const title = document.getElementById('qb-title')?.value?.trim();
@@ -4295,19 +4318,28 @@ async function pushQuizBuilderToCanvas() {
   if (!_quizBuilderItems.length) { toast('Add questions to the quiz first.', 'warn'); return; }
 
   const target   = document.getElementById('qb-target')?.value || '__new__';
-  const isExisting = target !== '__new__';
+  const isExisting = target !== '__new__' && !target.startsWith('assign_');
+  const isAssignmentMatch = target.startsWith('assign_');
   const title    = document.getElementById('qb-title')?.value?.trim();
   const desc     = document.getElementById('qb-desc')?.value?.trim();
   const timeLimit = Number(document.getElementById('qb-time')?.value) || null;
   const attempts  = Number(document.getElementById('qb-attempts')?.value) || 1;
   const ptsEach   = Number(document.getElementById('qb-pts')?.value) || 1;
 
-  if (!isExisting && !title) { toast('Enter a quiz name or select an existing Canvas quiz.', 'warn'); return; }
+  // For assignment match: use the assignment name as quiz title
+  let assignmentName = '';
+  if (isAssignmentMatch) {
+    const opt = document.getElementById('qb-target')?.selectedOptions?.[0];
+    assignmentName = opt?.dataset?.assignmentName || '';
+  }
+
+  if (!isExisting && !isAssignmentMatch && !title) { toast('Enter a quiz name or select an existing Canvas quiz.', 'warn'); return; }
 
   const existingQuiz = isExisting ? _canvasQuizzes.find(q => String(q.id) === target) : null;
-  const displayName = isExisting ? (existingQuiz?.title || 'Existing Quiz') : title;
+  const displayName = isExisting ? (existingQuiz?.title || 'Existing Quiz') : (isAssignmentMatch ? assignmentName : title);
 
   if (isExisting && !confirm(`Add ${_quizBuilderItems.length} questions to "${displayName}" on Canvas and publish (locked)?`)) return;
+  if (isAssignmentMatch && !confirm(`Create quiz "${assignmentName}" with ${_quizBuilderItems.length} questions and publish (locked)?`)) return;
 
   const questions = _quizBuilderItems.map(q => ({
     question: q.question || '',
@@ -4322,12 +4354,13 @@ async function pushQuizBuilderToCanvas() {
 
   try {
     const payload = {
-      title: isExisting ? undefined : title,
+      title: isExisting ? undefined : (isAssignmentMatch ? assignmentName : title),
       description: desc, timeLimit, allowedAttempts: attempts,
       pointsPossible: questions.length * ptsEach,
       questions, publish: true, lockdown: true,
     };
     if (isExisting) payload.existingQuizId = target;
+    if (isAssignmentMatch) payload.assignmentId = target.replace('assign_', '');
 
     const res = await POST(`/api/canvas/create-quiz/${S.course.id}`, payload);
     if (statusEl) statusEl.innerHTML = `<span style="color:var(--success)">✓ ${isExisting ? 'Added to' : 'Created'} "${esc(displayName)}" (locked). ${res.questionsAdded} questions.</span>
