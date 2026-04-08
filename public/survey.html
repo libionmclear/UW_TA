@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Survey — UW TA Companion</title>
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    body { background: var(--bg); padding: 20px; }
+    .srv-page { max-width: 650px; margin: 0 auto; }
+    .srv-header { background: var(--uw-purple); color: #fff; padding: 16px 20px; border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
+    .srv-body { background: var(--surface); padding: 20px; border-radius: 0 0 var(--radius-lg) var(--radius-lg); box-shadow: var(--shadow-lg); }
+    .srv-question { padding: 14px; border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 10px; }
+    .srv-q-label { font-weight: 700; font-size: 13px; color: var(--uw-purple); margin-bottom: 8px; }
+    .srv-q-num { font-size: 11px; color: var(--text-muted); }
+    .srv-rating { display: flex; gap: 8px; }
+    .srv-rating label { font-size: 13px; cursor: pointer; display: flex; align-items: center; gap: 3px; }
+    .srv-yesno { display: flex; gap: 12px; }
+    .srv-yesno label { font-size: 13px; cursor: pointer; display: flex; align-items: center; gap: 4px; }
+    .srv-choice label { display: block; font-size: 13px; cursor: pointer; padding: 3px 0; }
+    .srv-choice label input { margin-right: 6px; }
+    .srv-success { text-align: center; padding: 40px; color: var(--success); font-size: 18px; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <div class="srv-page" id="srv-root">
+    <div class="srv-header">
+      <h2 style="margin:0">Survey</h2>
+      <p style="opacity:.7;margin:4px 0 0;font-size:13px">Loading...</p>
+    </div>
+    <div class="srv-body"><p class="muted">Loading survey...</p></div>
+  </div>
+  <script>
+    const params = new URLSearchParams(location.search);
+    const surveyId = params.get('s');
+    const token = params.get('t');
+    if (!surveyId || !token) {
+      document.getElementById('srv-root').innerHTML = '<p style="padding:40px;text-align:center;color:#dc2626">No access token provided.</p>';
+    } else { loadSurvey(); }
+
+    let _srvData = null;
+
+    async function loadSurvey() {
+      try {
+        const resp = await fetch(`/api/survey-submit/${surveyId}/${token}`);
+        if (!resp.ok) throw new Error('Invalid or expired link');
+        _srvData = await resp.json();
+        if (_srvData.existingResponse) renderSubmitted();
+        else renderSurveyForm();
+      } catch (e) {
+        document.getElementById('srv-root').innerHTML = `<div class="srv-header"><h2 style="margin:0">Error</h2></div><div class="srv-body"><p style="color:#dc2626">${e.message}</p></div>`;
+      }
+    }
+
+    function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+    function renderSubmitted() {
+      document.getElementById('srv-root').innerHTML = `
+        <div class="srv-header"><h2 style="margin:0">${esc(_srvData.title)}</h2><p style="opacity:.7;margin:4px 0 0;font-size:13px">${esc(_srvData.studentName)}</p></div>
+        <div class="srv-body"><div class="srv-success">✓ You have already submitted this survey.<br><span style="font-size:13px;color:var(--text-muted)">Submitted at ${new Date(_srvData.existingResponse.submittedAt).toLocaleString()}</span></div></div>`;
+    }
+
+    function renderSurveyForm() {
+      const questions = _srvData.questions || [];
+      const qHtml = questions.map((q, i) => {
+        let input = '';
+        if (q.type === 'text') {
+          input = `<input class="input srv-answer" type="text" placeholder="Your answer" data-qi="${i}" />`;
+        } else if (q.type === 'textarea') {
+          input = `<textarea class="input srv-answer" rows="3" placeholder="Your answer" data-qi="${i}"></textarea>`;
+        } else if (q.type === 'rating') {
+          input = `<div class="srv-rating">${[1,2,3,4,5].map(v => `<label><input type="radio" name="q${i}" value="${v}" class="srv-answer-radio" data-qi="${i}" /> ${v}</label>`).join('')}</div>`;
+        } else if (q.type === 'yesno') {
+          input = `<div class="srv-yesno"><label><input type="radio" name="q${i}" value="Yes" class="srv-answer-radio" data-qi="${i}" /> Yes</label><label><input type="radio" name="q${i}" value="No" class="srv-answer-radio" data-qi="${i}" /> No</label></div>`;
+        } else if (q.type === 'choice') {
+          input = `<div class="srv-choice">${(q.choices || []).map(c => `<label><input type="radio" name="q${i}" value="${esc(c)}" class="srv-answer-radio" data-qi="${i}" /> ${esc(c)}</label>`).join('')}</div>`;
+        }
+        return `<div class="srv-question">
+          <div class="srv-q-label"><span class="srv-q-num">Q${i + 1}.</span> ${esc(q.text)}</div>
+          ${input}
+        </div>`;
+      }).join('');
+
+      document.getElementById('srv-root').innerHTML = `
+        <div class="srv-header">
+          <h2 style="margin:0">${esc(_srvData.title)}</h2>
+          <p style="opacity:.7;margin:4px 0 0;font-size:13px">${esc(_srvData.studentName)}${_srvData.description ? ' · ' + esc(_srvData.description) : ''}</p>
+        </div>
+        <div class="srv-body">
+          ${_srvData.forPoints ? '<p style="font-size:12px;color:#d97706;font-weight:600;margin-bottom:12px">This survey counts toward your grade.</p>' : ''}
+          ${qHtml}
+          <div style="margin-top:16px;display:flex;gap:8px;align-items:center">
+            <button class="btn btn-primary" style="font-size:14px;padding:10px 24px" onclick="submitSurvey()">Submit</button>
+            <span id="srv-status" class="muted" style="font-size:12px"></span>
+          </div>
+        </div>`;
+    }
+
+    async function submitSurvey() {
+      const questions = _srvData.questions || [];
+      const answers = [];
+      let allAnswered = true;
+
+      questions.forEach((q, i) => {
+        if (q.type === 'text' || q.type === 'textarea') {
+          const el = document.querySelector(`.srv-answer[data-qi="${i}"]`);
+          const val = el?.value?.trim() || '';
+          answers.push(val || null);
+          if (!val) allAnswered = false;
+        } else {
+          const checked = document.querySelector(`.srv-answer-radio[data-qi="${i}"]:checked`);
+          const val = checked ? (q.type === 'rating' ? Number(checked.value) : checked.value) : null;
+          answers.push(val);
+          if (val == null) allAnswered = false;
+        }
+      });
+
+      if (!allAnswered && !confirm('Some questions are unanswered. Submit anyway?')) return;
+
+      const status = document.getElementById('srv-status');
+      try {
+        const resp = await fetch(`/api/survey-submit/${surveyId}/${token}`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ answers }),
+        });
+        if (!resp.ok) throw new Error('Submit failed');
+        document.getElementById('srv-root').innerHTML = `
+          <div class="srv-header"><h2 style="margin:0">${esc(_srvData.title)}</h2></div>
+          <div class="srv-body"><div class="srv-success">✓ Thank you! Your response has been submitted.</div></div>`;
+      } catch (e) {
+        if (status) { status.textContent = 'Error: ' + e.message; status.style.color = '#dc2626'; }
+      }
+    }
+  </script>
+</body>
+</html>

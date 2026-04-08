@@ -68,7 +68,7 @@ function requireAuth(req, res, next) {
 }
 
 app.use((req, res, next) => {
-  if (req.path === '/login.html' || req.path === '/panel.html' || req.path === '/peer-eval.html' || req.path.startsWith('/auth/') || req.path.startsWith('/api/panel-grade/') || req.path.startsWith('/api/peer-eval-submit/')) return next();
+  if (req.path === '/login.html' || req.path === '/panel.html' || req.path === '/peer-eval.html' || req.path === '/survey.html' || req.path.startsWith('/auth/') || req.path.startsWith('/api/panel-grade/') || req.path.startsWith('/api/peer-eval-submit/') || req.path.startsWith('/api/survey-submit/')) return next();
   requireAuth(req, res, next);
 });
 
@@ -1027,6 +1027,64 @@ app.post('/api/peer-eval-submit/:token', (req, res) => {
   if (!tokenData) return fail(res, { message: 'Invalid link' }, 404);
   if (!pe.responses) pe.responses = {};
   pe.responses[tokenData.studentId] = { ...req.body, submittedAt: new Date().toISOString() };
+  save();
+  ok(res, { ok: true });
+});
+
+// ── Surveys ──────────────────────────────────────────────────────────────────
+if (!store.surveys) store.surveys = [];
+app.get('/api/surveys', requireAuth, (_req, res) => ok(res, store.surveys));
+app.post('/api/surveys', requireAuth, (req, res) => {
+  const survey = {
+    id: 'srv_' + Date.now().toString(36),
+    ...req.body,
+    createdAt: new Date().toISOString(),
+    tokens: {},
+    responses: {},
+  };
+  // Generate tokens for all students from the request
+  (req.body.studentIds || []).forEach(sid => {
+    const token = Date.now().toString(36) + Math.random().toString(36).slice(2, 8) + sid;
+    survey.tokens[token] = { studentId: sid, studentName: req.body.studentNames?.[sid] || sid };
+  });
+  store.surveys.push(survey);
+  save();
+  ok(res, survey);
+});
+app.put('/api/surveys/:id', requireAuth, (req, res) => {
+  const idx = store.surveys.findIndex(s => s.id === req.params.id);
+  if (idx === -1) return fail(res, { message: 'Survey not found' }, 404);
+  store.surveys[idx] = { ...store.surveys[idx], ...req.body };
+  save();
+  ok(res, store.surveys[idx]);
+});
+app.delete('/api/surveys/:id', requireAuth, (req, res) => {
+  store.surveys = store.surveys.filter(s => s.id !== req.params.id);
+  save();
+  ok(res, { ok: true });
+});
+// External survey access
+app.get('/api/survey-submit/:surveyId/:token', (req, res) => {
+  const survey = store.surveys.find(s => s.id === req.params.surveyId);
+  if (!survey) return fail(res, { message: 'Survey not found' }, 404);
+  const tokenData = survey.tokens?.[req.params.token];
+  if (!tokenData) return fail(res, { message: 'Invalid link' }, 404);
+  ok(res, {
+    title: survey.title,
+    description: survey.description,
+    questions: survey.questions,
+    forPoints: survey.forPoints,
+    studentName: tokenData.studentName,
+    existingResponse: survey.responses?.[tokenData.studentId] || null,
+  });
+});
+app.post('/api/survey-submit/:surveyId/:token', (req, res) => {
+  const survey = store.surveys.find(s => s.id === req.params.surveyId);
+  if (!survey) return fail(res, { message: 'Survey not found' }, 404);
+  const tokenData = survey.tokens?.[req.params.token];
+  if (!tokenData) return fail(res, { message: 'Invalid link' }, 404);
+  if (!survey.responses) survey.responses = {};
+  survey.responses[tokenData.studentId] = { answers: req.body.answers, submittedAt: new Date().toISOString() };
   save();
   ok(res, { ok: true });
 });
