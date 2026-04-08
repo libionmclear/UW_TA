@@ -402,6 +402,14 @@ function renderSidebar() {
         ${flag}${esc(shortName(a.name))}${pts}
       </button>`;
     }).join('');
+    // Add Case/Sim Participation links inside the Participation group
+    let extraItems = '';
+    if (groupName === 'Participation') {
+      extraItems = `
+        <hr class="nav-divider" />
+        <button class="nav-btn nav-btn-participation ${currentView === 'caseparticipation' ? 'active' : ''}" onclick="showView('caseparticipation')" style="font-size:11px"><span class="nav-icon" style="color:#ff6b00">●</span> Case Participation</button>
+        <button class="nav-btn nav-btn-participation ${currentView === 'simparticipation' ? 'active' : ''}" onclick="showView('simparticipation')" style="font-size:11px"><span class="nav-icon" style="color:#ff6b00">●</span> Sim Participation</button>`;
+    }
     return `<div class="sidebar-group">
       <button class="sidebar-group-header" onclick="toggleGroup('${esc(groupName)}')">
         <span class="nav-icon">${icon}</span>
@@ -409,19 +417,16 @@ function renderSidebar() {
         ${badge}
         <span class="sidebar-chevron">${isOpen ? '▾' : '▸'}</span>
       </button>
-      <div class="sidebar-group-items ${isOpen ? 'open' : ''}" id="grp-${esc(groupName)}">${items}</div>
+      <div class="sidebar-group-items ${isOpen ? 'open' : ''}" id="grp-${esc(groupName)}">${items}${extraItems}</div>
     </div>`;
   }
 
   wrap.innerHTML = allKeys.map(renderGroup).join('');
 
-  // Other Assignments box + Case/Sim participation tools under Participation
+  // Other Assignments box
   if (otherWrap && otherBox) {
     otherBox.style.display = '';
-    const participationTools = `
-      <button class="nav-btn nav-btn-participation ${currentView === 'caseparticipation' ? 'active' : ''}" onclick="showView('caseparticipation')" style="padding-left:20px"><span class="nav-icon" style="color:#ff6b00">●</span> Case Participation</button>
-      <button class="nav-btn nav-btn-participation ${currentView === 'simparticipation' ? 'active' : ''}" onclick="showView('simparticipation')" style="padding-left:20px"><span class="nav-icon" style="color:#ff6b00">●</span> Sim Participation</button>`;
-    otherWrap.innerHTML = otherKeys.map(renderGroup).join('') + participationTools;
+    otherWrap.innerHTML = otherKeys.map(renderGroup).join('');
   }
 }
 
