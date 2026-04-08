@@ -991,6 +991,15 @@ tbody td { padding: 7px 10px; vertical-align: middle; }
 .hdr-user-btn:hover { background: rgba(255,255,255,.15); }
 .hdr-user-photo { width: 22px; height: 22px; border-radius: 50%; object-fit: cover; margin-right: 5px; vertical-align: middle; border: 1px solid rgba(255,255,255,.5); }
 
+/* ── Class Presence button in Instructor Tools (orange bubble) ──────────────── */
+.sidebar-box-body .nav-btn-presence {
+  background: #ff6b00 !important; color: #fff !important; font-weight: 800 !important;
+  border-radius: var(--radius); margin: 2px 0;
+}
+.sidebar-box-body .nav-btn-presence:hover { background: #ea580c !important; color: #fff !important; }
+.sidebar-box-body .nav-btn-presence.active { background: #c2410c !important; color: #fff !important; box-shadow: 0 2px 6px rgba(234,88,12,.3); }
+.sidebar-box-body .nav-btn-presence .nav-icon { color: #fff !important; }
+
 /* ── Participation nav buttons in sidebar ───────────────────────────────────── */
 .nav-btn-participation { font-weight: 700 !important; }
 .nav-btn-participation:hover { background: rgba(255,107,0,.12) !important; color: #ea580c !important; }

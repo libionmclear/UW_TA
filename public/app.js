@@ -415,14 +415,12 @@ function renderSidebar() {
 
   wrap.innerHTML = allKeys.map(renderGroup).join('');
 
-  // Other Assignments box + participation tools
+  // Other Assignments box + Case/Sim participation tools under Participation
   if (otherWrap && otherBox) {
     otherBox.style.display = '';
     const participationTools = `
-      <hr class="nav-divider" />
-      <button class="nav-btn nav-btn-participation ${currentView === 'caseparticipation' ? 'active' : ''}" onclick="showView('caseparticipation')"><span class="nav-icon" style="color:#ff6b00">●</span> Case Participation</button>
-      <button class="nav-btn nav-btn-participation ${currentView === 'simparticipation' ? 'active' : ''}" onclick="showView('simparticipation')"><span class="nav-icon" style="color:#ff6b00">●</span> Sim Participation</button>
-      <button class="nav-btn nav-btn-participation ${currentView === 'classpresence' ? 'active' : ''}" onclick="showView('classpresence')"><span class="nav-icon" style="color:#ff6b00">●</span> Class Presence</button>`;
+      <button class="nav-btn nav-btn-participation ${currentView === 'caseparticipation' ? 'active' : ''}" onclick="showView('caseparticipation')" style="padding-left:20px"><span class="nav-icon" style="color:#ff6b00">●</span> Case Participation</button>
+      <button class="nav-btn nav-btn-participation ${currentView === 'simparticipation' ? 'active' : ''}" onclick="showView('simparticipation')" style="padding-left:20px"><span class="nav-icon" style="color:#ff6b00">●</span> Sim Participation</button>`;
     otherWrap.innerHTML = otherKeys.map(renderGroup).join('') + participationTools;
   }
 }

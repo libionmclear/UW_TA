@@ -75,7 +75,11 @@ app.use((req, res, next) => {
 app.use(express.static(path.join(__dirname, '../public')));
 
 // ── Persistence ──────────────────────────────────────────────────────────────
-const DATA_FILE = path.join(__dirname, '../data/store.json');
+// Use Render persistent disk if available, otherwise local data/
+const RENDER_DISK = process.env.RENDER_DISK_PATH || '';
+const DATA_DIR = RENDER_DISK || path.join(__dirname, '../data');
+const DATA_FILE = path.join(DATA_DIR, 'store.json');
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 const DEFAULT_TEAM_META = {
   '1': { name: 'Nike',              memberNames: ['Alexia Drecin','Jacob Hilse','Handan Karakucuk','Will Nguyen','Uina Yamaguchi'] },
   '2': { name: 'Southwest',         memberNames: ['Fatimah Naji','Benny Nguyen','Issabella Nguyen','Kairi Rojas','Sing Well To'] },
@@ -960,6 +964,18 @@ app.post('/api/user-photo/:username', requireAuth, upload.single('photo'), (req,
   save();
   console.log(`  ✓ User photo saved for ${key} (${req.file.buffer.length} bytes)`);
   ok(res, { ok: true });
+});
+
+// ── Data Backup/Restore ──────────────────────────────────────────────────────
+app.get('/api/backup', requireAuth, (_req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Content-Disposition', 'attachment; filename="store-backup.json"');
+  res.send(JSON.stringify(store, null, 2));
+});
+app.post('/api/restore', requireAuth, express.json({ limit: '50mb' }), (req, res) => {
+  Object.assign(store, req.body);
+  save();
+  ok(res, { ok: true, keys: Object.keys(store) });
 });
 
 // ── SPA fallback ──────────────────────────────────────────────────────────────
