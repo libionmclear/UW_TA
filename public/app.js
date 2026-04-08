@@ -5197,12 +5197,16 @@ async function renderSurveyCreatorView(root) {
   const surveyCards = _surveys.map(s => {
     const responded = Object.keys(s.responses || {}).length;
     const total = Object.keys(s.tokens || {}).length;
+    const isDraft = !total;
     return `<div class="card" style="margin-bottom:10px">
-      <div class="card-title">${esc(s.title)} ${s.isQuiz ? '<span class="status-badge status--reviewed">Quiz</span>' : ''} ${s.forPoints ? '<span class="status-badge status--graded">For Points</span>' : '<span class="status-badge status--pending">Info Only</span>'}
-        <div style="margin-left:auto;display:flex;gap:6px">
-          <button class="btn btn-ghost" style="font-size:11px;padding:3px 8px" onclick="viewSurveyResults('${esc(s.id)}')">Results (${responded}/${total})</button>
-          <button class="btn btn-ghost" style="font-size:11px;padding:3px 8px" onclick="viewSurveyLinks('${esc(s.id)}')">Links</button>
-          <button class="btn btn-surf" style="font-size:11px;padding:3px 8px" onclick="sendSurveyLinksViaCanvas('${esc(s.id)}')">✉ Send via Canvas</button>
+      <div class="card-title">${esc(s.title)} ${s.isQuiz ? '<span class="status-badge status--reviewed">Quiz</span>' : ''} ${s.forPoints ? '<span class="status-badge status--graded">For Points</span>' : '<span class="status-badge status--pending">Info Only</span>'} ${isDraft ? '<span class="status-badge" style="background:#fef3c7;color:#92400e">Draft</span>' : ''}
+        <div style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap">
+          ${!isDraft ? `<button class="btn btn-ghost" style="font-size:11px;padding:3px 8px" onclick="viewSurveyResults('${esc(s.id)}')">Results (${responded}/${total})</button>` : ''}
+          ${!isDraft ? `<button class="btn btn-ghost" style="font-size:11px;padding:3px 8px" onclick="viewSurveyLinks('${esc(s.id)}')">Links</button>` : ''}
+          ${isDraft ? `<button class="btn btn-surf" style="font-size:11px;padding:3px 8px" onclick="activateSurveyDraft('${esc(s.id)}')">Activate & Generate Links</button>` : ''}
+          ${!isDraft ? `<button class="btn btn-surf" style="font-size:11px;padding:3px 8px" onclick="sendSurveyLinksViaCanvas('${esc(s.id)}')">✉ Send via Canvas</button>` : ''}
+          ${s.isQuiz ? `<button class="btn btn-primary" style="font-size:11px;padding:3px 8px" onclick="pushSurveyToCanvas('${esc(s.id)}')">⬆ Push to Canvas</button>` : ''}
+          <button class="btn btn-ghost" style="font-size:11px;padding:3px 8px" onclick="editSurvey('${esc(s.id)}')">✎ Edit</button>
           <button class="btn btn-ghost btn-danger" style="font-size:11px;padding:3px 8px" onclick="deleteSurvey('${esc(s.id)}')">✕</button>
         </div>
       </div>
@@ -5232,8 +5236,9 @@ async function renderSurveyCreatorView(root) {
       <div id="srv-questions"></div>
       <button class="btn btn-ghost btn-add-row" onclick="addSurveyQuestion()">+ Add Question</button>
 
-      <div class="card-actions" style="margin-top:14px">
-        <button class="btn btn-primary" onclick="createSurvey()">Create & Generate Links</button>
+      <div class="card-actions" style="margin-top:14px;display:flex;gap:10px">
+        <button class="btn btn-ghost" onclick="createSurvey(true)">Save as Draft</button>
+        <button class="btn btn-primary" onclick="createSurvey(false)">Create & Generate Links</button>
       </div>
     </div>
 
@@ -5321,26 +5326,19 @@ function srvTypeChanged(select) {
   }
 }
 
-async function createSurvey() {
-  const title = document.getElementById('srv-title')?.value?.trim();
-  if (!title) { toast('Enter a title.', 'warn'); return; }
-  const description = document.getElementById('srv-desc')?.value?.trim() || '';
-  const forPoints = document.getElementById('srv-points')?.checked || false;
-  const isQuiz = document.getElementById('srv-mode')?.checked || false;
-
-  // Collect questions
+function collectSurveyQuestions() {
   const qRows = document.querySelectorAll('.srv-q-row');
+  const isQuiz = document.getElementById('srv-mode')?.checked || false;
   const questions = [];
   qRows.forEach(row => {
     const text = row.querySelector('.srv-q-text')?.value?.trim();
     const type = row.querySelector('.srv-q-type')?.value || 'text';
     const choices = row.querySelector('.srv-q-choices')?.value?.trim();
-    // Get correct answer: from MC/TF radio or from text input
     const mcChecked = row.querySelector('.srv-mc-correct:checked');
     const answerText = row.querySelector('.srv-q-answer')?.value?.trim() || '';
     const answer = mcChecked ? mcChecked.value : answerText;
     const points = Number(row.querySelector('.srv-q-points')?.value) || 0;
-    const qChoices = type === 'choice' ? choices.split(',').map(c => c.trim()).filter(Boolean)
+    const qChoices = type === 'choice' ? (choices || '').split(',').map(c => c.trim()).filter(Boolean)
                    : type === 'truefalse' ? ['True', 'False']
                    : type === 'yesno' ? ['Yes', 'No'] : [];
     if (text) questions.push({
@@ -5350,20 +5348,137 @@ async function createSurvey() {
       points: isQuiz ? points : 0,
     });
   });
+  return questions;
+}
+
+async function createSurvey(asDraft) {
+  const title = document.getElementById('srv-title')?.value?.trim();
+  if (!title) { toast('Enter a title.', 'warn'); return; }
+  const description = document.getElementById('srv-desc')?.value?.trim() || '';
+  const forPoints = document.getElementById('srv-points')?.checked || false;
+  const isQuiz = document.getElementById('srv-mode')?.checked || false;
+  const questions = collectSurveyQuestions();
   if (!questions.length) { toast('Add at least one question.', 'warn'); return; }
 
-  // Get student IDs and names
-  const students = S.allStudentsList.length ? S.allStudentsList : allStudents();
+  // For draft: no student IDs (no links generated)
+  const students = asDraft ? [] : (S.allStudentsList.length ? S.allStudentsList : allStudents());
   const studentIds = students.map(s => s.id);
   const studentNames = {};
   students.forEach(s => { studentNames[s.id] = s.name; });
 
-  toast('Creating survey...');
+  toast(asDraft ? 'Saving draft...' : 'Creating survey...');
   try {
     await POST('/api/surveys', { title, description, forPoints, isQuiz, questions, studentIds, studentNames });
-    toast('Survey created with links for all students!', 'success');
+    toast(asDraft ? 'Draft saved!' : 'Survey created with links for all students!', 'success');
     renderSurveyCreatorView();
   } catch (e) { toast('Create failed: ' + e.message, 'error'); }
+}
+
+async function activateSurveyDraft(id) {
+  if (!S.course) { toast('Select a course first.', 'warn'); return; }
+  const students = S.allStudentsList.length ? S.allStudentsList : allStudents();
+  if (!students.length) { toast('No students loaded.', 'warn'); return; }
+  const studentIds = students.map(s => s.id);
+  const studentNames = {};
+  students.forEach(s => { studentNames[s.id] = s.name; });
+
+  toast('Generating student links...');
+  try {
+    await POST(`/api/surveys/${id}/activate`, { studentIds, studentNames });
+    toast('Links generated for all students!', 'success');
+    renderSurveyCreatorView();
+  } catch (e) { toast('Activate failed: ' + e.message, 'error'); }
+}
+
+async function editSurvey(id) {
+  const survey = _surveys.find(s => s.id === id);
+  if (!survey) return;
+  const area = document.getElementById('srv-results-area');
+  if (!area) return;
+
+  const questionsHtml = (survey.questions || []).map((q, i) => `
+    <div class="srv-edit-q" style="display:flex;gap:6px;align-items:flex-start;padding:8px;background:var(--bg);border-radius:var(--radius);margin-bottom:4px">
+      <span style="font-weight:700;color:var(--uw-purple);min-width:20px">Q${i + 1}</span>
+      <div style="flex:1">
+        <input class="input srv-edit-q-text" value="${esc(q.text)}" style="margin-bottom:4px" />
+        <div style="display:flex;gap:8px;font-size:11px">
+          <span class="muted">Type: ${q.type}</span>
+          ${q.choices?.length ? `<span class="muted">Choices: ${q.choices.join(', ')}</span>` : ''}
+          ${q.correctAnswer ? `<span style="color:var(--success)">Answer: ${esc(q.correctAnswer)}</span>` : ''}
+          ${q.points ? `<span class="muted">${q.points} pts</span>` : ''}
+        </div>
+      </div>
+    </div>`).join('');
+
+  area.innerHTML = `<div class="card" style="margin-top:12px;border:2px solid var(--uw-purple)">
+    <div class="card-title">Edit — ${esc(survey.title)}</div>
+    <div class="field-group"><label>Title</label><input id="srv-edit-title" class="input" value="${esc(survey.title)}" /></div>
+    <div class="field-group"><label>Description</label><input id="srv-edit-desc" class="input" value="${esc(survey.description || '')}" /></div>
+    <div style="font-size:12px;font-weight:700;color:var(--uw-purple);margin:8px 0 6px">Questions</div>
+    <div id="srv-edit-questions">${questionsHtml}</div>
+    <div class="card-actions" style="margin-top:12px;display:flex;gap:10px">
+      <button class="btn btn-primary" onclick="saveEditedSurvey('${esc(id)}')">Save Changes</button>
+      <button class="btn btn-ghost" onclick="document.getElementById('srv-results-area').innerHTML=''">Cancel</button>
+    </div>
+  </div>`;
+}
+
+async function saveEditedSurvey(id) {
+  const title = document.getElementById('srv-edit-title')?.value?.trim();
+  const description = document.getElementById('srv-edit-desc')?.value?.trim() || '';
+  if (!title) { toast('Title cannot be empty.', 'warn'); return; }
+
+  // Collect edited question texts
+  const qTextEls = document.querySelectorAll('.srv-edit-q-text');
+  const survey = _surveys.find(s => s.id === id);
+  if (!survey) return;
+  const questions = (survey.questions || []).map((q, i) => ({
+    ...q,
+    text: qTextEls[i]?.value?.trim() || q.text,
+  }));
+
+  toast('Saving...');
+  try {
+    await PUT(`/api/surveys/${id}`, { title, description, questions });
+    toast('Survey updated!', 'success');
+    document.getElementById('srv-results-area').innerHTML = '';
+    renderSurveyCreatorView();
+  } catch (e) { toast('Save failed: ' + e.message, 'error'); }
+}
+
+async function pushSurveyToCanvas(id) {
+  if (!S.course) { toast('Select a course first.', 'warn'); return; }
+  const survey = _surveys.find(s => s.id === id);
+  if (!survey || !survey.isQuiz) { toast('Only quizzes can be pushed to Canvas.', 'warn'); return; }
+
+  const questions = (survey.questions || []).map(q => {
+    const isTF = q.choices?.length === 2 && q.choices.includes('True') && q.choices.includes('False');
+    return {
+      question: q.text,
+      answer: q.correctAnswer || '',
+      choices: q.choices || [],
+      points: q.points || 1,
+      questionType: isTF ? 'true_false' : (q.choices?.length >= 2 ? 'multiple_choice' : 'short_answer'),
+    };
+  });
+
+  if (!questions.length) { toast('No questions to push.', 'warn'); return; }
+  if (!confirm(`Push "${survey.title}" (${questions.length} questions) to Canvas as a locked quiz?`)) return;
+
+  toast('Pushing to Canvas...');
+  try {
+    const res = await POST(`/api/canvas/create-quiz/${S.course.id}`, {
+      title: survey.title,
+      description: survey.description || '',
+      timeLimit: null,
+      allowedAttempts: 1,
+      pointsPossible: questions.reduce((s, q) => s + (q.points || 1), 0),
+      questions,
+      publish: true,
+      lockdown: true,
+    });
+    toast(`"${survey.title}" pushed to Canvas (locked)! ${res.questionsAdded} questions.`, 'success');
+  } catch (e) { toast('Push failed: ' + e.message, 'error'); }
 }
 
 async function sendSurveyLinksViaCanvas(id) {

@@ -1098,6 +1098,22 @@ app.delete('/api/surveys/:id', requireAuth, (req, res) => {
   save();
   ok(res, { ok: true });
 });
+// Activate a draft survey — generate student tokens/links
+app.post('/api/surveys/:id/activate', requireAuth, (req, res) => {
+  const survey = store.surveys.find(s => s.id === req.params.id);
+  if (!survey) return fail(res, { message: 'Survey not found' }, 404);
+  const { studentIds, studentNames } = req.body;
+  if (!studentIds?.length) return fail(res, { message: 'No students provided' }, 400);
+  studentIds.forEach(sid => {
+    // Skip if token already exists for this student
+    const exists = Object.values(survey.tokens).some(t => t.studentId === sid);
+    if (exists) return;
+    const token = Date.now().toString(36) + Math.random().toString(36).slice(2, 8) + sid;
+    survey.tokens[token] = { studentId: sid, studentName: studentNames?.[sid] || sid };
+  });
+  save();
+  ok(res, survey);
+});
 // Send survey links via Canvas messages
 app.post('/api/surveys/:id/send-links', requireAuth, async (req, res) => {
   const survey = store.surveys.find(s => s.id === req.params.id);
