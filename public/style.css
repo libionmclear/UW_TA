@@ -551,6 +551,11 @@ tbody td { padding: 7px 10px; vertical-align: middle; }
 .syl-row-cancelled td { color:var(--danger); font-style:italic; }
 .syl-session      { white-space:nowrap; min-width:80px; display:flex; align-items:center; gap:4px; }
 .syl-class-num    { background:var(--uw-purple); color:#fff; font-size:10px; font-weight:800; padding:1px 5px; border-radius:10px; white-space:nowrap; flex-shrink:0; }
+.syl-class-badge  { color:#fff; font-size:10px; font-weight:800; padding:2px 6px; border-radius:10px; border:none; cursor:pointer; appearance:none; white-space:nowrap; }
+.syl-class-badge:hover { filter:brightness(1.15); }
+.syl-class-badge option { background:#fff; color:var(--text); font-weight:600; }
+.syl-divider td   { height:3px; background:var(--uw-purple); padding:0 !important; border:none !important; }
+.syl-row-even, .syl-row-odd { /* overridden by inline bg */ }
 .syl-date         { white-space:nowrap; font-weight:600; min-width:60px; }
 .syl-day          { white-space:nowrap; color:var(--text-muted); }
 .syl-loc          { white-space:nowrap; }

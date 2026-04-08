@@ -1595,20 +1595,44 @@ function renderSyllabusView(root) {
     `<input class="syl-cell-input" type="text" value="${esc(val || '')}"
       oninput="updateSylField(${idx},'${field}',this.value)" ${extra} />`;
 
+  // Per-class pastel colors (rotate through a palette)
+  const classPastels = [
+    { bg: '#eff6ff', badge: '#2563eb' },  // blue
+    { bg: '#f0fdf4', badge: '#16a34a' },  // green
+    { bg: '#fefce8', badge: '#a16207' },  // amber
+    { bg: '#fdf2f8', badge: '#be185d' },  // pink
+    { bg: '#f5f3ff', badge: '#7c3aed' },  // violet
+    { bg: '#ecfdf5', badge: '#059669' },  // emerald
+    { bg: '#fff7ed', badge: '#c2410c' },  // orange
+    { bg: '#f0f9ff', badge: '#0284c7' },  // sky
+    { bg: '#fef2f2', badge: '#dc2626' },  // red
+    { bg: '#f8fafc', badge: '#475569' },  // slate
+    { bg: '#fffbeb', badge: '#b45309' },  // yellow
+    { bg: '#f0fdfa', badge: '#0d9488' },  // teal
+  ];
+
+  let prevClassNum = null;
+
   const rowsHtml = rows.map((row, i) => {
     const isCancelled = !!row.isCancelled;
     const classNum    = dateToClassNum[row.date] || '';
-    const isEven      = classNum % 2 === 0;
-    const rowCls = isCancelled ? 'syl-row-cancelled' : isEven ? 'syl-row syl-row-even' : 'syl-row syl-row-odd';
+    const palette     = classNum ? classPastels[(classNum - 1) % classPastels.length] : { bg: '#fff', badge: '#6b7280' };
+    const rowBg       = isCancelled ? '' : `background:${palette.bg}`;
+    const rowCls      = isCancelled ? 'syl-row-cancelled' : 'syl-row';
+
+    // Divider between classes
+    const divider = (prevClassNum && classNum && classNum !== prevClassNum) ? `<tr class="syl-divider"><td colspan="14"></td></tr>` : '';
+    prevClassNum = classNum;
 
     const actTypeOpts = actTypes.map(t =>
       `<option value="${esc(t)}" ${row.actType === t ? 'selected' : ''}>${esc(t)}</option>`
     ).join('');
 
-    return `<tr class="${rowCls}" id="syl-row-${i}">
+    return `${divider}<tr class="${rowCls}" style="${rowBg}" id="syl-row-${i}">
       <td class="syl-session">
-        ${classNum ? `<span class="syl-class-num">Class ${classNum}</span>` : ''}
-        ${si(i,'session',row.session,'placeholder="label"')}
+        ${classNum ? `<select class="syl-class-badge" style="background:${palette.badge}" onchange="updateSylField(${i},'date',this.value);renderSyllabusView()">
+          ${uniqueDates.map((d, di) => `<option value="${d}" ${d === row.date ? 'selected' : ''}>Class ${di + 1}</option>`).join('')}
+        </select>` : ''}
       </td>
       <td class="syl-date">
         <input class="syl-cell-input syl-date-input" type="date" value="${row.date || ''}"
