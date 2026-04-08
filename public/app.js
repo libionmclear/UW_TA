@@ -2389,6 +2389,7 @@ function renderInstructionsTab() {
           </div>
           <textarea id="assignment-text-input" class="input" rows="6"
             placeholder="Paste the full assignment description, prompt, or example of what a good submission looks like…"
+            onchange="autoSaveInstructions()" oninput="debounceSaveInstructions()"
           >${esc(S.assignmentText)}</textarea>
         </div>
 
@@ -2401,6 +2402,7 @@ function renderInstructionsTab() {
             placeholder="Explain to the AI how to grade this assignment…
 
 Example: 'This is a case write-up. Students MUST have an executive summary with recommendations, supporting points, and a conclusion with alternatives. Penalize missing sections heavily.'"
+            onchange="autoSaveInstructions()" oninput="debounceSaveInstructions()"
           >${esc(S.aiInstructions)}</textarea>
           <div style="display:flex;gap:8px;margin-top:8px;align-items:center;flex-wrap:wrap">
             <button class="btn btn-surf" onclick="saveAiInstructions()">Save</button>
@@ -2440,13 +2442,13 @@ Example: 'This is a case write-up. Students MUST have an executive summary with 
           <div class="field-group field-group--sm">
             <label>Total Points</label>
             <input id="rubric-total" type="number" class="input" value="${rubric.totalPoints || 15}" min="1"
-              oninput="if(S.rubric)S.rubric.totalPoints=Number(this.value)" />
+              oninput="if(S.rubric){S.rubric.totalPoints=Number(this.value);clearTimeout(_rubricSaveTimer);_rubricSaveTimer=setTimeout(()=>saveAssignmentRubric(true),2000)}" />
           </div>
           <div class="field-group" style="flex:1">
             <label>Description (for AI generation)</label>
             <input id="rubric-desc" type="text" class="input" placeholder="Describe the assignment…"
               value="${esc(rubric.description || '')}"
-              oninput="if(S.rubric)S.rubric.description=this.value" />
+              oninput="if(S.rubric){S.rubric.description=this.value;clearTimeout(_rubricSaveTimer);_rubricSaveTimer=setTimeout(()=>saveAssignmentRubric(true),2000)}" />
           </div>
         </div>
         <div id="rubric-criteria-list">${criteriaHtml}</div>
@@ -2456,23 +2458,29 @@ Example: 'This is a case write-up. Students MUST have an executive summary with 
     </div>`;
 }
 
+let _rubricSaveTimer = null;
 function updateCriterion(id, field, value) {
   if (!S.rubric) return;
   const c = S.rubric.criteria.find(x => x.id === id);
   if (c) c[field] = value;
   if (field === 'autoGrant') document.getElementById(`cr-${id}`)?.classList.toggle('auto-grant', value);
+  // Auto-save rubric with debounce
+  clearTimeout(_rubricSaveTimer);
+  _rubricSaveTimer = setTimeout(() => saveAssignmentRubric(true), 2000);
 }
 
 function deleteCriterion(id) {
   if (!S.rubric) return;
   S.rubric.criteria = S.rubric.criteria.filter(c => c.id !== id);
   refreshInstructionsTab();
+  saveAssignmentRubric(true);
 }
 
 function addCriterion() {
   if (!S.rubric) S.rubric = defaultRubricForAssignment(S.currentAssignment);
   S.rubric.criteria.push({ id: 'c' + Date.now(), name: '', maxPoints: 3, description: '', autoGrant: false });
   refreshInstructionsTab();
+  saveAssignmentRubric(true);
 }
 
 function refreshInstructionsTab() {
@@ -2480,8 +2488,18 @@ function refreshInstructionsTab() {
   if (el) el.innerHTML = renderInstructionsTab();
 }
 
-async function saveAiInstructions() {
-  if (!S.course || !S.currentAssignment) { toast('No assignment selected.', 'warn'); return; }
+let _instrSaveTimer = null;
+function debounceSaveInstructions() {
+  clearTimeout(_instrSaveTimer);
+  _instrSaveTimer = setTimeout(autoSaveInstructions, 2000);
+}
+async function autoSaveInstructions() {
+  clearTimeout(_instrSaveTimer);
+  await saveAiInstructions(true);
+}
+
+async function saveAiInstructions(silent = false) {
+  if (!S.course || !S.currentAssignment) { if (!silent) toast('No assignment selected.', 'warn'); return; }
   S.aiInstructions = document.getElementById('ai-instructions-text')?.value?.trim() || '';
   S.assignmentText = document.getElementById('assignment-text-input')?.value?.trim() || '';
   try {
@@ -2490,17 +2508,17 @@ async function saveAiInstructions() {
       assignmentText: S.assignmentText,
     });
     const el = document.getElementById('ai-instr-status');
-    if (el) { el.textContent = 'Saved!'; setTimeout(() => { el.textContent = ''; }, 2000); }
-    toast('Instructions saved.', 'success');
-  } catch (e) { toast('Save failed: ' + e.message, 'error'); }
+    if (el) { el.textContent = '✓ Auto-saved'; setTimeout(() => { el.textContent = ''; }, 2000); }
+    if (!silent) toast('Instructions saved.', 'success');
+  } catch (e) { if (!silent) toast('Save failed: ' + e.message, 'error'); }
 }
 
-async function saveAssignmentRubric() {
-  if (!S.course || !S.currentAssignment || !S.rubric) { toast('No rubric to save.', 'warn'); return; }
+async function saveAssignmentRubric(silent = false) {
+  if (!S.course || !S.currentAssignment || !S.rubric) { if (!silent) toast('No rubric to save.', 'warn'); return; }
   try {
     await PUT(`/api/assignment-rubric/${S.course.id}/${S.currentAssignment.id}`, S.rubric);
-    toast('Rubric saved.', 'success');
-  } catch (e) { toast('Save failed: ' + e.message, 'error'); }
+    if (!silent) toast('Rubric saved.', 'success');
+  } catch (e) { if (!silent) toast('Save failed: ' + e.message, 'error'); }
 }
 
 async function generateRubricAi() {
@@ -3332,7 +3350,7 @@ function renderOneByOneTab() {
             </div>
             <textarea class="input" id="obo-student-feedback" rows="3"
               placeholder="Write or generate a paragraph explaining this grade to the student…"
-              onchange="oboSaveFeedbackField()">${esc(g?.studentFeedback || '')}</textarea>
+              onchange="oboSaveFeedbackField()" oninput="clearTimeout(S._fbTimer);S._fbTimer=setTimeout(oboSaveFeedbackField,2000)">${esc(g?.studentFeedback || '')}</textarea>
           </div>
 
           <!-- Marco & Marlowe Discussion -->
