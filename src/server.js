@@ -120,7 +120,11 @@ function fail(res, e, code = 500) { res.status(code).json({ error: e.message || 
 
 function addNotification(req, action, detail, groupKey, link) {
   if (!store.notifications) store.notifications = [];
+  if (!store.deletedNotifKeys) store.deletedNotifKeys = [];
   const user = req.session?.username || 'unknown';
+
+  // If groupKey was previously deleted by a user, don't recreate
+  if (groupKey && store.deletedNotifKeys.includes(groupKey + '_' + user)) return;
 
   // If groupKey provided, update existing notification instead of creating duplicate
   if (groupKey) {
@@ -836,6 +840,13 @@ app.get('/api/notifications/unread-count', requireAuth, (req, res) => {
 });
 
 app.delete('/api/notifications/:id', requireAuth, (req, res) => {
+  if (!store.deletedNotifKeys) store.deletedNotifKeys = [];
+  const notif = (store.notifications || []).find(n => n.id === req.params.id);
+  // Track deleted groupKeys so they don't reappear
+  if (notif?.groupKey) {
+    const delKey = notif.groupKey + '_' + notif.user;
+    if (!store.deletedNotifKeys.includes(delKey)) store.deletedNotifKeys.push(delKey);
+  }
   store.notifications = (store.notifications || []).filter(n => n.id !== req.params.id);
   save();
   ok(res, { ok: true });
@@ -891,6 +902,18 @@ app.delete('/api/textbook', requireAuth, (_req, res) => {
   store.textbook = ''; store.textbookFilename = '';
   save();
   ok(res, { ok: true });
+});
+
+// ── Class Presence ───────────────────────────────────────────────────────────
+if (!store.presence) store.presence = {};
+app.get('/api/presence/:cid', requireAuth, (req, res) => {
+  ok(res, store.presence[req.params.cid] || {});
+});
+app.put('/api/presence/:cid/:date', requireAuth, (req, res) => {
+  if (!store.presence[req.params.cid]) store.presence[req.params.cid] = {};
+  store.presence[req.params.cid][req.params.date] = req.body;
+  save();
+  ok(res, store.presence[req.params.cid][req.params.date]);
 });
 
 // ── Canvas Messages ──────────────────────────────────────────────────────────

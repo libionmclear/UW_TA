@@ -633,6 +633,7 @@ function showView(name) {
     case 'manual':      renderManualView(root); break;
     case 'caseparticipation': renderCaseParticipationView(root); break;
     case 'simparticipation': renderSimParticipationView(root); break;
+    case 'classpresence': renderClassPresenceView(root); break;
     case 'messages':      renderMessagesView(root); break;
     case 'notifications': renderNotificationsView(root); break;
     default:            renderOverview(root);
@@ -2156,10 +2157,13 @@ async function gpSetTeamGrade(teamNum, value, max) {
 }
 
 /* ── Participation Assignment View ─────────────────────────────────────────── */
-function renderParticipationAssignmentView(root, a) {
+async function renderParticipationAssignmentView(root, a) {
   const students = allStudents();
   const due = a.due_at ? new Date(a.due_at).toLocaleDateString() : 'No due date';
   const maxPts = a.points_possible || 10;
+
+  // Load presence data
+  try { _presenceData = await GET(`/api/presence/${S.course.id}`); } catch { _presenceData = {}; }
 
   // Case & Activity assignments for participation %
   const caseAssignments = S.assignments.filter(x => classifyAssignment(x) === 'Cases').sort((x, y) => new Date(x.due_at || 0) - new Date(y.due_at || 0));
@@ -2184,6 +2188,9 @@ function renderParticipationAssignmentView(root, a) {
     });
     const simPct = simMax ? Math.round((simPts / simMax) * 100) : null;
 
+    // Class presence %
+    const presPct = getPresencePct(st.id);
+
     const panopto = g.panoptoScore != null ? g.panoptoScore : '';
     const behavior = g.behaviorScore != null ? g.behaviorScore : '';
     const total = g.finalScore != null ? g.finalScore : '';
@@ -2192,6 +2199,7 @@ function renderParticipationAssignmentView(root, a) {
       <td><span class="stu-avatar-wrap">${studentAvatar(st, 20)}<strong>${esc(st.name)}</strong></span></td>
       <td style="text-align:center;font-weight:700;color:${casePct != null && casePct < 50 ? 'var(--danger)' : 'var(--success)'}">${casePct != null ? casePct + '%' : '—'}</td>
       <td style="text-align:center;font-weight:700;color:${simPct != null && simPct < 50 ? 'var(--danger)' : 'var(--success)'}">${simPct != null ? simPct + '%' : '—'}</td>
+      <td style="text-align:center;font-weight:700;color:${presPct != null && presPct < 50 ? 'var(--danger)' : 'var(--success)'}">${presPct != null ? presPct + '%' : '—'}</td>
       <td style="text-align:center">
         <input type="number" class="input" style="width:50px;text-align:center;font-size:12px;padding:3px" min="0" max="${maxPts}"
           value="${panopto}" placeholder="—" onchange="partFieldSave('${esc(st.id)}','panoptoScore',this.value,${maxPts})" />
@@ -2224,7 +2232,7 @@ function renderParticipationAssignmentView(root, a) {
   root.innerHTML = `
     <div class="page-title">
       ${esc(a.name)}
-      <span class="type-badge" style="font-size:13px">Participation</span>
+      <span class="type-badge" style="font-size:13px">Total Participation</span>
       <div class="page-actions">
         <button class="btn btn-ghost" onclick="selectAssignment('${a.id}')">⟳ Refresh</button>
       </div>
@@ -2245,14 +2253,15 @@ function renderParticipationAssignmentView(root, a) {
     </div>
 
     <div class="card">
-      <div class="card-title">Class Participation — ${esc(a.name)}</div>
-      <p class="muted" style="margin-bottom:10px">Case & Sim Participation % are auto-calculated from drag-drop scores. Panopto and Behavior are manual. Total is the final grade pushed to Canvas.</p>
+      <div class="card-title">Total Participation — ${esc(a.name)}</div>
+      <p class="muted" style="margin-bottom:10px">Case, Sim & Presence % are auto-calculated. Panopto and Behavior are manual. Total is the final grade pushed to Canvas.</p>
       <div class="table-wrap">
         <table>
           <thead><tr>
             <th>Student</th>
-            <th style="text-align:center">Case Participation %</th>
-            <th style="text-align:center">Sim Participation %</th>
+            <th style="text-align:center">Case Part. %</th>
+            <th style="text-align:center">Sim Part. %</th>
+            <th style="text-align:center">Class Presence %</th>
             <th style="text-align:center">Panopto Videos</th>
             <th style="text-align:center">Behavior</th>
             <th style="text-align:center">Total (/${maxPts})</th>
@@ -2963,6 +2972,205 @@ function renderSimParticipationView(root) {
       </tr></thead>
       <tbody>${rows}</tbody>
     </table></div>`;
+}
+
+/* ── Class Presence & Participation ─────────────────────────────────────────── */
+let _presenceData = {}; // cached presence data for course
+let _presenceDate = null; // selected class date
+
+const PRESENCE_BUCKETS = [
+  { key: 0, label: 'Absent',     color: '#dc2626', bg: '#fef2f2' },
+  { key: 1, label: 'Tuned Out',  color: '#d97706', bg: '#fffbeb' },
+  { key: 2, label: 'Attentive',  color: '#2563eb', bg: '#eff6ff' },
+  { key: 3, label: 'Engaged',    color: '#16a34a', bg: '#f0fdf4' },
+];
+
+function getLastClassDate() {
+  // Find the most recent class date from syllabus that's before 5:30 PM PST today
+  const now = new Date();
+  const cutoff = new Date(now.toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }));
+  cutoff.setHours(17, 30, 0, 0);
+  const nowPST = new Date(now.toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }));
+
+  const dates = (S.syllabus || [])
+    .filter(r => r.date && !r.isCancelled)
+    .map(r => r.date)
+    .filter((d, i, a) => a.indexOf(d) === i)
+    .sort();
+
+  // If current time is past 5:30 PM, today's class is done — include today
+  // Otherwise, exclude today
+  const todayStr = nowPST.toISOString().slice(0, 10);
+  const pastDates = dates.filter(d => {
+    if (d < todayStr) return true;
+    if (d === todayStr && nowPST >= cutoff) return true;
+    return false;
+  });
+  return pastDates.length ? pastDates[pastDates.length - 1] : dates[0] || todayStr;
+}
+
+function getClassDates() {
+  return (S.syllabus || [])
+    .filter(r => r.date && !r.isCancelled)
+    .map(r => r.date)
+    .filter((d, i, a) => a.indexOf(d) === i)
+    .sort();
+}
+
+async function renderClassPresenceView(root) {
+  root = root || document.getElementById('view-root');
+  if (!S.course) { root.innerHTML = '<p class="muted padded">Select a course first.</p>'; return; }
+
+  // Load presence data
+  try { _presenceData = await GET(`/api/presence/${S.course.id}`); } catch { _presenceData = {}; }
+  if (!_presenceDate) _presenceDate = getLastClassDate();
+
+  _renderPresenceUI(root);
+}
+
+function _renderPresenceUI(root) {
+  root = root || document.getElementById('view-root');
+  const students = S.allStudentsList.length ? S.allStudentsList : allStudents();
+  const classDates = getClassDates();
+  const dateData = _presenceData[_presenceDate] || {};
+
+  // Date dropdown
+  const dateOptions = classDates.map(d => {
+    const label = new Date(d + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    return `<option value="${d}" ${d === _presenceDate ? 'selected' : ''}>${label}</option>`;
+  }).join('');
+
+  // Build buckets
+  const buckets = { 0: [], 1: [], 2: [], 3: [] };
+  const assigned = new Set();
+  students.forEach(st => {
+    const p = dateData[st.id];
+    if (p != null && p >= 0 && p <= 3) { buckets[p].push(st); assigned.add(st.id); }
+  });
+  const unassigned = students.filter(st => !assigned.has(st.id));
+
+  const poolHtml = unassigned.map(st =>
+    `<div class="part-student" draggable="true" ondragstart="presDragStart(event,'${esc(st.id)}')">${studentAvatar(st, 18)}${esc(st.name)}</div>`
+  ).join('');
+
+  const bucketsHtml = PRESENCE_BUCKETS.map(b => {
+    const items = buckets[b.key].map(st =>
+      `<div class="part-student" draggable="true" ondragstart="presDragStart(event,'${esc(st.id)}')">${studentAvatar(st, 18)}${esc(st.name)}</div>`
+    ).join('');
+    return `<div class="part-bucket" style="border-top:3px solid ${b.color};background:${b.bg}"
+      ondragover="event.preventDefault();this.classList.add('part-bucket-over')"
+      ondragleave="this.classList.remove('part-bucket-over')"
+      ondrop="presDrop(event,${b.key});this.classList.remove('part-bucket-over')">
+      <div class="part-bucket-hdr" style="color:${b.color}">${b.label} <span class="part-bucket-score">(${b.key} pts)</span></div>
+      <div class="part-bucket-count">${buckets[b.key].length}</div>
+      <div class="part-bucket-items">${items}</div>
+    </div>`;
+  }).join('');
+
+  // Summary table — all dates
+  const allDates = classDates.filter(d => _presenceData[d] && Object.keys(_presenceData[d]).length > 0);
+  let summaryHtml = '';
+  if (allDates.length) {
+    const presLabels = ['Abs', 'Out', 'Att', 'Eng'];
+    const presColors = ['var(--danger)', 'var(--warn)', 'var(--info)', 'var(--success)'];
+    const sRows = students.map(st => {
+      let pts = 0, maxPts = 0;
+      const cells = allDates.map(d => {
+        const p = _presenceData[d]?.[st.id];
+        if (p == null) return '<td class="ldg-cell ldg-empty" style="text-align:center">—</td>';
+        pts += p; maxPts += 3;
+        return `<td class="ldg-cell" style="text-align:center;font-weight:700;color:${presColors[p]}">${p}<span style="font-size:9px;font-weight:400"> ${presLabels[p]}</span></td>`;
+      }).join('');
+      const pct = maxPts ? Math.round((pts / maxPts) * 100) : null;
+      return `<tr>
+        <td class="ldg-name"><span class="stu-avatar-wrap">${studentAvatar(st, 18)}${esc(st.name)}</span></td>
+        <td style="text-align:center;font-weight:700;color:var(--uw-purple)">${pts}</td>
+        <td style="text-align:center">${maxPts}</td>
+        <td style="text-align:center;font-weight:700;color:${pct != null && pct < 50 ? 'var(--danger)' : 'var(--success)'}">${pct != null ? pct + '%' : '—'}</td>
+        ${cells}
+      </tr>`;
+    }).join('');
+    const dateHeaders = allDates.map(d => {
+      const lbl = new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      return `<th style="text-align:center;font-size:10px;padding:5px 6px;white-space:nowrap">${lbl}</th>`;
+    }).join('');
+    summaryHtml = `<div class="card" style="margin-top:16px">
+      <div class="card-title">Presence Summary — All Classes</div>
+      <div class="ldg-wrap"><table class="ldg-table"><thead><tr>
+        <th class="ldg-name-hdr">Student</th>
+        <th style="text-align:center;background:var(--uw-purple);color:#fff;min-width:40px">Pts</th>
+        <th style="text-align:center;background:var(--uw-purple);color:#fff;min-width:40px">Max</th>
+        <th style="text-align:center;background:var(--uw-purple);color:#fff;min-width:40px">%</th>
+        ${dateHeaders}
+      </tr></thead><tbody>${sRows}</tbody></table></div>
+    </div>`;
+  }
+
+  const sessionLabel = _presenceDate ? new Date(_presenceDate + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }) : '—';
+
+  root.innerHTML = `
+    <div class="page-title">Class Presence & Participation
+      <div class="page-actions"><button class="btn btn-ghost" onclick="renderClassPresenceView()">⟳ Refresh</button></div>
+    </div>
+
+    <div style="display:flex;gap:12px;align-items:center;margin-bottom:14px;flex-wrap:wrap">
+      <label style="font-size:13px;font-weight:700;color:var(--uw-purple)">Class Date:</label>
+      <select class="input" style="width:220px" onchange="_presenceDate=this.value;_renderPresenceUI()">${dateOptions}</select>
+      <span style="font-size:14px;font-weight:600">${sessionLabel}</span>
+    </div>
+
+    <div class="part-container">
+      <div class="part-pool">
+        <div class="part-pool-hdr">Not Scored — ${unassigned.length} students (won't count toward %)</div>
+        <div class="part-pool-items" id="pres-pool"
+          ondragover="event.preventDefault();this.classList.add('part-bucket-over')"
+          ondragleave="this.classList.remove('part-bucket-over')"
+          ondrop="presDrop(event,-1);this.classList.remove('part-bucket-over')">
+          ${poolHtml || '<p class="muted" style="font-size:11px;text-align:center;padding:8px">All students scored</p>'}
+        </div>
+      </div>
+      <div class="part-buckets">${bucketsHtml}</div>
+      <div style="margin-top:10px;display:flex;gap:8px">
+        <button class="btn btn-surf" onclick="savePresence()">Save Presence for ${esc(sessionLabel)}</button>
+        <button class="btn btn-ghost" onclick="resetPresence()">Reset This Date</button>
+      </div>
+    </div>
+
+    ${summaryHtml}`;
+}
+
+let _presDragId = null;
+function presDragStart(e, id) { _presDragId = id; e.dataTransfer.effectAllowed = 'move'; }
+
+function presDrop(e, bucketKey) {
+  e.preventDefault();
+  if (!_presDragId) return;
+  const sid = _presDragId; _presDragId = null;
+  if (!_presenceData[_presenceDate]) _presenceData[_presenceDate] = {};
+  if (bucketKey === -1) delete _presenceData[_presenceDate][sid];
+  else _presenceData[_presenceDate][sid] = bucketKey;
+  _renderPresenceUI();
+}
+
+async function savePresence() {
+  if (!S.course || !_presenceDate) return;
+  await PUT(`/api/presence/${S.course.id}/${_presenceDate}`, _presenceData[_presenceDate] || {});
+  toast(`Presence saved for ${_presenceDate}.`, 'success');
+}
+
+function resetPresence() {
+  if (!confirm('Reset presence for this date?')) return;
+  _presenceData[_presenceDate] = {};
+  _renderPresenceUI();
+}
+
+function getPresencePct(studentId) {
+  let pts = 0, maxPts = 0;
+  Object.values(_presenceData).forEach(dateData => {
+    const p = dateData[studentId];
+    if (p != null) { pts += p; maxPts += 3; }
+  });
+  return maxPts ? Math.round((pts / maxPts) * 100) : null;
 }
 
 /* ── Grade One-by-One Tab ───────────────────────────────────────────────────── */
