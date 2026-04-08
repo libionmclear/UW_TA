@@ -5571,7 +5571,7 @@ function _renderRompiUI(root) {
         <div class="rompi-podium-name">${first ? esc(first.name.split(' ')[0]) : '—'}</div>
         <div class="rompi-podium-votes">${first ? first.votes : 0} pts</div>
         <div class="rompi-pedestal rompi-pedestal-1">1st</div>
-        <div class="rompi-prize">🏆🎾🎾</div>
+        <div class="rompi-prize">🥎🏆🥎</div>
       </div>
       <div class="rompi-podium-spot rompi-3rd">
         <div class="rompi-podium-photo">${third ? studentAvatar(third, 45) : ''}</div>
@@ -5584,10 +5584,14 @@ function _renderRompiUI(root) {
 
   // Student roster grid
   const rosterHtml = ranked.map(st => `
-    <div class="rompi-student" onclick="rompiVote('${esc(st.id)}')">
+    <div class="rompi-student">
       <div class="rompi-student-photo">${studentAvatar(st, 56)}</div>
       <div class="rompi-student-name">${esc(st.name.split(' ')[0])}<br>${esc(st.name.split(' ').slice(1).join(' '))}</div>
       <div class="rompi-student-votes">${st.votes} pts</div>
+      <div class="rompi-btns">
+        <button class="rompi-btn rompi-btn-minus" onclick="event.stopPropagation();rompiVote('${esc(st.id)}',-1)">−</button>
+        <button class="rompi-btn rompi-btn-plus" onclick="event.stopPropagation();rompiVote('${esc(st.id)}',1)">+</button>
+      </div>
     </div>`).join('');
 
   root.innerHTML = `
@@ -5604,12 +5608,12 @@ function _renderRompiUI(root) {
     </div>`;
 }
 
-async function rompiVote(studentId) {
+async function rompiVote(studentId, delta = 1) {
   if (!_rompiData[studentId]) _rompiData[studentId] = 0;
-  _rompiData[studentId]++;
+  _rompiData[studentId] = Math.max(0, _rompiData[studentId] + delta);
   await PUT('/api/rompipalle', _rompiData);
   _renderRompiUI();
-  toast('+1 point!', 'success');
+  toast(delta > 0 ? '+1 point!' : '−1 point', delta > 0 ? 'success' : 'warn');
 }
 
 async function rompiReset() {
