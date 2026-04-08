@@ -4207,6 +4207,67 @@ function renderQuizBuilder() {
   }).join('');
 }
 
+async function saveQuizBuilderDraft() {
+  const title = document.getElementById('qb-title')?.value?.trim();
+  if (!title) { toast('Enter a quiz name first.', 'warn'); return; }
+  if (!_quizBuilderItems.length) { toast('Add at least one question.', 'warn'); return; }
+
+  const draft = {
+    id: 'qd_' + Date.now().toString(36),
+    title,
+    description: document.getElementById('qb-desc')?.value?.trim() || '',
+    timeLimit: Number(document.getElementById('qb-time')?.value) || null,
+    attempts: Number(document.getElementById('qb-attempts')?.value) || 1,
+    ptsEach: Number(document.getElementById('qb-pts')?.value) || 1,
+    questions: _quizBuilderItems.map(q => ({ ...q })),
+    savedAt: new Date().toISOString(),
+  };
+
+  if (!S.quizBank.drafts) S.quizBank.drafts = [];
+  S.quizBank.drafts.push(draft);
+  await PUT('/api/quiz-bank', S.quizBank);
+  toast(`Draft "${title}" saved!`, 'success');
+  renderQuizDraftsList();
+}
+
+function renderQuizDraftsList() {
+  const el = document.getElementById('qb-drafts-list');
+  if (!el) return;
+  const drafts = S.quizBank?.drafts || [];
+  if (!drafts.length) { el.innerHTML = ''; return; }
+  el.innerHTML = `<div style="font-size:11px;font-weight:700;color:var(--uw-purple);margin-bottom:6px">Saved Drafts</div>` +
+    drafts.map((d, i) => `<div style="display:flex;gap:8px;align-items:center;padding:5px 8px;background:var(--bg);border-radius:var(--radius);margin-bottom:3px;font-size:12px">
+      <span style="flex:1;font-weight:600">${esc(d.title)}</span>
+      <span class="muted">${d.questions.length} Q · ${new Date(d.savedAt).toLocaleDateString()}</span>
+      <button class="btn btn-surf" style="font-size:10px;padding:2px 8px" onclick="loadQuizDraft(${i})">Load</button>
+      <button class="btn btn-ghost btn-danger" style="font-size:10px;padding:2px 6px" onclick="deleteQuizDraft(${i})">✕</button>
+    </div>`).join('');
+}
+
+function loadQuizDraft(idx) {
+  const draft = S.quizBank?.drafts?.[idx];
+  if (!draft) return;
+  _quizBuilderItems = draft.questions.map(q => ({ ...q }));
+  renderQuizBuilder();
+  // Fill in settings after a tick so the DOM is ready
+  setTimeout(() => {
+    const t = document.getElementById('qb-title'); if (t) t.value = draft.title;
+    const d = document.getElementById('qb-desc'); if (d) d.value = draft.description || '';
+    const tm = document.getElementById('qb-time'); if (tm) tm.value = draft.timeLimit || '';
+    const a = document.getElementById('qb-attempts'); if (a) a.value = draft.attempts || 1;
+    const p = document.getElementById('qb-pts'); if (p) p.value = draft.ptsEach || 1;
+  }, 0);
+  toast(`Loaded "${draft.title}".`, 'success');
+}
+
+async function deleteQuizDraft(idx) {
+  if (!confirm('Delete this draft?')) return;
+  S.quizBank.drafts.splice(idx, 1);
+  await PUT('/api/quiz-bank', S.quizBank);
+  renderQuizDraftsList();
+  toast('Draft deleted.', 'success');
+}
+
 async function pushQuizBuilderToCanvas() {
   if (!S.course) { toast('Select a course first.', 'warn'); return; }
   if (!_quizBuilderItems.length) { toast('Add questions to the quiz first.', 'warn'); return; }
@@ -4327,6 +4388,32 @@ function renderQuizView(root) {
         <span class="muted" style="font-weight:400;font-size:12px;margin-left:8px" id="qb-count-label">${_quizBuilderItems.length} question${_quizBuilderItems.length !== 1 ? 's' : ''}</span>
         ${_quizBuilderItems.length ? `<button class="btn btn-ghost btn-danger" style="font-size:11px;padding:2px 8px;margin-left:auto" onclick="clearQuizBuilder()">Clear All</button>` : ''}
       </div>
+
+      <!-- Quiz name & settings — always visible -->
+      <div style="display:grid;grid-template-columns:1fr auto auto auto;gap:10px;align-items:end;margin-bottom:12px">
+        <div class="field-group" style="margin:0">
+          <label>Quiz Name</label>
+          <input id="qb-title" type="text" class="input" placeholder="Midterm Quiz – Chapters 1–5" />
+        </div>
+        <div class="field-group" style="margin:0">
+          <label>Time (min)</label>
+          <input id="qb-time" type="number" class="input" min="1" placeholder="none" style="max-width:80px" />
+        </div>
+        <div class="field-group" style="margin:0">
+          <label>Attempts</label>
+          <input id="qb-attempts" type="number" class="input" value="1" min="1" style="max-width:70px" />
+        </div>
+        <div class="field-group" style="margin:0">
+          <label>Pts each</label>
+          <input id="qb-pts" type="number" class="input" value="1" min="1" style="max-width:70px" />
+        </div>
+      </div>
+      <div class="field-group" style="margin:0 0 12px 0">
+        <label>Description (optional)</label>
+        <textarea id="qb-desc" class="input" rows="2" placeholder="Instructions for students…"></textarea>
+      </div>
+
+      <!-- Questions list -->
       <div id="quiz-builder-wrap" style="max-height:400px;overflow-y:auto">
         ${_quizBuilderItems.length ? '' : '<p class="muted" style="padding:12px;text-align:center">No questions added yet. Browse the bank below, click <strong>+ Add to Quiz</strong>, or add a custom question.</p>'}
       </div>
@@ -4353,35 +4440,13 @@ function renderQuizView(root) {
         </div>
       </div>
 
-      ${_quizBuilderItems.length ? `
-      <div style="border-top:1px solid var(--border);padding-top:12px;margin-top:12px">
-        <div style="display:grid;grid-template-columns:1fr auto auto auto;gap:10px;align-items:end;margin-bottom:10px">
-          <div class="field-group" style="margin:0">
-            <label>Quiz Title</label>
-            <input id="qb-title" type="text" class="input" placeholder="Midterm Quiz – Chapters 1–5" />
-          </div>
-          <div class="field-group" style="margin:0">
-            <label>Time (min)</label>
-            <input id="qb-time" type="number" class="input" min="1" placeholder="none" style="max-width:80px" />
-          </div>
-          <div class="field-group" style="margin:0">
-            <label>Attempts</label>
-            <input id="qb-attempts" type="number" class="input" value="1" min="1" style="max-width:70px" />
-          </div>
-          <div class="field-group" style="margin:0">
-            <label>Pts each</label>
-            <input id="qb-pts" type="number" class="input" value="1" min="1" style="max-width:70px" />
-          </div>
-        </div>
-        <div class="field-group" style="margin:0 0 10px 0">
-          <label>Description (optional)</label>
-          <textarea id="qb-desc" class="input" rows="2" placeholder="Instructions for students…"></textarea>
-        </div>
-        <div style="display:flex;gap:10px;align-items:center">
-          <button class="btn btn-primary" onclick="pushQuizBuilderToCanvas()">Push to Canvas (Locked)</button>
-          <span id="qb-status" class="muted" style="font-size:12px"></span>
-        </div>
-      </div>` : ''}
+      <!-- Actions — always visible -->
+      <div style="border-top:1px solid var(--border);padding-top:12px;margin-top:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <button class="btn btn-ghost" onclick="saveQuizBuilderDraft()">Save Draft</button>
+        <button class="btn btn-primary" onclick="pushQuizBuilderToCanvas()">Push to Canvas (Locked)</button>
+        <span id="qb-status" class="muted" style="font-size:12px"></span>
+      </div>
+      <div id="qb-drafts-list" style="margin-top:10px"></div>
     </div>
 
     <!-- ── AI Suggest ── -->
@@ -4479,6 +4544,7 @@ function renderQuizView(root) {
   // Render the bank questions list and quiz builder
   filterBankByChapter();
   renderQuizBuilder();
+  renderQuizDraftsList();
   updateCqCount();
 }
 
