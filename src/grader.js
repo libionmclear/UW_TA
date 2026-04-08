@@ -180,7 +180,7 @@ Each object MUST have ALL of these fields:
 
 CRITICAL: Do NOT skip the "explanation" field. If the source has a "Feedback:" line after the answer, that IS the explanation — include it in full.
 
-Return ONLY a valid JSON array — no explanation, no markdown fences.
+IMPORTANT: Escape all double quotes inside string values with backslash (e.g. \"word\"). Return ONLY a valid JSON array — no explanation, no markdown fences.
 
 RAW TEXT:
 ${rawText.slice(0, 120000)}`;
@@ -194,7 +194,32 @@ ${rawText.slice(0, 120000)}`;
   // Extract JSON array from response
   const match = content.match(/\[[\s\S]*\]/);
   if (!match) throw new Error('Claude did not return a valid JSON array');
-  return JSON.parse(match[0]);
+  let jsonStr = match[0];
+  try {
+    return JSON.parse(jsonStr);
+  } catch (e) {
+    // Fix common JSON issues: unescaped quotes inside string values
+    // Replace smart quotes with escaped regular quotes
+    jsonStr = jsonStr.replace(/[\u201C\u201D\u201E\u201F\u2033\u2036]/g, '\\"');
+    jsonStr = jsonStr.replace(/[\u2018\u2019\u201A\u201B\u2032\u2035]/g, "\\'");
+    // Fix unescaped double quotes inside JSON string values by re-serializing
+    // Strategy: extract each value between known keys and re-escape
+    try {
+      return JSON.parse(jsonStr);
+    } catch {
+      // Last resort: use a more lenient repair approach
+      // Fix unescaped quotes inside string values (between ": " and the next ",\n or "\n})
+      jsonStr = match[0].replace(
+        /("(?:question|explanation|answer|topic)":\s*")([\s\S]*?)("(?:,\s*\n|\s*\n\s*["\}]))/g,
+        (m, prefix, val, suffix) => prefix + val.replace(/(?<!\\)"/g, '\\"') + suffix
+      );
+      try {
+        return JSON.parse(jsonStr);
+      } catch {
+        throw new Error(e.message);
+      }
+    }
+  }
 }
 
 module.exports = { gradeSubmission, generateRubric, suggestQuizQuestions, parseQuestionsFromText };
