@@ -415,12 +415,15 @@ function renderSidebar() {
 
   wrap.innerHTML = allKeys.map(renderGroup).join('');
 
-  // Other Assignments box
-  if (otherKeys.length && otherWrap && otherBox) {
+  // Other Assignments box + participation tools
+  if (otherWrap && otherBox) {
     otherBox.style.display = '';
-    otherWrap.innerHTML = otherKeys.map(renderGroup).join('');
-  } else if (otherBox) {
-    otherBox.style.display = 'none';
+    const participationTools = `
+      <hr class="nav-divider" />
+      <button class="nav-btn nav-btn-participation ${currentView === 'caseparticipation' ? 'active' : ''}" onclick="showView('caseparticipation')"><span class="nav-icon" style="color:#ff6b00">●</span> Case Participation</button>
+      <button class="nav-btn nav-btn-participation ${currentView === 'simparticipation' ? 'active' : ''}" onclick="showView('simparticipation')"><span class="nav-icon" style="color:#ff6b00">●</span> Sim Participation</button>
+      <button class="nav-btn nav-btn-participation ${currentView === 'classpresence' ? 'active' : ''}" onclick="showView('classpresence')"><span class="nav-icon" style="color:#ff6b00">●</span> Class Presence</button>`;
+    otherWrap.innerHTML = otherKeys.map(renderGroup).join('') + participationTools;
   }
 }
 

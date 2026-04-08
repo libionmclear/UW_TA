@@ -204,10 +204,15 @@ a { color: var(--uw-purple); }
 .assign-tab[data-atab="students"].active { background: #1d4ed8; color: #fff !important; }
 .assign-tab[data-atab="matrix"] { background: #dcfce7; color: #15803d !important; }
 .assign-tab[data-atab="matrix"].active { background: #15803d; color: #fff !important; }
-.assign-tab[data-atab="participation"] { background: #fef3c7; color: #92400e !important; }
-.assign-tab[data-atab="participation"].active { background: #92400e; color: #fff !important; }
-.assign-tab[data-atab="simparticipation"] { background: #d1fae5; color: #065f46 !important; }
-.assign-tab[data-atab="simparticipation"].active { background: #065f46; color: #fff !important; }
+.assign-tab[data-atab="participation"],
+.assign-tab[data-atab="simparticipation"],
+.assign-tab[data-atab="classpresence"] { background: #ff6b00; color: #fff !important; font-weight: 800 !important; }
+.assign-tab[data-atab="participation"]:hover,
+.assign-tab[data-atab="simparticipation"]:hover,
+.assign-tab[data-atab="classpresence"]:hover { background: #ea580c; }
+.assign-tab[data-atab="participation"].active,
+.assign-tab[data-atab="simparticipation"].active,
+.assign-tab[data-atab="classpresence"].active { background: #c2410c; color: #fff !important; box-shadow: 0 2px 6px rgba(234,88,12,.3); }
 .assign-tab[data-atab="chat"] { background: #f3f4f6; color: #374151 !important; }
 .assign-tab[data-atab="chat"].active { background: #374151; color: #fff !important; }
 
@@ -985,6 +990,11 @@ tbody td { padding: 7px 10px; vertical-align: middle; }
 .hdr-user-btn { background: none; border: 1px solid rgba(255,255,255,.4); border-radius: 20px; padding: 6px 13px; cursor: pointer; font-size: 13px; font-weight: 700; }
 .hdr-user-btn:hover { background: rgba(255,255,255,.15); }
 .hdr-user-photo { width: 22px; height: 22px; border-radius: 50%; object-fit: cover; margin-right: 5px; vertical-align: middle; border: 1px solid rgba(255,255,255,.5); }
+
+/* ── Participation nav buttons in sidebar ───────────────────────────────────── */
+.nav-btn-participation { font-weight: 700 !important; }
+.nav-btn-participation:hover { background: rgba(255,107,0,.12) !important; color: #ea580c !important; }
+.nav-btn-participation.active { background: #ff6b00 !important; color: #fff !important; font-weight: 800 !important; }
 
 /* ── Case Participation Drag & Drop ─────────────────────────────────────────── */
 .part-container { display: flex; flex-direction: column; gap: 12px; }
