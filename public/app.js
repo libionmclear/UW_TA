@@ -4123,6 +4123,58 @@ function clearQuizBuilder() {
   renderQuizBuilder();
 }
 
+function qbCustomTypeChanged() {
+  const type = document.getElementById('qb-custom-type')?.value;
+  const choicesWrap = document.getElementById('qb-custom-choices-wrap');
+  const tfWrap = document.getElementById('qb-custom-tf-wrap');
+  const answerInput = document.getElementById('qb-custom-answer');
+  if (choicesWrap) choicesWrap.style.display = type === 'multiple_choice' ? '' : 'none';
+  if (tfWrap) tfWrap.style.display = type === 'true_false' ? '' : 'none';
+  if (answerInput) answerInput.style.display = type === 'true_false' ? 'none' : '';
+}
+
+function addCustomToQuizBuilder() {
+  const text = document.getElementById('qb-custom-text')?.value?.trim();
+  if (!text) { toast('Enter question text.', 'warn'); return; }
+  const type = document.getElementById('qb-custom-type')?.value || 'multiple_choice';
+  let answer = '';
+  let choices = [];
+
+  if (type === 'true_false') {
+    const checked = document.querySelector('input[name="qb-custom-tf"]:checked');
+    answer = checked ? checked.value : '';
+    choices = ['True', 'False'];
+  } else if (type === 'multiple_choice') {
+    const raw = document.getElementById('qb-custom-choices')?.value?.trim() || '';
+    choices = raw.split(',').map(c => c.trim()).filter(Boolean);
+    answer = document.getElementById('qb-custom-answer')?.value?.trim() || '';
+  } else {
+    answer = document.getElementById('qb-custom-answer')?.value?.trim() || '';
+  }
+
+  _quizBuilderItems.push({
+    question: text,
+    answer,
+    choices,
+    questionType: type,
+    difficulty: '',
+    explanation: '',
+    _bankIndex: -1,
+    _custom: true,
+  });
+  renderQuizBuilder();
+  toast('Custom question added.', 'success');
+
+  // Clear inputs
+  const textEl = document.getElementById('qb-custom-text');
+  const choicesEl = document.getElementById('qb-custom-choices');
+  const answerEl = document.getElementById('qb-custom-answer');
+  if (textEl) textEl.value = '';
+  if (choicesEl) choicesEl.value = '';
+  if (answerEl) answerEl.value = '';
+  document.querySelectorAll('input[name="qb-custom-tf"]').forEach(r => r.checked = false);
+}
+
 function renderQuizBuilder() {
   const wrap = document.getElementById('quiz-builder-wrap');
   if (!wrap) return;
@@ -4276,8 +4328,31 @@ function renderQuizView(root) {
         ${_quizBuilderItems.length ? `<button class="btn btn-ghost btn-danger" style="font-size:11px;padding:2px 8px;margin-left:auto" onclick="clearQuizBuilder()">Clear All</button>` : ''}
       </div>
       <div id="quiz-builder-wrap" style="max-height:400px;overflow-y:auto">
-        ${_quizBuilderItems.length ? '' : '<p class="muted" style="padding:12px;text-align:center">No questions added yet. Browse the bank below and click <strong>+ Add to Quiz</strong>.</p>'}
+        ${_quizBuilderItems.length ? '' : '<p class="muted" style="padding:12px;text-align:center">No questions added yet. Browse the bank below, click <strong>+ Add to Quiz</strong>, or add a custom question.</p>'}
       </div>
+
+      <!-- Add custom question -->
+      <div style="border-top:1px solid var(--border);padding-top:10px;margin-top:10px">
+        <div style="font-size:11px;font-weight:700;color:var(--uw-purple);margin-bottom:6px">+ Add Custom Question</div>
+        <div style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap">
+          <input id="qb-custom-text" class="input" placeholder="Question text" style="flex:2;min-width:200px" />
+          <select id="qb-custom-type" class="input" style="width:130px;font-size:11px" onchange="qbCustomTypeChanged()">
+            <option value="multiple_choice">Multiple Choice</option>
+            <option value="true_false">True / False</option>
+            <option value="short_answer">Short Answer</option>
+          </select>
+          <input id="qb-custom-answer" class="input" placeholder="Correct answer" style="width:120px;font-size:11px" />
+          <button class="btn btn-surf" style="font-size:11px;padding:4px 10px;white-space:nowrap" onclick="addCustomToQuizBuilder()">+ Add</button>
+        </div>
+        <div id="qb-custom-choices-wrap" style="margin-top:6px">
+          <input id="qb-custom-choices" class="input" placeholder="Choices (comma separated, e.g. Option A, Option B, Option C, Option D)" style="font-size:11px" />
+        </div>
+        <div id="qb-custom-tf-wrap" style="margin-top:6px;display:none">
+          <label style="font-size:11px;margin-right:10px"><input type="radio" name="qb-custom-tf" value="True" /> True</label>
+          <label style="font-size:11px"><input type="radio" name="qb-custom-tf" value="False" /> False</label>
+        </div>
+      </div>
+
       ${_quizBuilderItems.length ? `
       <div style="border-top:1px solid var(--border);padding-top:12px;margin-top:12px">
         <div style="display:grid;grid-template-columns:1fr auto auto auto;gap:10px;align-items:end;margin-bottom:10px">
