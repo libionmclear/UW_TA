@@ -50,15 +50,15 @@ async function getCourse(courseId) {
 }
 
 async function getAssignments(courseId) {
-  return canvasGet(`/courses/${courseId}/assignments?per_page=50&order_by=due_at`);
+  return canvasGetAll(`/courses/${courseId}/assignments?per_page=100&order_by=due_at`);
 }
 
 async function getStudents(courseId) {
-  return canvasGet(`/courses/${courseId}/enrollments?type[]=StudentEnrollment&per_page=100`);
+  return canvasGetAll(`/courses/${courseId}/enrollments?type[]=StudentEnrollment&per_page=100`);
 }
 
 async function getSubmissions(courseId, assignmentId) {
-  return canvasGet(`/courses/${courseId}/assignments/${assignmentId}/submissions?per_page=100&include[]=user&include[]=submission_comments`);
+  return canvasGetAll(`/courses/${courseId}/assignments/${assignmentId}/submissions?per_page=100&include[]=user&include[]=submission_comments`);
 }
 
 async function getSubmissionText(courseId, assignmentId, userId) {
