@@ -235,12 +235,7 @@ const GROUP_RULES = [
     /quiz/i,
     /chapter\s*\d{1,2}\s*[-–]\s*\d{1,2}/i,   // "Chapter 15-16"
   ]},
-  // PRODUCT OF THE WEEK — spotlight presentations
-  { key: 'Product of the Week', patterns: [
-    /product of the week/i,
-    /potw/i,
-    /spotlight/i,
-  ]},
+  // (Product of the Week is now under Participation)
   // COURSE EVALUATION — standalone
   { key: 'Course Evaluation', patterns: [
     /course eval/i,
@@ -318,10 +313,13 @@ const GROUP_RULES = [
     /forecast.*group/i,
     /\bpic\b/i,
   ]},
-  // PARTICIPATION
+  // PARTICIPATION (includes Product of the Week)
   { key: 'Participation', patterns: [
     /participation/i,
     /class part/i,
+    /product of the week/i,
+    /potw/i,
+    /spotlight/i,
   ]},
   // FINAL EXAM
   { key: 'Final Exam', patterns: [
@@ -374,7 +372,7 @@ const GROUP_ICONS = {
 const GROUP_ORDER = ['Quizzes', 'AI Assignments', 'Cases', 'Activities', 'Group Project', 'Final Exam'];
 
 // Groups that go in the "Other Assignments" sidebar box
-const OTHER_GROUPS = ['Panopto Video Views', 'Participation', 'Course Evaluation', 'Product of the Week', 'Other Assignments'];
+const OTHER_GROUPS = ['Panopto Video Views', 'Participation', 'Course Evaluation', 'Other Assignments'];
 
 // All groups start CLOSED — click to expand
 const expandedGroups = new Set();
@@ -1759,7 +1757,7 @@ function renderAssignmentView(root) {
   const group = classifyAssignment(a);
 
   // Product of the Week gets its own custom view
-  if (group === 'Product of the Week') { renderPotwView(root, a); return; }
+  if (/product of the week|potw|spotlight/i.test(a.name)) { renderPotwView(root, a); return; }
 
   // Group Project gets team-based grading view
   if (group === 'Group Project') { renderGroupProjectView(root, a); return; }
@@ -1857,7 +1855,7 @@ function renderAssignmentView(root) {
     </div>
 
     <!-- Student Randomizer (for Product of the Week) -->
-    ${group === 'Product of the Week' ? `<div class="card potw-randomizer-card">
+    ${/product of the week|potw|spotlight/i.test(a.name) ? `<div class="card potw-randomizer-card">
       <div class="card-title">◎ Student Randomizer — Product of the Week Spotlight</div>
       <div class="potw-body">
         <div class="potw-result" id="potw-result">Click the button to pick a random student</div>
