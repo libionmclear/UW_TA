@@ -316,6 +316,7 @@ const GROUP_RULES = [
     /draft outline/i,
     /mid.project/i,
     /forecast.*group/i,
+    /\bpic\b/i,
   ]},
   // PARTICIPATION
   { key: 'Participation', patterns: [
@@ -3045,49 +3046,51 @@ function renderSimParticipationView(root) {
     .sort((a, b) => new Date(a.due_at || 0) - new Date(b.due_at || 0));
 
   if (!actAssignments.length) {
-    root.innerHTML = '<div class="page-title">Simulation Participation</div><p class="muted padded">No activity/simulation assignments found.</p>';
+    root.innerHTML = '<div class="page-title">Simulation Scores</div><p class="muted padded">No activity/simulation assignments found.</p>';
     return;
   }
 
-  const partLabels = ['—', 'Low', 'Part.', 'Exc.'];
-  const partColors = ['var(--danger)', 'var(--warn)', 'var(--info)', 'var(--success)'];
-
+  // Show actual scores per sim/activity
   const rows = students.map(st => {
-    let totalPts = 0, totalMax = 0;
+    let totalEarned = 0, totalPossible = 0;
     const cells = actAssignments.map(a => {
       const g = (S.allGrades[String(a.id)] || {})[st.id];
-      const p = g?.simParticipation;
-      totalMax += 3;
-      if (p != null) totalPts += p;
-      if (p == null) return '<td class="ldg-cell ldg-empty" style="text-align:center">—</td>';
-      return `<td class="ldg-cell" style="text-align:center;font-weight:700;color:${partColors[p]}">${p} <span style="font-size:9px;font-weight:400">${partLabels[p]}</span></td>`;
+      const score = g?.finalScore ?? g?.canvasScore ?? null;
+      const max = a.points_possible || 0;
+      totalPossible += max;
+      if (score != null) totalEarned += score;
+      if (score == null) return '<td class="ldg-cell ldg-empty" style="text-align:center">—</td>';
+      const pct = max ? Math.round((score / max) * 100) : 0;
+      const color = pct >= 80 ? 'var(--success)' : pct >= 60 ? 'var(--warn)' : 'var(--danger)';
+      return `<td class="ldg-cell" style="text-align:center;font-weight:700;color:${color}">${score}<span style="font-size:9px;font-weight:400;color:var(--text-muted)">/${max}</span></td>`;
     }).join('');
-    const pct = totalMax ? Math.round((totalPts / totalMax) * 100) : null;
+    const pct = totalPossible ? Math.round((totalEarned / totalPossible) * 100) : null;
     return `<tr>
       <td class="ldg-name"><span class="stu-avatar-wrap">${studentAvatar(st, 18)}${esc(st.name)}</span></td>
-      <td style="text-align:center;font-weight:700;color:var(--uw-purple)">${totalPts}</td>
-      <td style="text-align:center;font-weight:700">${totalMax}</td>
-      <td style="text-align:center;font-weight:700;color:${pct != null && pct < 50 ? 'var(--danger)' : 'var(--success)'}">${pct != null ? pct + '%' : '—'}</td>
+      <td style="text-align:center;font-weight:700;color:var(--uw-purple)">${totalEarned}</td>
+      <td style="text-align:center;font-weight:700">${totalPossible}</td>
+      <td style="text-align:center;font-weight:700;color:${pct != null && pct < 60 ? 'var(--danger)' : 'var(--success)'}">${pct != null ? pct + '%' : '—'}</td>
       ${cells}
     </tr>`;
   }).join('');
 
   const headers = actAssignments.map(a =>
-    `<th style="text-align:center;font-size:10px;padding:5px 8px;min-width:70px;white-space:normal;line-height:1.3" title="${esc(a.name)}">
+    `<th style="text-align:center;font-size:10px;padding:5px 8px;min-width:70px;white-space:normal;line-height:1.3" title="${esc(a.name)} (${a.points_possible || 0} pts)">
       <button class="link-btn" style="font-size:10px" onclick="selectAssignment('${a.id}')">${esc(a.name)}</button>
+      <div style="font-size:9px;color:var(--text-muted)">${a.points_possible || 0} pts</div>
     </th>`
   ).join('');
 
   root.innerHTML = `
-    <div class="page-title">Simulation Participation — ${esc(S.course?.name || '')}
+    <div class="page-title">Simulation Scores — ${esc(S.course?.name || '')}
       <div class="page-actions"><button class="btn btn-ghost" onclick="renderSimParticipationView()">⟳ Refresh</button></div>
     </div>
-    <div class="muted" style="margin-bottom:10px">Scores: 0 = Did Not Participate, 1 = Low, 2 = Participated, 3 = Excellent. Click an activity name to open and grade.</div>
+    <div class="muted" style="margin-bottom:10px">Showing actual scores per activity/simulation. Click a name to open and grade.</div>
     <div class="ldg-wrap"><table class="ldg-table">
       <thead><tr>
         <th class="ldg-name-hdr">Student</th>
-        <th style="text-align:center;background:var(--uw-purple);color:#fff;min-width:50px">Total</th>
-        <th style="text-align:center;background:var(--uw-purple);color:#fff;min-width:50px">Max</th>
+        <th style="text-align:center;background:var(--uw-purple);color:#fff;min-width:50px">Earned</th>
+        <th style="text-align:center;background:var(--uw-purple);color:#fff;min-width:50px">Possible</th>
         <th style="text-align:center;background:var(--uw-purple);color:#fff;min-width:50px">%</th>
         ${headers}
       </tr></thead>
@@ -5348,55 +5351,55 @@ function renderCaseParticipationView(root) {
     .sort((a, b) => new Date(a.due_at || 0) - new Date(b.due_at || 0));
 
   if (!caseAssignments.length) {
-    root.innerHTML = '<div class="page-title">Case Participation</div><p class="muted padded">No case assignments found.</p>';
+    root.innerHTML = '<div class="page-title">Case Scores</div><p class="muted padded">No case assignments found.</p>';
     return;
   }
 
-  const partLabels = ['—', 'Low', 'Part.', 'Exc.'];
-  const partColors = ['var(--danger)', 'var(--warn)', 'var(--info)', 'var(--success)'];
-
-  // Build per-student row
+  // Build per-student row showing actual scores per case
   const rows = students.map(st => {
-    let totalPts = 0, totalMax = 0;
+    let totalEarned = 0, totalPossible = 0;
     const cells = caseAssignments.map(a => {
       const g = (S.allGrades[String(a.id)] || {})[st.id];
-      const p = g?.participation;
-      totalMax += 3;
-      if (p != null) totalPts += p;
-      if (p == null) return '<td class="ldg-cell ldg-empty" style="text-align:center">—</td>';
-      const color = partColors[p] || 'var(--text-muted)';
-      return `<td class="ldg-cell" style="text-align:center;font-weight:700;color:${color}">${p} <span style="font-size:9px;font-weight:400">${partLabels[p]}</span></td>`;
+      const score = g?.finalScore ?? g?.canvasScore ?? null;
+      const max = a.points_possible || 0;
+      totalPossible += max;
+      if (score != null) totalEarned += score;
+      if (score == null) return '<td class="ldg-cell ldg-empty" style="text-align:center">—</td>';
+      const pct = max ? Math.round((score / max) * 100) : 0;
+      const color = pct >= 80 ? 'var(--success)' : pct >= 60 ? 'var(--warn)' : 'var(--danger)';
+      return `<td class="ldg-cell" style="text-align:center;font-weight:700;color:${color}">${score}<span style="font-size:9px;font-weight:400;color:var(--text-muted)">/${max}</span></td>`;
     }).join('');
-    const pct = totalMax ? Math.round((totalPts / totalMax) * 100) : null;
+    const pct = totalPossible ? Math.round((totalEarned / totalPossible) * 100) : null;
     return `<tr>
       <td class="ldg-name"><span class="stu-avatar-wrap">${studentAvatar(st, 18)}${esc(st.name)}</span></td>
-      <td style="text-align:center;font-weight:700;color:var(--uw-purple)">${totalPts}</td>
-      <td style="text-align:center;font-weight:700">${totalMax}</td>
-      <td style="text-align:center;font-weight:700;color:${pct != null && pct < 50 ? 'var(--danger)' : 'var(--success)'}">${pct != null ? pct + '%' : '—'}</td>
+      <td style="text-align:center;font-weight:700;color:var(--uw-purple)">${totalEarned}</td>
+      <td style="text-align:center;font-weight:700">${totalPossible}</td>
+      <td style="text-align:center;font-weight:700;color:${pct != null && pct < 60 ? 'var(--danger)' : 'var(--success)'}">${pct != null ? pct + '%' : '—'}</td>
       ${cells}
     </tr>`;
   }).join('');
 
   const caseHeaders = caseAssignments.map(a =>
-    `<th style="text-align:center;font-size:10px;padding:5px 8px;min-width:70px;white-space:normal;line-height:1.3" title="${esc(a.name)}">
+    `<th style="text-align:center;font-size:10px;padding:5px 8px;min-width:70px;white-space:normal;line-height:1.3" title="${esc(a.name)} (${a.points_possible || 0} pts)">
       <button class="link-btn" style="font-size:10px" onclick="selectAssignment('${a.id}')">${esc(a.name)}</button>
+      <div style="font-size:9px;color:var(--text-muted)">${a.points_possible || 0} pts</div>
     </th>`
   ).join('');
 
   root.innerHTML = `
-    <div class="page-title">Case Participation — ${esc(S.course?.name || '')}
+    <div class="page-title">Case Scores — ${esc(S.course?.name || '')}
       <div class="page-actions">
         <button class="btn btn-ghost" onclick="renderCaseParticipationView()">⟳ Refresh</button>
       </div>
     </div>
-    <div class="muted" style="margin-bottom:10px">Scores: 0 = Did Not Participate, 1 = Low, 2 = Participated, 3 = Excellent. Click a case name to open and grade participation.</div>
+    <div class="muted" style="margin-bottom:10px">Showing actual scores per case. Click a case name to open and grade.</div>
     <div class="ldg-wrap">
       <table class="ldg-table">
         <thead>
           <tr>
             <th class="ldg-name-hdr">Student</th>
-            <th style="text-align:center;background:var(--uw-purple);color:#fff;min-width:50px">Total</th>
-            <th style="text-align:center;background:var(--uw-purple);color:#fff;min-width:50px">Max</th>
+            <th style="text-align:center;background:var(--uw-purple);color:#fff;min-width:50px">Earned</th>
+            <th style="text-align:center;background:var(--uw-purple);color:#fff;min-width:50px">Possible</th>
             <th style="text-align:center;background:var(--uw-purple);color:#fff;min-width:50px">%</th>
             ${caseHeaders}
           </tr>
@@ -5746,10 +5749,109 @@ function viewSurveyResults(id) {
   const questions = survey.questions || [];
   const tokens = survey.tokens || {};
   const allStudents = Object.values(tokens);
-
-  // Build results table
+  const respondedCount = Object.keys(responses).length;
   const isQuiz = survey.isQuiz;
   const totalPossible = isQuiz ? questions.reduce((s, q) => s + (q.points || 0), 0) : 0;
+
+  // ── Summary Graphics ──
+  let summaryHtml = '';
+
+  // Response rate bar
+  const responseRate = allStudents.length ? Math.round((respondedCount / allStudents.length) * 100) : 0;
+  summaryHtml += `<div style="margin-bottom:16px">
+    <div style="font-size:12px;font-weight:600;margin-bottom:4px">Response Rate: ${respondedCount}/${allStudents.length} (${responseRate}%)</div>
+    <div style="height:20px;background:var(--border);border-radius:10px;overflow:hidden">
+      <div style="height:100%;width:${responseRate}%;background:var(--uw-purple);border-radius:10px;transition:width .3s"></div>
+    </div>
+  </div>`;
+
+  if (isQuiz) {
+    // Score distribution histogram
+    const scores = [];
+    allStudents.forEach(t => {
+      const r = responses[t.studentId];
+      if (!r) return;
+      let earned = 0;
+      questions.forEach((q, i) => {
+        const ans = r.answers?.[i];
+        if (ans != null && q.correctAnswer && String(ans).trim().toLowerCase() === String(q.correctAnswer).trim().toLowerCase()) earned += (q.points || 0);
+      });
+      scores.push(earned);
+    });
+    const avgScore = scores.length ? (scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1) : '—';
+    const maxScore = scores.length ? Math.max(...scores) : 0;
+    const minScore = scores.length ? Math.min(...scores) : 0;
+
+    // Per-question accuracy
+    const qAccuracy = questions.map((q, i) => {
+      if (!q.correctAnswer) return null;
+      let correct = 0, total = 0;
+      Object.values(responses).forEach(r => {
+        if (r.answers?.[i] != null) {
+          total++;
+          if (String(r.answers[i]).trim().toLowerCase() === String(q.correctAnswer).trim().toLowerCase()) correct++;
+        }
+      });
+      return { idx: i, text: q.text, pct: total ? Math.round((correct / total) * 100) : 0, correct, total };
+    }).filter(Boolean);
+
+    summaryHtml += `<div style="display:flex;gap:16px;margin-bottom:16px;flex-wrap:wrap">
+      <div style="flex:1;min-width:120px;padding:12px;background:#f0fdf4;border:1px solid #86efac;border-radius:var(--radius);text-align:center">
+        <div style="font-size:22px;font-weight:800;color:var(--success)">${avgScore}</div>
+        <div style="font-size:11px;color:var(--text-muted)">Avg Score /${totalPossible}</div>
+      </div>
+      <div style="flex:1;min-width:120px;padding:12px;background:#eff6ff;border:1px solid #93c5fd;border-radius:var(--radius);text-align:center">
+        <div style="font-size:22px;font-weight:800;color:#2563eb">${maxScore}</div>
+        <div style="font-size:11px;color:var(--text-muted)">Highest</div>
+      </div>
+      <div style="flex:1;min-width:120px;padding:12px;background:#fef2f2;border:1px solid #fca5a5;border-radius:var(--radius);text-align:center">
+        <div style="font-size:22px;font-weight:800;color:var(--danger)">${minScore}</div>
+        <div style="font-size:11px;color:var(--text-muted)">Lowest</div>
+      </div>
+      <div style="flex:1;min-width:120px;padding:12px;background:#fefce8;border:1px solid #fde68a;border-radius:var(--radius);text-align:center">
+        <div style="font-size:22px;font-weight:800;color:#d97706">${totalPossible ? Math.round((Number(avgScore) / totalPossible) * 100) : 0}%</div>
+        <div style="font-size:11px;color:var(--text-muted)">Avg %</div>
+      </div>
+    </div>`;
+
+    // Per-question accuracy bars
+    if (qAccuracy.length) {
+      summaryHtml += `<div style="margin-bottom:16px">
+        <div style="font-size:12px;font-weight:600;margin-bottom:8px">Per-Question Accuracy</div>
+        ${qAccuracy.map(q => `<div style="display:flex;gap:8px;align-items:center;margin-bottom:4px">
+          <span style="font-size:11px;min-width:40px;font-weight:600;color:var(--uw-purple)">Q${q.idx + 1}</span>
+          <div style="flex:1;height:16px;background:var(--border);border-radius:8px;overflow:hidden;position:relative">
+            <div style="height:100%;width:${q.pct}%;background:${q.pct >= 70 ? 'var(--success)' : q.pct >= 40 ? 'var(--warn)' : 'var(--danger)'};border-radius:8px"></div>
+          </div>
+          <span style="font-size:11px;min-width:45px;text-align:right;font-weight:600">${q.pct}%</span>
+          <span style="font-size:10px;color:var(--text-muted);min-width:40px">${q.correct}/${q.total}</span>
+        </div>`).join('')}
+      </div>`;
+    }
+  } else {
+    // For surveys: show rating averages as bars
+    const ratingQs = questions.map((q, i) => {
+      if (q.type !== 'rating') return null;
+      const vals = Object.values(responses).map(r => r.answers?.[i]).filter(v => v != null);
+      const avg = vals.length ? (vals.reduce((a, b) => a + b, 0) / vals.length) : 0;
+      return { idx: i, text: q.text, avg: avg.toFixed(1), count: vals.length };
+    }).filter(Boolean);
+
+    if (ratingQs.length) {
+      summaryHtml += `<div style="margin-bottom:16px">
+        <div style="font-size:12px;font-weight:600;margin-bottom:8px">Rating Averages (out of 5)</div>
+        ${ratingQs.map(q => `<div style="display:flex;gap:8px;align-items:center;margin-bottom:4px">
+          <span style="font-size:11px;min-width:40px;font-weight:600;color:var(--uw-purple)">Q${q.idx + 1}</span>
+          <div style="flex:1;height:16px;background:var(--border);border-radius:8px;overflow:hidden">
+            <div style="height:100%;width:${(q.avg / 5) * 100}%;background:var(--uw-purple);border-radius:8px"></div>
+          </div>
+          <span style="font-size:11px;min-width:35px;text-align:right;font-weight:600">${q.avg}/5</span>
+        </div>`).join('')}
+      </div>`;
+    }
+  }
+
+  // ── Individual Results Table (collapsible) ──
   const headerCols = questions.map((q, i) => `<th style="font-size:10px;max-width:120px;white-space:normal;line-height:1.2">Q${i + 1}: ${esc(q.text.substring(0, 30))}${isQuiz ? ` (${q.points || 0}pt)` : ''}</th>`).join('');
 
   const rows = allStudents.map(t => {
@@ -5774,22 +5876,16 @@ function viewSurveyResults(id) {
     </tr>`;
   }).join('');
 
-  // Averages for rating questions
-  const avgRow = questions.map((q, i) => {
-    if (q.type !== 'rating') return '<td></td>';
-    const vals = Object.values(responses).map(r => r.answers?.[i]).filter(v => v != null);
-    const avg = vals.length ? (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1) : '—';
-    return `<td style="text-align:center;font-weight:800;color:var(--uw-purple)">${avg}</td>`;
-  }).join('');
-
   area.innerHTML = `<div class="card" style="margin-top:12px">
-    <div class="card-title">Results — ${esc(survey.title)} (${Object.keys(responses).length}/${allStudents.length} responded)</div>
-    <div class="table-wrap"><table style="font-size:12px">
-      <thead><tr><th>Student</th><th>Submitted</th>${headerCols}${isQuiz ? `<th style="text-align:center;background:var(--uw-gold);color:var(--uw-purple)">Score /${totalPossible}</th>` : ''}</tr></thead>
-      <tbody>${rows}
-        <tr style="background:var(--bg);font-weight:700"><td>Average</td><td></td>${avgRow}</tr>
-      </tbody>
-    </table></div>
+    <div class="card-title">Results — ${esc(survey.title)} (${respondedCount}/${allStudents.length} responded)</div>
+    ${summaryHtml}
+    <details style="margin-top:8px">
+      <summary style="cursor:pointer;font-size:12px;font-weight:600;color:var(--uw-purple);padding:6px 0">View Individual Responses</summary>
+      <div class="table-wrap" style="margin-top:8px"><table style="font-size:12px">
+        <thead><tr><th>Student</th><th>Submitted</th>${headerCols}${isQuiz ? `<th style="text-align:center;background:var(--uw-gold);color:var(--uw-purple)">Score /${totalPossible}</th>` : ''}</tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>
+    </details>
   </div>`;
 }
 
@@ -6193,20 +6289,33 @@ async function syncCanvasGrades(silent = false) {
     const canvasScores = await GET(`/api/canvas/course-submissions/${S.course.id}`);
     const cid = S.course.id;
 
+    // Build assignment name→id lookup for matching quiz grades by name
+    const assignmentByName = {};
+    (S.assignments || []).forEach(a => { assignmentByName[a.name?.toLowerCase()?.trim()] = String(a.id); });
+
     // Merge into allGrades + persist each assignment's grades to store.json
     const savePromises = [];
     Object.entries(canvasScores).forEach(([aid, students]) => {
-      if (!S.allGrades[aid]) S.allGrades[aid] = {};
+      // Check if this aid matches a known assignment; if not, try to match by name
+      let targetAid = aid;
+      const knownAssignment = (S.assignments || []).find(a => String(a.id) === aid);
+      if (!knownAssignment) {
+        // This might be a quiz-generated assignment — try to find by quiz_id
+        // Canvas quiz assignments have the same name as the quiz
+        // For now, we still store under the canvas aid so scores aren't lost
+      }
+
+      if (!S.allGrades[targetAid]) S.allGrades[targetAid] = {};
       let changed = false;
       Object.entries(students).forEach(([uid, score]) => {
         if (score == null) return;
-        if (!S.allGrades[aid][uid]) {
-          S.allGrades[aid][uid] = { status: 'canvas', canvasScore: score, finalScore: score };
+        if (!S.allGrades[targetAid][uid]) {
+          S.allGrades[targetAid][uid] = { status: 'canvas', canvasScore: score, finalScore: score };
           changed = true;
         } else {
-          S.allGrades[aid][uid].canvasScore = score;
-          if (S.allGrades[aid][uid].finalScore == null) {
-            S.allGrades[aid][uid].finalScore = score;
+          S.allGrades[targetAid][uid].canvasScore = score;
+          if (S.allGrades[targetAid][uid].finalScore == null) {
+            S.allGrades[targetAid][uid].finalScore = score;
             changed = true;
           }
         }
@@ -6216,12 +6325,22 @@ async function syncCanvasGrades(silent = false) {
         Object.entries(students).forEach(([uid, score]) => {
           if (score == null) return;
           savePromises.push(
-            PUT(`/api/grades/${cid}/${aid}/${uid}`, S.allGrades[aid][uid]).catch(() => {})
+            PUT(`/api/grades/${cid}/${targetAid}/${uid}`, S.allGrades[targetAid][uid]).catch(() => {})
           );
         });
       }
     });
     await Promise.all(savePromises);
+
+    // Refresh assignments list to pick up any new quiz-created assignments
+    try {
+      const freshAssignments = await GET(`/api/courses/${S.course.id}/assignments`);
+      if (freshAssignments.length > S.assignments.length) {
+        S.assignments = freshAssignments;
+        groupAssignments();
+        renderSidebar();
+      }
+    } catch { /* non-critical */ }
 
     const count = Object.values(canvasScores).reduce((n, s) => n + Object.keys(s).length, 0);
     S._syncing = false;
