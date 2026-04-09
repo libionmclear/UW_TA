@@ -798,11 +798,11 @@ function renderOverview(root) {
     return counted ? Math.round((totalEarned / totalPossible) * 100) : null;
   }
 
-  // Average participation % (across all participation assignments)
-  const partAssignments = S.assignments.filter(a => classifyAssignment(a) === 'Participation');
+  // Average participation % — based on "Class Participation" assignment only
+  const classPartAssignment = S.assignments.filter(a => /class participation/i.test(a.name));
   const avgCase = avgByGroup(caseAssignments);
   const avgSim = avgByGroup(actAssignments);
-  const avgPart = avgByGroup(partAssignments);
+  const avgPart = avgByGroup(classPartAssignment);
 
   // Overall GPA: all assignments with grades
   let gpaEarned = 0, gpaPossible = 0;
