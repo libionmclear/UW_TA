@@ -376,7 +376,8 @@ tbody td { padding: 7px 10px; vertical-align: middle; }
 .modal-col     { display: flex; flex-direction: column; gap: 8px; }
 .col-title     { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .6px; color: var(--uw-purple); margin-bottom: 4px; }
 .submission-text { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; font-size: 13px; line-height: 1.6; max-height: 320px; overflow-y: auto; white-space: pre-wrap; word-break: break-word; }
-.virtual-page { background:#fff; border:1px solid #d1d5db; border-radius:4px; padding:48px 56px; font-family:'Times New Roman',Times,serif; font-size:13px; line-height:2; white-space:pre-wrap; word-break:break-word; max-height:700px; overflow-y:auto; box-shadow:0 2px 8px rgba(0,0,0,.08); min-height:400px; }
+.virtual-page { background:#fff; border:1px solid #d1d5db; border-radius:4px; padding:48px 56px; font-family:'Times New Roman',Times,serif; font-size:13px; line-height:1.6; word-break:break-word; max-height:700px; overflow-y:auto; box-shadow:0 2px 8px rgba(0,0,0,.08); min-height:400px; }
+.virtual-page p { margin:0 0 12px 0; text-indent:0; }
 .ai-flag-banner { background: #fee2e2; border: 1px solid #fca5a5; border-radius: var(--radius); padding: 9px 12px; font-size: 12px; color: #991b1b; }
 
 .criteria-scores { display: flex; flex-direction: column; gap: 6px; }
@@ -1192,6 +1193,12 @@ tbody td { padding: 7px 10px; vertical-align: middle; }
 .rompi-btn-plus:hover { background: #15803d; }
 .rompi-btn-minus { background: #dc2626; color: #fff; }
 .rompi-btn-minus:hover { background: #b91c1c; }
+
+/* Ad Honorem badge */
+.rompi-ad-honorem { position:relative; display:flex; flex-direction:column; align-items:center; flex-shrink:0; }
+.rompi-honor-photo { position:absolute; top:55px; left:50%; transform:translateX(-50%); width:70px; height:70px; border-radius:50%; display:flex; align-items:center; justify-content:center; overflow:hidden; }
+.rompi-honor-label { font-family:'Times New Roman',Times,serif; font-size:14px; font-weight:700; letter-spacing:2px; color:var(--uw-purple); text-transform:uppercase; margin-top:4px; }
+.rompi-honor-upload { margin-top:4px; }
 
 /* ── Misc ────────────────────────────────────────────────────────────────────── */
 .muted   { color: var(--text-muted); font-size: 13px; }

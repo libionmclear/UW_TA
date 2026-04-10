@@ -6244,6 +6244,44 @@ function _renderRompiUI(root) {
       </div>
     </div>`).join('');
 
+  // Ad Honorem badge with laurel wreath (SVG)
+  const laurelBadge = `<div class="rompi-ad-honorem">
+    <svg viewBox="0 0 200 200" width="160" height="160" style="display:block">
+      <!-- Laurel wreath -->
+      <g fill="#166534" opacity="0.85">
+        <!-- Left branch -->
+        <ellipse cx="50" cy="140" rx="8" ry="18" transform="rotate(-30 50 140)"/>
+        <ellipse cx="40" cy="118" rx="7" ry="16" transform="rotate(-20 40 118)"/>
+        <ellipse cx="35" cy="95" rx="7" ry="15" transform="rotate(-10 35 95)"/>
+        <ellipse cx="38" cy="72" rx="6" ry="14" transform="rotate(0 38 72)"/>
+        <ellipse cx="45" cy="52" rx="6" ry="13" transform="rotate(10 45 52)"/>
+        <ellipse cx="58" cy="38" rx="5" ry="12" transform="rotate(25 58 38)"/>
+        <!-- Right branch -->
+        <ellipse cx="150" cy="140" rx="8" ry="18" transform="rotate(30 150 140)"/>
+        <ellipse cx="160" cy="118" rx="7" ry="16" transform="rotate(20 160 118)"/>
+        <ellipse cx="165" cy="95" rx="7" ry="15" transform="rotate(10 165 95)"/>
+        <ellipse cx="162" cy="72" rx="6" ry="14" transform="rotate(0 162 72)"/>
+        <ellipse cx="155" cy="52" rx="6" ry="13" transform="rotate(-10 155 52)"/>
+        <ellipse cx="142" cy="38" rx="5" ry="12" transform="rotate(-25 142 38)"/>
+      </g>
+      <!-- Stems -->
+      <path d="M100 170 Q60 130 45 50" fill="none" stroke="#166534" stroke-width="2.5" opacity="0.6"/>
+      <path d="M100 170 Q140 130 155 50" fill="none" stroke="#166534" stroke-width="2.5" opacity="0.6"/>
+      <!-- Center circle for photo -->
+      <circle cx="100" cy="95" r="40" fill="#f5f3ff" stroke="var(--uw-purple)" stroke-width="2"/>
+    </svg>
+    <div class="rompi-honor-photo" id="rompi-honor-photo">
+      ${_rompiData._honorPhoto ? `<img src="${_rompiData._honorPhoto}" style="width:70px;height:70px;border-radius:50%;object-fit:cover" />` : (first && first.votes > 0 ? studentAvatar(first, 70) : '<span style="font-size:28px">🏆</span>')}
+    </div>
+    <div class="rompi-honor-label">AD HONOREM</div>
+    <div class="rompi-honor-upload">
+      <label class="btn btn-ghost" style="font-size:10px;padding:2px 8px;cursor:pointer">
+        + Photo
+        <input type="file" accept="image/*" style="display:none" onchange="uploadRompiPhoto(this.files[0])" />
+      </label>
+    </div>
+  </div>`;
+
   root.innerHTML = `
     <div class="page-title">🏆 Rompipalle Competition
       <div class="page-actions">
@@ -6251,9 +6289,12 @@ function _renderRompiUI(root) {
         <button class="btn btn-ghost btn-danger" onclick="rompiReset()">Reset All Votes</button>
       </div>
     </div>
-    ${podiumHtml}
+    <div style="display:flex;gap:20px;align-items:flex-start">
+      <div style="flex:1">${podiumHtml}</div>
+      ${laurelBadge}
+    </div>
     <div class="card">
-      <div class="card-title">Roster — Click a student to give them a point!</div>
+      <div class="card-title">Roster — Click + or − to adjust points</div>
       <div class="rompi-roster">${rosterHtml}</div>
     </div>`;
 }
@@ -6264,6 +6305,20 @@ async function rompiVote(studentId, delta = 1) {
   await PUT('/api/rompipalle', _rompiData);
   _renderRompiUI();
   toast(delta > 0 ? '+1 point!' : '−1 point', delta > 0 ? 'success' : 'warn');
+}
+
+async function uploadRompiPhoto(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function() {
+    const el = document.getElementById('rompi-honor-photo');
+    if (el) el.innerHTML = `<img src="${reader.result}" style="width:70px;height:70px;border-radius:50%;object-fit:cover" />`;
+    // Save to rompipalle data
+    _rompiData._honorPhoto = reader.result;
+    PUT('/api/rompipalle', _rompiData).catch(() => {});
+    toast('Ad Honorem photo updated!', 'success');
+  };
+  reader.readAsDataURL(file);
 }
 
 async function rompiReset() {
@@ -6475,7 +6530,7 @@ function renderSubmissionContent(sub) {
         <span class="muted">${charCount} chars</span>
         <span style="font-weight:700;color:var(--text);background:var(--bg);padding:2px 8px;border-radius:8px">≈ ${pageEst} page${pageEst !== '1.0' ? 's' : ''}</span>
       </div>
-      <div class="virtual-page">${esc(cleanText)}</div>
+      <div class="virtual-page">${cleanText.split(/\n\n+/).map(p => `<p>${esc(p.trim())}</p>`).join('')}</div>
     </div>`;
   }
 
