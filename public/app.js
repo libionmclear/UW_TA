@@ -6384,6 +6384,34 @@ function submissionText(sub) {
   return sub._extractedText || sub._manualText || sub.body || sub.url || '';
 }
 
+function cleanSubmissionText(raw) {
+  if (!raw) return '';
+  let text = raw;
+  // Strip HTML tags
+  text = text.replace(/<br\s*\/?>/gi, '\n');
+  text = text.replace(/<\/p>/gi, '\n\n');
+  text = text.replace(/<\/div>/gi, '\n');
+  text = text.replace(/<\/li>/gi, '\n');
+  text = text.replace(/<li[^>]*>/gi, '• ');
+  text = text.replace(/<[^>]+>/g, '');
+  // Decode HTML entities
+  text = text.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ');
+  // Strip Word/RTF artifacts
+  text = text.replace(/\\[a-z]+\d*\s?/g, '');     // RTF commands like \par \b0
+  text = text.replace(/\{\\[^}]+\}/g, '');          // RTF groups like {\fonttbl...}
+  text = text.replace(/<!--[\s\S]*?-->/g, '');      // HTML comments
+  text = text.replace(/\/\*[\s\S]*?\*\//g, '');     // CSS comments
+  text = text.replace(/@[a-zA-Z-]+\s*\{[^}]*\}/g, ''); // CSS at-rules
+  text = text.replace(/mso-[^;":]+:[^;":]+;?/gi, '');  // Word mso- styles
+  text = text.replace(/class="[^"]*"/gi, '');
+  text = text.replace(/style="[^"]*"/gi, '');
+  // Clean up whitespace
+  text = text.replace(/\r\n/g, '\n');
+  text = text.replace(/\n{3,}/g, '\n\n');
+  text = text.replace(/[ \t]+/g, ' ');
+  return text.trim();
+}
+
 function submissionHasAttachments(sub) {
   return sub?.attachments?.length > 0 || sub?.url;
 }
@@ -6432,10 +6460,23 @@ function renderSubmissionContent(sub) {
     }
   }
 
-  // Show body text (extracted or original)
-  const bodyText = sub._extractedText || sub._manualText || sub.body || '';
-  if (bodyText) {
-    html += `<div class="submission-text" style="max-height:500px;margin-top:8px">${esc(bodyText)}</div>`;
+  // Show body text as virtual page(s)
+  const rawBodyText = sub._extractedText || sub._manualText || sub.body || '';
+  if (rawBodyText) {
+    const cleanText = cleanSubmissionText(rawBodyText);
+    // ~3000 chars ≈ 1 typed page (double spaced, 12pt)
+    const charCount = cleanText.length;
+    const wordCount = cleanText.split(/\s+/).filter(Boolean).length;
+    const pageEst = Math.max(0.1, charCount / 3000).toFixed(1);
+
+    html += `<div style="margin-top:10px">
+      <div style="display:flex;gap:12px;align-items:center;margin-bottom:8px;font-size:11px">
+        <span style="font-weight:700;color:var(--uw-purple)">${wordCount} words</span>
+        <span class="muted">${charCount} chars</span>
+        <span style="font-weight:700;color:var(--text);background:var(--bg);padding:2px 8px;border-radius:8px">≈ ${pageEst} page${pageEst !== '1.0' ? 's' : ''}</span>
+      </div>
+      <div class="virtual-page">${esc(cleanText)}</div>
+    </div>`;
   }
 
   if (!html) html = '<p class="muted">(No submission text or attachments)</p>';
