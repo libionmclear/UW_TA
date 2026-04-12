@@ -179,7 +179,45 @@ async function loadCourseData() {
       GET(`/api/courses/${S.course.id}/students`).catch(() => []),
       GET(`/api/dismissed/${S.course.id}`).catch(() => []),
     ]);
-    S.assignments     = assignments;
+    // Deduplicate assignments with the same name (e.g. quiz created a second assignment)
+    // Keep the one that has grades; merge grades from the duplicate into the kept one
+    const deduped = [];
+    const seenNames = {};
+    assignments.forEach(a => {
+      const key = (a.name || '').trim().toLowerCase();
+      if (seenNames[key]) {
+        // Duplicate found — merge grades from the one with fewer scores into the one with more
+        const existing = seenNames[key];
+        const existingGrades = allGradesRaw[String(existing.id)] || {};
+        const dupGrades = allGradesRaw[String(a.id)] || {};
+        const existingCount = Object.keys(existingGrades).length;
+        const dupCount = Object.keys(dupGrades).length;
+
+        // Keep the one with more grades, merge the other's grades into it
+        if (dupCount > existingCount) {
+          // Replace: new one has more grades
+          const idx = deduped.indexOf(existing);
+          if (idx !== -1) deduped[idx] = a;
+          seenNames[key] = a;
+          // Merge old grades into new
+          Object.entries(existingGrades).forEach(([uid, g]) => {
+            if (!dupGrades[uid]) allGradesRaw[String(a.id)][uid] = g;
+          });
+        } else {
+          // Keep existing, merge new grades into it
+          Object.entries(dupGrades).forEach(([uid, g]) => {
+            if (!existingGrades[uid]) {
+              if (!allGradesRaw[String(existing.id)]) allGradesRaw[String(existing.id)] = {};
+              allGradesRaw[String(existing.id)][uid] = g;
+            }
+          });
+        }
+      } else {
+        seenNames[key] = a;
+        deduped.push(a);
+      }
+    });
+    S.assignments     = deduped;
     S.allGrades       = allGradesRaw;
     S.teamMeta        = teamMetaRaw;
     S.allStudentsList = students;
@@ -6388,8 +6426,36 @@ async function syncCanvasGrades(silent = false) {
     // Refresh assignments list to pick up any new quiz-created assignments
     try {
       const freshAssignments = await GET(`/api/courses/${S.course.id}/assignments`);
-      if (freshAssignments.length > S.assignments.length) {
-        S.assignments = freshAssignments;
+      // Deduplicate by name (same logic as loadCourseData)
+      const dedupSync = [];
+      const seenSync = {};
+      freshAssignments.forEach(a => {
+        const key = (a.name || '').trim().toLowerCase();
+        if (seenSync[key]) {
+          const existing = seenSync[key];
+          const eg = S.allGrades[String(existing.id)] || {};
+          const dg = S.allGrades[String(a.id)] || {};
+          if (Object.keys(dg).length > Object.keys(eg).length) {
+            const idx = dedupSync.indexOf(existing);
+            if (idx !== -1) dedupSync[idx] = a;
+            seenSync[key] = a;
+            Object.entries(eg).forEach(([uid, g]) => {
+              if (!S.allGrades[String(a.id)]) S.allGrades[String(a.id)] = {};
+              if (!S.allGrades[String(a.id)][uid]) S.allGrades[String(a.id)][uid] = g;
+            });
+          } else {
+            Object.entries(dg).forEach(([uid, g]) => {
+              if (!S.allGrades[String(existing.id)]) S.allGrades[String(existing.id)] = {};
+              if (!S.allGrades[String(existing.id)][uid]) S.allGrades[String(existing.id)][uid] = g;
+            });
+          }
+        } else {
+          seenSync[key] = a;
+          dedupSync.push(a);
+        }
+      });
+      if (dedupSync.length !== S.assignments.length || dedupSync.some((a, i) => String(a.id) !== String(S.assignments[i]?.id))) {
+        S.assignments = dedupSync;
         groupAssignments();
         renderSidebar();
       }
