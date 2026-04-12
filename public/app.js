@@ -3470,6 +3470,16 @@ function renderOneByOneTab() {
             <div class="obo-total-item obo-total-final"><span>Final</span><strong>${finalTotal}</strong></div>
           </div>
 
+          <!-- Human Oversight Notes — influences AI feedback & explanation -->
+          <div class="card" style="border-left:3px solid var(--uw-purple)">
+            <div class="card-title">Grading Notes & AI Guidance
+              <span class="card-title-hint">Your notes here guide AI feedback & explanation</span>
+            </div>
+            <textarea class="input" id="obo-grading-notes" rows="3"
+              placeholder="e.g. 'Student missed the executive summary entirely. Mention that recommendations should come first. Tone: encouraging but firm.'"
+              onchange="oboSaveGradingNotes()" oninput="clearTimeout(S._gnTimer);S._gnTimer=setTimeout(oboSaveGradingNotes,2000)">${esc(g?.gradingNotes || '')}</textarea>
+          </div>
+
           <!-- AI Student Feedback -->
           <div class="card obo-student-feedback-card">
             <div class="card-title">Student Feedback
@@ -3679,6 +3689,8 @@ async function oboGradeWithAi() {
   // Always read latest instructions from the textarea
   const freshInstructions = document.getElementById('ai-instructions-text')?.value?.trim() || S.aiInstructions || '';
   S.aiInstructions = freshInstructions;
+  // Read per-student grading notes
+  const gradingNotes = document.getElementById('obo-grading-notes')?.value?.trim() || '';
   const sub = submissionFor(st.id);
   const btn = document.getElementById('obo-grade-ai-btn');
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Grading...'; }
@@ -3687,7 +3699,7 @@ async function oboGradeWithAi() {
       text: submissionText(sub) || '', rubric: S.rubric,
       studentName: st.name,
       hasAiCitation: sub?._hasAiCitation || false,
-      aiInstructions: freshInstructions,
+      aiInstructions: freshInstructions + (gradingNotes ? '\n\nGRADER NOTES FOR THIS STUDENT:\n' + gradingNotes : ''),
       isCaseWriteup: classifyAssignment(S.currentAssignment) === 'Cases',
     });
     applyAiGrade(st.id, res.grade, res.aiDetection, res.flagged);
@@ -3717,6 +3729,9 @@ async function oboGenerateFeedback() {
       return `${c.name}: ${score}/${c.maxPoints}${cd.aiJustification ? ' — ' + cd.aiJustification : ''}`;
     }).join('\n');
 
+    // Read grading notes — human oversight that guides AI feedback
+    const gradingNotes = document.getElementById('obo-grading-notes')?.value?.trim() || g.gradingNotes || '';
+
     const res = await POST('/api/grade/feedback', {
       studentName: st.name,
       assignmentName: S.currentAssignment?.name || 'Assignment',
@@ -3724,6 +3739,7 @@ async function oboGenerateFeedback() {
       totalPossible: S.rubric.totalPoints,
       criteriaContext,
       overallFeedback: g.aiOverallFeedback || '',
+      gradingNotes,
     });
 
     const fb = document.getElementById('obo-student-feedback');
@@ -3743,6 +3759,16 @@ function oboSaveFeedbackField() {
   const fb = document.getElementById('obo-student-feedback')?.value || '';
   if (!S.grades[st.id]) S.grades[st.id] = buildEmptyGrade(st.id);
   S.grades[st.id].studentFeedback = fb;
+  saveGrade(st.id);
+}
+
+function oboSaveGradingNotes() {
+  const students = allStudents();
+  const st = students[oboIndex];
+  if (!st) return;
+  const notes = document.getElementById('obo-grading-notes')?.value || '';
+  if (!S.grades[st.id]) S.grades[st.id] = buildEmptyGrade(st.id);
+  S.grades[st.id].gradingNotes = notes;
   saveGrade(st.id);
 }
 

@@ -402,7 +402,7 @@ app.post('/api/ai-detect', requireAuth, (req, res) => {
 // ── AI Student Feedback Generation ───────────────────────────────────────────
 app.post('/api/grade/feedback', requireAuth, async (req, res) => {
   try {
-    const { studentName, assignmentName, totalScore, totalPossible, criteriaContext, overallFeedback } = req.body;
+    const { studentName, assignmentName, totalScore, totalPossible, criteriaContext, overallFeedback, gradingNotes } = req.body;
     const Anthropic = require('@anthropic-ai/sdk');
     const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
     const resp = await client.messages.create({
@@ -417,7 +417,8 @@ Score: ${totalScore} / ${totalPossible}
 Criteria breakdown:
 ${criteriaContext}
 
-${overallFeedback ? `Instructor notes: ${overallFeedback}` : ''}
+${overallFeedback ? `AI grading notes: ${overallFeedback}` : ''}
+${gradingNotes ? `\nINSTRUCTOR GRADING NOTES (use these to guide your tone, focus, and specific points):\n${gradingNotes}` : ''}
 
 Write ONLY the feedback paragraph, no preamble:` }],
     });
