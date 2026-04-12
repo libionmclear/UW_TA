@@ -3676,6 +3676,9 @@ async function oboGradeWithAi() {
   const st = students[oboIndex];
   if (!st || !S.rubric) return;
   if (!S.health?.claude) { toast('Claude not configured.', 'error'); return; }
+  // Always read latest instructions from the textarea
+  const freshInstructions = document.getElementById('ai-instructions-text')?.value?.trim() || S.aiInstructions || '';
+  S.aiInstructions = freshInstructions;
   const sub = submissionFor(st.id);
   const btn = document.getElementById('obo-grade-ai-btn');
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Grading...'; }
@@ -3684,7 +3687,7 @@ async function oboGradeWithAi() {
       text: submissionText(sub) || '', rubric: S.rubric,
       studentName: st.name,
       hasAiCitation: sub?._hasAiCitation || false,
-      aiInstructions: S.aiInstructions,
+      aiInstructions: freshInstructions,
       isCaseWriteup: classifyAssignment(S.currentAssignment) === 'Cases',
     });
     applyAiGrade(st.id, res.grade, res.aiDetection, res.flagged);
@@ -3890,6 +3893,10 @@ async function gradeAll() {
   if (!students.length) { toast('No students loaded.', 'warn'); return; }
   if (!S.health?.claude) { toast('Claude API key not configured.', 'error'); return; }
 
+  // Always read latest instructions from the textarea before grading
+  const freshInstructions = document.getElementById('ai-instructions-text')?.value?.trim() || S.aiInstructions || '';
+  S.aiInstructions = freshInstructions;
+
   const submissions = students.map(st => ({
     studentId: st.id, studentName: st.name,
     text: submissionText(submissionFor(st.id)) || '',
@@ -3906,7 +3913,7 @@ async function gradeAll() {
     const resp = await fetch('/api/grade/batch', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ submissions, rubric: S.rubric, aiInstructions: S.aiInstructions, isCaseWriteup: classifyAssignment(S.currentAssignment) === 'Cases' }),
+      body: JSON.stringify({ submissions, rubric: S.rubric, aiInstructions: freshInstructions, isCaseWriteup: classifyAssignment(S.currentAssignment) === 'Cases' }),
     });
 
     const reader = resp.body.getReader();
@@ -4080,6 +4087,9 @@ document.getElementById('modal-save').addEventListener('click', async () => {
 document.getElementById('modal-grade-ai').addEventListener('click', async () => {
   if (!modalStudentId || !S.rubric) return;
   if (!S.health?.claude) { toast('Claude not configured.', 'error'); return; }
+  // Always read latest instructions
+  const freshInstructions = document.getElementById('ai-instructions-text')?.value?.trim() || S.aiInstructions || '';
+  S.aiInstructions = freshInstructions;
   const st  = allStudents().find(s => s.id === modalStudentId);
   const sub = submissionFor(modalStudentId);
   const btn = document.getElementById('modal-grade-ai');
@@ -4089,7 +4099,7 @@ document.getElementById('modal-grade-ai').addEventListener('click', async () => 
       text: submissionText(sub) || '', rubric: S.rubric,
       studentName: st?.name || modalStudentId,
       hasAiCitation: sub?._hasAiCitation || false,
-      aiInstructions: S.aiInstructions,
+      aiInstructions: freshInstructions,
       isCaseWriteup: classifyAssignment(S.currentAssignment) === 'Cases',
     });
     applyAiGrade(modalStudentId, res.grade, res.aiDetection, res.flagged);
