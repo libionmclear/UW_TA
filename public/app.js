@@ -590,7 +590,7 @@ async function loadAssignmentData(assignmentId) {
 function defaultRubricForAssignment(a) {
   if (!a) return defaultRubric();
   const group = classifyAssignment(a);
-  const pts   = a.points_possible || 10;
+  const pts   = a.points_possible ?? 10;
   const mk    = (id, name, maxPoints, description, autoGrant = false) => ({ id, name, maxPoints, description, autoGrant });
 
   if (group === 'Recorded Lectures') {
@@ -2032,8 +2032,8 @@ function renderPotwView(root, a) {
         onchange="potwUpdateStudent('${esc(st.id)}','date',this.value)" /></td>
       <td><input type="text" class="input" placeholder="Brief description…" value="${esc(desc)}"
         onchange="potwUpdateStudent('${esc(st.id)}','description',this.value)" style="font-size:12px" /></td>
-      <td><input type="number" class="input potw-pts-input" min="0" max="${a.points_possible || 10}" value="${pts}"
-        onchange="potwUpdateScore('${esc(st.id)}',this.value,${a.points_possible || 10})" placeholder="—" /></td>
+      <td><input type="number" class="input potw-pts-input" min="0" max="${a.points_possible ?? 10}" value="${pts}"
+        onchange="potwUpdateScore('${esc(st.id)}',this.value,${a.points_possible ?? 10})" placeholder="—" /></td>
     </tr>`;
   }).join('');
 
@@ -2106,7 +2106,7 @@ function renderPotwView(root, a) {
             <th style="text-align:center">Volunteered / Called</th>
             <th>Date</th>
             <th>Brief Description</th>
-            <th style="text-align:center">Points (/${a.points_possible || 10})</th>
+            <th style="text-align:center">Points (/${a.points_possible ?? 10})</th>
           </tr></thead>
           <tbody>${rows}</tbody>
         </table>
@@ -2138,7 +2138,7 @@ function renderGroupProjectView(root, a) {
   const graded = Object.values(S.grades).filter(g => g.status !== 'pending');
   const scores = Object.values(S.grades).map(g => g.finalScore).filter(s => s != null);
   const avg = scores.length ? (scores.reduce((x, y) => x + y, 0) / scores.length).toFixed(1) : '—';
-  const maxPts = a.points_possible || 10;
+  const maxPts = a.points_possible ?? 10;
 
   // Grade sync badge
   const gs = Object.values(S.grades);
@@ -2447,7 +2447,7 @@ async function gpAiGradeAllTeams() {
 async function renderParticipationAssignmentView(root, a) {
   const students = allStudents();
   const due = a.due_at ? new Date(a.due_at).toLocaleDateString() : 'No due date';
-  const maxPts = a.points_possible || 10;
+  const maxPts = a.points_possible ?? 10;
 
   // Load presence data
   try { _presenceData = await GET(`/api/presence/${S.course.id}`); } catch { _presenceData = {}; }
