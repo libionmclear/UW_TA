@@ -2283,6 +2283,15 @@ function renderGroupProjectView(root, a) {
       </div>
     </div>
 
+    <!-- Rubric + AI Instructions (collapsible) -->
+    <details class="card" id="gp-instructions-card" style="margin-bottom:14px" ${S.gpInstructionsOpen ? 'open' : ''}>
+      <summary style="cursor:pointer;font-weight:700;color:var(--uw-purple);padding:6px 0" onclick="S.gpInstructionsOpen=!this.parentElement.open">
+        ⚙ Rubric & AI Grading Instructions
+        <span class="muted" style="font-weight:400;font-size:11px;margin-left:8px">Click to edit how AI should grade this assignment</span>
+      </summary>
+      <div id="atab-instructions" style="margin-top:12px">${renderInstructionsTab()}</div>
+    </details>
+
     <!-- Team grading cards -->
     <div class="gp-info" style="margin-bottom:10px">
       <span class="muted" style="font-size:12px">Enter a grade per team (or use AI) — it will be applied to all team members automatically.</span>
