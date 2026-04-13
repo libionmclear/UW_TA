@@ -2177,21 +2177,52 @@ function renderGroupProjectView(root, a) {
     const firstGraded = members.find(st => S.grades[st.id]?.finalScore != null);
     const teamScore = firstGraded ? S.grades[firstGraded.id].finalScore : '';
 
+    // Primary submission for the team: pick the member with the most content
+    const primary = gpPrimarySubmission(members);
+    const primarySub = primary?.sub || null;
+    const primaryMember = primary?.member || null;
+
     const memberList = members.map(st => {
       const g = S.grades[st.id];
       const score = g?.finalScore != null ? g.finalScore : '—';
       const canv = g?.canvasScore != null ? `<span class="muted" style="font-size:10px">(Canvas: ${g.canvasScore})</span>` : '';
+      const isSubmitter = primaryMember && st.id === primaryMember.id;
+      const tag = isSubmitter ? '<span class="status-badge status--graded" style="font-size:9px">submitter</span>' : '';
       return `<div class="gp-member">
-        <span class="gp-member-name">${esc(st.name)}</span>
+        <span class="gp-member-name">${esc(st.name)} ${tag}</span>
         <span class="gp-member-score">${score} / ${maxPts} ${canv}</span>
       </div>`;
     }).join('');
+
+    // AI grade status for the team (reflected via the submitter, applies to all)
+    const teamAiStatus = firstGraded && S.grades[firstGraded.id]?.status === 'ai_graded'
+      ? '<span class="status-badge status--graded">AI Graded</span>'
+      : firstGraded && S.grades[firstGraded.id]?.status === 'reviewed'
+      ? '<span class="status-badge status--graded">Reviewed</span>'
+      : '';
+
+    const submissionBlock = primarySub
+      ? `<div class="gp-submission-block" style="margin-top:10px;padding:10px;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg)">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+            <strong style="font-size:12px;color:var(--uw-purple)">Team submission</strong>
+            <span class="muted" style="font-size:11px">(from ${esc(primaryMember?.name || 'unknown')})</span>
+            <div style="margin-left:auto;display:flex;gap:6px">
+              <button class="btn btn-surf" style="font-size:11px;padding:4px 12px"
+                onclick="gpAiGradeTeam(${tNum})">🤖 AI Grade Team</button>
+            </div>
+          </div>
+          <div class="gp-submission-content">${renderSubmissionContent(primarySub)}</div>
+        </div>`
+      : `<div class="gp-submission-block" style="margin-top:10px;padding:10px;border:1px dashed var(--border);border-radius:var(--radius)">
+          <span class="muted" style="font-size:12px">No submissions found for any team member.</span>
+        </div>`;
 
     return `<div class="card gp-team-card">
       <div class="gp-team-header">
         <span class="tm-num">${tNum === 0 ? '?' : 'Team ' + tNum}</span>
         <span class="gp-team-name">${esc(tNum === 0 ? '' : (meta.name || ''))}</span>
         <span class="muted" style="font-size:11px">${members.length} members</span>
+        ${teamAiStatus}
         <div class="gp-grade-input-wrap">
           <label style="font-size:11px;font-weight:700;color:var(--uw-purple)">Team Grade:</label>
           <input type="number" class="input gp-grade-input" min="0" max="${maxPts}" value="${teamScore}"
@@ -2200,6 +2231,7 @@ function renderGroupProjectView(root, a) {
         </div>
       </div>
       <div class="gp-members">${memberList}</div>
+      ${submissionBlock}
     </div>`;
   }).join('');
 
@@ -2242,16 +2274,18 @@ function renderGroupProjectView(root, a) {
     </div>
 
     <!-- Sync badge + Push -->
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap">
       ${syncBadge}
-      <div style="margin-left:auto">
+      <div style="margin-left:auto;display:flex;gap:8px">
+        <button class="btn btn-surf" style="padding:8px 16px" onclick="gpExtractAllTeamText()">📄 Extract All Team Text</button>
+        <button class="btn btn-surf" style="padding:8px 16px" onclick="gpAiGradeAllTeams()">🤖 AI Grade All Teams</button>
         <button class="btn assign-tab--push" style="border-radius:var(--radius);padding:8px 16px" onclick="pushAllToCanvas()">⬆ Push Final Grades to Canvas</button>
       </div>
     </div>
 
     <!-- Team grading cards -->
     <div class="gp-info" style="margin-bottom:10px">
-      <span class="muted" style="font-size:12px">Enter a grade per team — it will be applied to all team members automatically.</span>
+      <span class="muted" style="font-size:12px">Enter a grade per team (or use AI) — it will be applied to all team members automatically.</span>
     </div>
     ${teamCards}`;
 }
@@ -2280,6 +2314,133 @@ async function gpSetTeamGrade(teamNum, value, max) {
 
   // Refresh to show updated scores
   renderAssignmentView();
+}
+
+/* ── Group Project: AI grading helpers ───────────────────────────────────── */
+
+// Pick the team member whose submission has the most content.
+function gpPrimarySubmission(members) {
+  let best = null;
+  let bestLen = -1;
+  for (const st of members) {
+    const sub = submissionFor(st.id);
+    if (!sub) continue;
+    const text = (sub._extractedText || sub._manualText || sub.body || sub.url || '').trim();
+    const hasAttachments = (sub.attachments?.length || 0) > 0;
+    const len = text.length + (hasAttachments ? 1000 : 0); // attachments count as "content"
+    if (len > bestLen) { best = { sub, member: st }; bestLen = len; }
+  }
+  return best;
+}
+
+function gpTeamMembers(teamNum) {
+  const students = allStudents();
+  return students.filter(st => {
+    if (teamNum === 0) return !S.teams[st.id]?.team;
+    return S.teams[st.id]?.team === teamNum;
+  });
+}
+
+async function gpExtractAllTeamText() {
+  const teamNums = Object.keys(S.teamMeta).map(Number).sort((a, b) => a - b);
+  let extracted = 0, failed = 0;
+  for (const tNum of teamNums) {
+    const members = gpTeamMembers(tNum);
+    const primary = gpPrimarySubmission(members);
+    if (!primary?.sub) continue;
+    const sub = primary.sub;
+    if (sub._extractedText || sub._manualText || sub.body) continue; // already have text
+    const att = sub.attachments?.[0];
+    if (!att) continue;
+    try {
+      toast(`Extracting team ${tNum}…`);
+      const res = await POST('/api/canvas/extract-text', { url: att.url, filename: att.display_name || att.filename });
+      sub._extractedText = res.text;
+      extracted++;
+    } catch (e) {
+      console.error(`Team ${tNum} extract failed:`, e.message);
+      failed++;
+    }
+  }
+  toast(`Extracted text for ${extracted} team(s)${failed ? `, ${failed} failed` : ''}.`, failed ? 'error' : 'success');
+  renderAssignmentView();
+}
+
+async function gpAiGradeTeam(teamNum) {
+  if (!S.rubric) { toast('No rubric loaded.', 'error'); return; }
+  const members = gpTeamMembers(teamNum);
+  if (!members.length) { toast(`No members on team ${teamNum}.`, 'error'); return; }
+  const primary = gpPrimarySubmission(members);
+  if (!primary?.sub) { toast(`Team ${teamNum}: no submission found.`, 'error'); return; }
+
+  const sub = primary.sub;
+  let text = sub._extractedText || sub._manualText || sub.body || '';
+  if (!text && sub.attachments?.length) {
+    // Auto-extract the first attachment
+    try {
+      toast(`Team ${teamNum}: extracting attachment…`);
+      const att = sub.attachments[0];
+      const res = await POST('/api/canvas/extract-text', { url: att.url, filename: att.display_name || att.filename });
+      sub._extractedText = res.text;
+      text = res.text;
+    } catch (e) {
+      toast(`Team ${teamNum} extract failed: ${e.message}`, 'error');
+      return;
+    }
+  }
+  if (!text.trim()) {
+    toast(`Team ${teamNum}: no text to grade. Paste text manually first.`, 'error');
+    return;
+  }
+
+  toast(`Team ${teamNum}: AI grading…`);
+  try {
+    // Fetch latest instructions so they're not stale
+    let freshInstructions = S.aiInstructions || '';
+    try {
+      const settings = await GET(`/api/assignment-settings/${S.course.id}/${S.currentAssignment.id}`);
+      freshInstructions = settings.aiInstructions || freshInstructions;
+      S.aiInstructions = freshInstructions;
+    } catch {}
+
+    const res = await POST('/api/grade/single', {
+      text,
+      rubric: S.rubric,
+      studentName: `Team ${teamNum}`,
+      hasAiCitation: false,
+      aiInstructions: freshInstructions,
+      isCaseWriteup: false,
+    });
+
+    // Apply the grade to ALL team members (each gets its own grade object)
+    const saves = [];
+    for (const st of members) {
+      applyAiGrade(st.id, res.grade, res.aiDetection, res.flagged);
+      saves.push(saveGrade(st.id));
+    }
+    await Promise.all(saves);
+    toast(`Team ${teamNum}: AI graded & applied to ${members.length} members.`, 'success');
+    renderAssignmentView();
+  } catch (e) {
+    console.error('gpAiGradeTeam failed:', e);
+    toast(`Team ${teamNum} AI grade failed: ${e.message}`, 'error');
+  }
+}
+
+async function gpAiGradeAllTeams() {
+  const teamNums = Object.keys(S.teamMeta).map(Number).sort((a, b) => a - b);
+  if (!teamNums.length) { toast('No teams found.', 'error'); return; }
+  if (!confirm(`AI grade all ${teamNums.length} teams? This may take a few minutes.`)) return;
+  let ok = 0, fail = 0;
+  for (const tNum of teamNums) {
+    try {
+      await gpAiGradeTeam(tNum);
+      ok++;
+    } catch {
+      fail++;
+    }
+  }
+  toast(`AI graded ${ok} team(s)${fail ? `, ${fail} failed` : ''}.`, fail ? 'error' : 'success');
 }
 
 /* ── Participation Assignment View ─────────────────────────────────────────── */
@@ -6575,6 +6736,7 @@ function submissionHasAttachments(sub) {
 
 function renderSubmissionContent(sub) {
   if (!sub) return '<p class="muted">(No submission)</p>';
+  const sid = sub ? String(sub.user_id) : '';
   let html = '';
 
   // Show URL submission
@@ -6582,6 +6744,7 @@ function renderSubmissionContent(sub) {
     html += `<div class="sub-attachment-item">
       <span class="sub-att-icon">🔗</span>
       <a href="${esc(sub.url)}" target="_blank" class="sub-att-name">${esc(sub.url)}</a>
+      <button class="btn btn-surf" style="font-size:11px;padding:3px 10px" onclick="pasteManualText('${esc(sid)}')">Paste Text</button>
     </div>`;
   }
 
@@ -6611,10 +6774,15 @@ function renderSubmissionContent(sub) {
     });
     html += '</div>';
 
-    // If attachments exist but no text extracted yet, show prompt
+    // If attachments exist but no text extracted yet, show prompt + paste option
     if (!sub._extractedText && !sub._manualText && !sub.body) {
-      html += '<p class="muted" style="margin-top:8px;font-style:italic">Click "Extract & Show Text" above to pull the document content for viewing and AI grading.</p>';
+      html += `<p class="muted" style="margin-top:8px;font-style:italic">Click "Extract & Show Text" above, or <a href="#" onclick="pasteManualText('${esc(sid)}');return false" style="color:var(--uw-purple);font-weight:700">paste text manually</a> for AI grading.</p>`;
     }
+  }
+
+  // If no attachments and no url, still offer paste (e.g., empty submissions)
+  if (!sub.attachments?.length && !sub.url && !sub._extractedText && !sub._manualText && !sub.body) {
+    html += `<p class="muted" style="margin-top:8px"><a href="#" onclick="pasteManualText('${esc(sid)}');return false" style="color:var(--uw-purple);font-weight:700">Paste text manually</a> to enable AI grading.</p>`;
   }
 
   // Show body text as virtual page(s)
@@ -6625,12 +6793,14 @@ function renderSubmissionContent(sub) {
     const charCount = cleanText.length;
     const wordCount = cleanText.split(/\s+/).filter(Boolean).length;
     const pageEst = Math.max(0.1, charCount / 3000).toFixed(1);
+    const sourceLabel = sub._manualText ? ' · pasted manually' : sub._extractedText ? ' · extracted' : '';
 
     html += `<div style="margin-top:10px">
-      <div style="display:flex;gap:12px;align-items:center;margin-bottom:8px;font-size:11px">
+      <div style="display:flex;gap:12px;align-items:center;margin-bottom:8px;font-size:11px;flex-wrap:wrap">
         <span style="font-weight:700;color:var(--uw-purple)">${wordCount} words</span>
-        <span class="muted">${charCount} chars</span>
+        <span class="muted">${charCount} chars${sourceLabel}</span>
         <span style="font-weight:700;color:var(--text);background:var(--bg);padding:2px 8px;border-radius:8px">≈ ${pageEst} page${pageEst !== '1.0' ? 's' : ''}</span>
+        <a href="#" onclick="pasteManualText('${esc(sid)}');return false" style="color:var(--uw-purple);font-size:11px">${sub._manualText ? 'Edit pasted text' : 'Replace with pasted text'}</a>
       </div>
       <div class="virtual-page">${cleanText.split(/\n\n+/).map(p => `<p>${esc(p.trim())}</p>`).join('')}</div>
     </div>`;
@@ -6652,6 +6822,19 @@ async function extractAttachmentText(url, filename, studentId) {
     console.error('Extract failed:', e.message, '| url:', url?.substring(0, 100));
     toast('Extract failed: ' + e.message, 'error');
   }
+}
+
+function pasteManualText(studentId) {
+  const sub = S.submissions.find(s => String(s.user_id) === String(studentId));
+  if (!sub) return;
+  const existing = sub._manualText || sub._extractedText || sub.body || '';
+  const current = existing ? cleanSubmissionText(existing) : '';
+  const input = window.prompt('Paste the submission text below (it will be used for AI grading):', current);
+  if (input == null) return;
+  sub._manualText = input;
+  sub._extractedText = null;
+  toast(`Text saved (${input.length} chars)`, 'success');
+  showView('assignment');
 }
 
 function buildEmptyGrade(studentId) {
