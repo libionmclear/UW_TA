@@ -161,25 +161,28 @@ function addNotification(req, action, detail, groupKey, link) {
 }
 
 // ── Health (live connectivity checks, cached 5 min) ───────────────────────────
-let _healthCache = { canvas: false, claude: false, at: 0 };
+let _healthCache = { canvas: false, claude: false, canvasErr: null, claudeErr: null, at: 0 };
 const HEALTH_TTL = 5 * 60 * 1000;
 
-app.get('/api/health', async (_req, res) => {
-  if (Date.now() - _healthCache.at < HEALTH_TTL) {
-    return ok(res, { canvas: _healthCache.canvas, claude: _healthCache.claude });
+app.get('/api/health', async (req, res) => {
+  const fresh = req.query.fresh === '1';
+  if (!fresh && Date.now() - _healthCache.at < HEALTH_TTL) {
+    return ok(res, { canvas: _healthCache.canvas, claude: _healthCache.claude, canvasErr: _healthCache.canvasErr, claudeErr: _healthCache.claudeErr });
   }
-  let canvasOk = false, claudeOk = false;
-  try { await canvas.testConnection(); canvasOk = true; } catch { canvasOk = false; }
+  let canvasOk = false, claudeOk = false, canvasErr = null, claudeErr = null;
+  try { await canvas.testConnection(); canvasOk = true; } catch (e) { canvasErr = e?.message || String(e); }
   try {
-    if (process.env.ANTHROPIC_API_KEY) {
+    if (!process.env.ANTHROPIC_API_KEY) {
+      claudeErr = 'ANTHROPIC_API_KEY not set';
+    } else {
       const Anthropic = require('@anthropic-ai/sdk');
       const c = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
       await c.messages.create({ model: 'claude-haiku-4-5-20251001', max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] });
       claudeOk = true;
     }
-  } catch { claudeOk = false; }
-  _healthCache = { canvas: canvasOk, claude: claudeOk, at: Date.now() };
-  ok(res, { canvas: canvasOk, claude: claudeOk });
+  } catch (e) { claudeErr = e?.message || String(e); }
+  _healthCache = { canvas: canvasOk, claude: claudeOk, canvasErr, claudeErr, at: Date.now() };
+  ok(res, { canvas: canvasOk, claude: claudeOk, canvasErr, claudeErr });
 });
 
 // ── Canvas ────────────────────────────────────────────────────────────────────
