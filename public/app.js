@@ -1613,6 +1613,37 @@ function updateSylField(idx, field, value) {
                           : field === 'actNum' ? (value === '' ? '' : Number(value))
                           : value;
   saveSylDebounced();
+  // When date changes, stable-sort so the row lands in the right class group.
+  if (field === 'date') {
+    reorderSyllabusByDate();
+    renderSyllabusView();
+  }
+}
+
+// Stable sort: groups rows by date (empty dates last), preserving relative order within a group.
+function reorderSyllabusByDate() {
+  if (!Array.isArray(S.syllabus)) return;
+  S.syllabus = S.syllabus
+    .map((r, i) => ({ r, i }))
+    .sort((a, b) => {
+      const da = a.r.date || '';
+      const db = b.r.date || '';
+      if (!da && !db) return a.i - b.i;
+      if (!da) return 1;
+      if (!db) return -1;
+      if (da !== db) return da.localeCompare(db);
+      return a.i - b.i;
+    })
+    .map(x => x.r);
+}
+
+async function moveSylRow(idx, dir) {
+  const newIdx = idx + dir;
+  if (newIdx < 0 || newIdx >= S.syllabus.length) return;
+  const [row] = S.syllabus.splice(idx, 1);
+  S.syllabus.splice(newIdx, 0, row);
+  await PUT('/api/syllabus', S.syllabus);
+  renderSyllabusView();
 }
 
 function renderSyllabusView(root) {
@@ -1711,6 +1742,8 @@ function renderSyllabusView(root) {
         <textarea class="syl-cell-ta syl-notes-ta" rows="2" oninput="updateSylField(${i},'notes',this.value)" placeholder="Notes…">${esc(row.notes||'')}</textarea>
       </td>
       <td class="syl-actions-cell">
+        <button class="btn-icon" title="Move up" onclick="moveSylRow(${i},-1)" ${i === 0 ? 'disabled' : ''}>▲</button>
+        <button class="btn-icon" title="Move down" onclick="moveSylRow(${i},1)" ${i === rows.length - 1 ? 'disabled' : ''}>▼</button>
         <button class="btn-icon" title="Add row below" onclick="addSylRow(${i})">＋</button>
         <button class="btn-icon btn-icon-del" title="Delete row" onclick="deleteSylRow(${i})">✕</button>
       </td>
