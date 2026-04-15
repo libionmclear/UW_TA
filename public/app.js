@@ -1648,8 +1648,31 @@ async function moveSylRow(idx, dir) {
 
 function renderSyllabusView(root) {
   root = root || document.getElementById('view-root');
-  const rows = S.syllabus || [];
+  const allRows = S.syllabus || [];
   const actTypes = Object.keys(ACT_TYPE_COLORS);
+
+  // Filter + sort state (view-only; does not mutate S.syllabus so edits stay safe)
+  if (!S._sylFilter) S._sylFilter = '';
+  if (!S._sylSort) S._sylSort = { field: null, dir: 1 };
+
+  const q = S._sylFilter.toLowerCase().trim();
+  const matchesFilter = (r) => !q || [
+    r.date, r.day, r.location, r.topic, r.reading,
+    r.assignmentDue, r.instructor, r.notes, r.actType,
+  ].some(v => String(v || '').toLowerCase().includes(q));
+
+  // Work on an indexed view so row edits still target S.syllabus[origIdx]
+  let view = allRows.map((r, origIdx) => ({ r, origIdx })).filter(x => matchesFilter(x.r));
+  if (S._sylSort.field) {
+    const f = S._sylSort.field, dir = S._sylSort.dir;
+    view.sort((a, b) => {
+      const va = String(a.r[f] || ''), vb = String(b.r[f] || '');
+      if (va === vb) return a.origIdx - b.origIdx;
+      return va < vb ? -dir : dir;
+    });
+  }
+  const rows = view.map(x => x.r);
+  const origIdxOf = view.map(x => x.origIdx);
 
   // Build date → class number map (sorted unique dates)
   const uniqueDates = [...new Set(rows.map(r => r.date).filter(Boolean))].sort();
@@ -1678,7 +1701,8 @@ function renderSyllabusView(root) {
 
   let prevClassNum = null;
 
-  const rowsHtml = rows.map((row, i) => {
+  const rowsHtml = rows.map((row, viewIdx) => {
+    const i = origIdxOf[viewIdx]; // real index into S.syllabus
     const isCancelled = !!row.isCancelled;
     const classNum    = dateToClassNum[row.date] || '';
     const palette     = classNum ? classPastels[(classNum - 1) % classPastels.length] : { bg: '#fff', badge: '#6b7280' };
@@ -1742,17 +1766,25 @@ function renderSyllabusView(root) {
         <textarea class="syl-cell-ta syl-notes-ta" rows="2" oninput="updateSylField(${i},'notes',this.value)" placeholder="Notes…">${esc(row.notes||'')}</textarea>
       </td>
       <td class="syl-actions-cell">
-        <button class="btn-icon" title="Move up" onclick="moveSylRow(${i},-1)" ${i === 0 ? 'disabled' : ''}>▲</button>
-        <button class="btn-icon" title="Move down" onclick="moveSylRow(${i},1)" ${i === rows.length - 1 ? 'disabled' : ''}>▼</button>
         <button class="btn-icon" title="Add row below" onclick="addSylRow(${i})">＋</button>
         <button class="btn-icon btn-icon-del" title="Delete row" onclick="deleteSylRow(${i})">✕</button>
       </td>
     </tr>`;
   }).join('');
 
+  const sortArrow = (field) => {
+    if (S._sylSort.field !== field) return '<span class="syl-sort-arrow" style="opacity:0.3">↕</span>';
+    return `<span class="syl-sort-arrow" style="color:var(--uw-gold)">${S._sylSort.dir === 1 ? '▲' : '▼'}</span>`;
+  };
+  const sortableTh = (field, label) =>
+    `<th class="syl-th-sort" style="cursor:pointer;user-select:none" onclick="setSylSort('${field}')">${label} ${sortArrow(field)}</th>`;
+
   root.innerHTML = `
     <div class="page-title">Instructor Syllabus — B BUS 464
       <div class="page-actions">
+        <input class="input" id="syl-filter-input" placeholder="Filter rows…" value="${esc(S._sylFilter)}"
+          style="width:200px" oninput="setSylFilter(this.value)" />
+        ${S._sylSort.field ? `<button class="btn btn-ghost" title="Clear sort" onclick="setSylSort(null)">↺ Clear sort</button>` : ''}
         <button class="btn btn-surf" onclick="addSylRow(-1)">＋ Add Row</button>
         <button class="btn btn-ghost" onclick="resetSyllabus()">↺ Reset to Default</button>
       </div>
@@ -1763,14 +1795,50 @@ function renderSyllabusView(root) {
     <div class="syl-table-wrap">
       <table class="syl-table">
         <thead><tr>
-          <th>Session</th><th>Date</th><th>Day</th><th>Location</th>
-          <th>Est.Time</th><th>#</th><th>Activity Type</th><th>Topic / Description</th>
+          <th>Session</th>
+          ${sortableTh('date', 'Date')}
+          <th>Day</th>
+          ${sortableTh('location', 'Location')}
+          <th>Est.Time</th><th>#</th>
+          ${sortableTh('actType', 'Activity Type')}
+          ${sortableTh('topic', 'Topic / Description')}
           <th>Reading / Videos</th><th>Assignment DUE</th><th>Pts</th>
-          <th>Instructor</th><th>Notes</th><th style="width:56px"></th>
+          ${sortableTh('instructor', 'Instructor')}
+          <th>Notes</th><th style="width:56px"></th>
         </tr></thead>
         <tbody>${rowsHtml}</tbody>
       </table>
     </div>`;
+
+  // Preserve filter input focus across re-renders
+  const fi = document.getElementById('syl-filter-input');
+  if (fi && S._sylFilterFocused) {
+    fi.focus();
+    fi.setSelectionRange(fi.value.length, fi.value.length);
+  }
+}
+
+function setSylSort(field) {
+  if (!S._sylSort) S._sylSort = { field: null, dir: 1 };
+  if (field === null) {
+    S._sylSort = { field: null, dir: 1 };
+  } else if (S._sylSort.field === field) {
+    S._sylSort.dir = -S._sylSort.dir;
+  } else {
+    S._sylSort = { field, dir: 1 };
+  }
+  renderSyllabusView();
+}
+
+let _sylFilterTimer = null;
+function setSylFilter(val) {
+  S._sylFilter = val;
+  S._sylFilterFocused = true;
+  clearTimeout(_sylFilterTimer);
+  _sylFilterTimer = setTimeout(() => {
+    renderSyllabusView();
+    S._sylFilterFocused = false;
+  }, 150);
 }
 
 function formatSylDate(iso) {
