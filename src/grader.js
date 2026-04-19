@@ -10,6 +10,21 @@ function client() {
   return _client;
 }
 
+// Build a placeholder grade that can be returned when grading fails, so a
+// single bad submission never aborts a batch.
+function buildPlaceholderGrade(rubric, reason) {
+  const crit = {};
+  (rubric?.criteria || []).forEach(c => {
+    crit[c.id] = { score: c.autoGrant ? c.maxPoints : 0, justification: `(AI did not return a grade: ${reason}. Please regrade this student.)` };
+  });
+  return {
+    criteria: crit,
+    aiConfidence: 0,
+    aiSignals: [],
+    overallFeedback: `(AI grading failed for this student: ${reason}. Please re-run Grade with AI.)`,
+  };
+}
+
 // ── Grade a single submission ─────────────────────────────────────────────────
 async function gradeSubmission(submissionText, rubric, studentName, aiInstructions = '', isCaseWriteup = false) {
   const criteriaLines = rubric.criteria
@@ -66,14 +81,25 @@ ${criteriaJson}
   "overallFeedback": "..."
 }`;
 
-  const resp = await client().messages.create({
-    model: 'claude-opus-4-6',
-    max_tokens: 3000,
-    messages: [{ role: 'user', content: prompt }],
-  });
+  let raw = '';
+  try {
+    const resp = await client().messages.create({
+      model: 'claude-opus-4-7',
+      max_tokens: 3000,
+      messages: [{ role: 'user', content: prompt }],
+    });
+    raw = resp?.content?.[0]?.text || '';
+  } catch (e) {
+    console.error(`gradeSubmission API error for "${studentName}":`, e.message);
+    return buildPlaceholderGrade(rubric, `API error: ${e.message}`);
+  }
 
-  const raw = resp.content[0].text;
-  return parseGradeJson(raw, rubric);
+  try {
+    return parseGradeJson(raw, rubric);
+  } catch (e) {
+    console.error(`gradeSubmission parse error for "${studentName}":`, e.message, '| raw head:', raw.substring(0, 300));
+    return buildPlaceholderGrade(rubric, 'response was not valid JSON');
+  }
 }
 
 // Robust JSON parser for grading responses: handles smart quotes and truncation.
@@ -168,7 +194,7 @@ Respond ONLY with valid JSON:
 }`;
 
   const resp = await client().messages.create({
-    model: 'claude-opus-4-6',
+    model: 'claude-opus-4-7',
     max_tokens: 1000,
     messages: [{ role: 'user', content: prompt }],
   });
@@ -210,7 +236,7 @@ Respond ONLY with valid JSON:
 }`;
 
   const resp = await client().messages.create({
-    model: 'claude-opus-4-6',
+    model: 'claude-opus-4-7',
     max_tokens: 2000,
     messages: [{ role: 'user', content: prompt }],
   });
@@ -246,7 +272,7 @@ RAW TEXT:
 ${rawText.slice(0, 120000)}`;
 
   const msg = await client().messages.create({
-    model: 'claude-opus-4-6',
+    model: 'claude-opus-4-7',
     max_tokens: 16384,
     messages: [{ role: 'user', content: prompt }],
   });

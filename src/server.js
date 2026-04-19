@@ -160,6 +160,10 @@ function addNotification(req, action, detail, groupKey, link) {
   save();
 }
 
+// Bumped whenever grader behavior meaningfully changes; hit /api/version to confirm deploy.
+const SERVER_VERSION = 'grader-v2-opus4-7-jsonrepair';
+app.get('/api/version', (_req, res) => ok(res, { version: SERVER_VERSION, startedAt: new Date().toISOString() }));
+
 // ── Health (live connectivity checks, cached 5 min) ───────────────────────────
 let _healthCache = { canvas: false, claude: false, canvasErr: null, claudeErr: null, at: 0 };
 const HEALTH_TTL = 5 * 60 * 1000;
