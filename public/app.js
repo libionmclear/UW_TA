@@ -517,9 +517,12 @@ async function selectAssignment(assignmentId) {
   });
   setActiveSidebarBtn(null);
 
-  // Update header buttons
+  // Update header buttons (btn-grade-all / btn-reset-all-ai now live in the
+  // assignment tab bar instead — this guard stays for safety if they're ever
+  // reintroduced to the header.)
   document.getElementById('btn-export').disabled = false;
-  document.getElementById('btn-grade-all').disabled = false;
+  const gradeAllBtn = document.getElementById('btn-grade-all');
+  if (gradeAllBtn) gradeAllBtn.disabled = false;
   const resetBtn = document.getElementById('btn-reset-all-ai');
   if (resetBtn) resetBtn.disabled = false;
 
@@ -2078,6 +2081,8 @@ function renderAssignmentView(root) {
       ${group === 'Cases' ? `<button class="assign-tab" data-atab="participation" onclick="switchAssignTab('participation')">Discussion Participation</button>` : ''}
       ${group === 'Activities' ? `<button class="assign-tab" data-atab="simparticipation" onclick="switchAssignTab('simparticipation')">Simulation Participation</button>` : ''}
       <button class="assign-tab" data-atab="chat" onclick="switchAssignTab('chat')">Notes</button>
+      <button class="assign-tab assign-tab--grade" onclick="gradeAll()" title="Run AI grading on every student in this assignment">▶ Grade All with AI</button>
+      <button class="assign-tab" onclick="resetAllAiGrades()" title="Clear AI scores for every student in THIS assignment. Manual scores and Canvas scores are preserved.">↺ Reset All AI</button>
       <button class="assign-tab assign-tab--push" onclick="pushAllToCanvas()">⬆ Push Final Grades to Canvas</button>
     </div>
 
@@ -4253,7 +4258,9 @@ function recalcTotals(studentId) {
 }
 
 /* ── Grade All with AI ───────────────────────────────────────────────────────── */
-document.getElementById('btn-grade-all').addEventListener('click', gradeAll);
+// Buttons live inline in the assignment tab bar (see renderAssignmentView).
+// The old header listeners are kept only as optional-chaining no-ops for safety.
+document.getElementById('btn-grade-all')?.addEventListener('click', gradeAll);
 document.getElementById('btn-reset-all-ai')?.addEventListener('click', resetAllAiGrades);
 
 async function gradeAll() {
