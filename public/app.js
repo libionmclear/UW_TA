@@ -520,6 +520,8 @@ async function selectAssignment(assignmentId) {
   // Update header buttons
   document.getElementById('btn-export').disabled = false;
   document.getElementById('btn-grade-all').disabled = false;
+  const resetBtn = document.getElementById('btn-reset-all-ai');
+  if (resetBtn) resetBtn.disabled = false;
 
   showView('assignment');
 
@@ -3682,6 +3684,7 @@ function renderOneByOneTab() {
         </div>
         <div class="obo-topbar-actions">
           <button class="btn btn-grade-ai" id="obo-grade-ai-btn" onclick="oboGradeWithAi()">✦ Grade with AI</button>
+          <button class="btn btn-ghost" onclick="oboResetAiGrade()" title="Clear AI scores for this student. Manual scores and Canvas score are preserved.">↺ Reset AI</button>
           <button class="btn btn-ghost" onclick="oboRunAiDetect()">🔍 AI Detect</button>
           <button class="btn btn-primary" onclick="oboSaveAndNext()">Save & Next →</button>
         </div>
@@ -3952,14 +3955,82 @@ async function oboRunAiDetect() {
   } catch (e) { toast('Detection failed: ' + e.message, 'error'); }
 }
 
+// Clears AI-generated fields on a grade without touching manual scores,
+// Canvas score, notes, or finalScore set by a human.
+function clearAiFields(g) {
+  if (!g) return;
+  g.aiDetection = null;
+  g.aiOverallFeedback = '';
+  g.aiConfidence = null;
+  g.aiSignals = [];
+  g.flagged = false;
+  if (g.criteria) {
+    Object.keys(g.criteria).forEach(cid => {
+      const c = g.criteria[cid];
+      if (!c) return;
+      c.aiScore = null;
+      c.aiJustification = '';
+    });
+  }
+  g.aiTotalScore = null;
+  // Only reset status if it was AI-only; preserve 'reviewed' / 'canvas'
+  if (g.status === 'ai_graded') g.status = 'pending';
+}
+
+async function oboResetAiGrade() {
+  const students = allStudents();
+  const st = students[oboIndex];
+  if (!st) return;
+  const g = S.grades[st.id];
+  if (!g) { toast('Nothing to reset.', 'warn'); return; }
+  clearAiFields(g);
+  recalcTotals(st.id);
+  await saveGrade(st.id);
+  refreshOneByOneTab();
+  toast('AI grade reset for this student.', 'success');
+}
+
+async function resetAllAiGrades() {
+  const students = allStudents();
+  if (!students.length) return;
+  if (!confirm(`Reset AI grades for all ${students.length} students in this assignment? Manual grades and Canvas scores are preserved.`)) return;
+  const saves = [];
+  for (const st of students) {
+    const g = S.grades[st.id];
+    if (!g) continue;
+    clearAiFields(g);
+    recalcTotals(st.id);
+    saves.push(saveGrade(st.id));
+  }
+  await Promise.all(saves);
+  renderAssignmentView();
+  toast(`AI grades reset for ${saves.length} student(s).`, 'success');
+}
+
+// Fetch latest AI instructions from the server (source of truth), falling back
+// to the textarea or in-memory copy. Used before every AI grade call.
+async function latestAiInstructions() {
+  if (!S.course || !S.currentAssignment) return S.aiInstructions || '';
+  try {
+    const settings = await GET(`/api/assignment-settings/${S.course.id}/${S.currentAssignment.id}`);
+    const server = settings.aiInstructions || '';
+    const textarea = document.getElementById('ai-instructions-text')?.value?.trim() || '';
+    // Prefer unsaved textarea edits, then server, then in-memory
+    const chosen = textarea || server || S.aiInstructions || '';
+    S.aiInstructions = chosen;
+    return chosen;
+  } catch {
+    return document.getElementById('ai-instructions-text')?.value?.trim() || S.aiInstructions || '';
+  }
+}
+
 async function oboGradeWithAi() {
   const students = allStudents();
   const st = students[oboIndex];
   if (!st || !S.rubric) return;
   if (!S.health?.claude) { toast('Claude not configured.', 'error'); return; }
-  // Always read latest instructions from the textarea
-  const freshInstructions = document.getElementById('ai-instructions-text')?.value?.trim() || S.aiInstructions || '';
-  S.aiInstructions = freshInstructions;
+  // Always get freshest instructions (textarea edits > server-saved > in-memory)
+  const freshInstructions = await latestAiInstructions();
   // Read per-student grading notes
   const gradingNotes = document.getElementById('obo-grading-notes')?.value?.trim() || '';
   const sub = submissionFor(st.id);
@@ -4183,6 +4254,7 @@ function recalcTotals(studentId) {
 
 /* ── Grade All with AI ───────────────────────────────────────────────────────── */
 document.getElementById('btn-grade-all').addEventListener('click', gradeAll);
+document.getElementById('btn-reset-all-ai')?.addEventListener('click', resetAllAiGrades);
 
 async function gradeAll() {
   if (!S.rubric) { toast('No rubric configured.', 'warn'); return; }
@@ -4190,9 +4262,8 @@ async function gradeAll() {
   if (!students.length) { toast('No students loaded.', 'warn'); return; }
   if (!S.health?.claude) { toast('Claude API key not configured.', 'error'); return; }
 
-  // Always read latest instructions from the textarea before grading
-  const freshInstructions = document.getElementById('ai-instructions-text')?.value?.trim() || S.aiInstructions || '';
-  S.aiInstructions = freshInstructions;
+  // Always get freshest instructions (textarea edits > server-saved > in-memory)
+  const freshInstructions = await latestAiInstructions();
 
   const submissions = students.map(st => ({
     studentId: st.id, studentName: st.name,
