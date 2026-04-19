@@ -68,14 +68,74 @@ ${criteriaJson}
 
   const resp = await client().messages.create({
     model: 'claude-opus-4-6',
-    max_tokens: 1200,
+    max_tokens: 3000,
     messages: [{ role: 'user', content: prompt }],
   });
 
   const raw = resp.content[0].text;
-  const match = raw.match(/\{[\s\S]*\}/);
-  if (!match) throw new Error(`Claude returned non-JSON: ${raw.substring(0, 200)}`);
-  return JSON.parse(match[0]);
+  return parseGradeJson(raw, rubric);
+}
+
+// Robust JSON parser for grading responses: handles smart quotes and truncation.
+function parseGradeJson(raw, rubric) {
+  // Prefer the outermost braces; fall back to the first {
+  let match = raw.match(/\{[\s\S]*\}/);
+  if (!match) {
+    // Response didn't close the JSON — grab from first { to end
+    const first = raw.indexOf('{');
+    if (first === -1) throw new Error(`Claude returned non-JSON: ${raw.substring(0, 200)}`);
+    match = [raw.substring(first)];
+  }
+  let jsonStr = match[0]
+    .replace(/[\u201C\u201D\u201E\u201F\u2033\u2036]/g, '"')
+    .replace(/[\u2018\u2019\u201A\u201B\u2032\u2035]/g, "'");
+
+  try { return JSON.parse(jsonStr); } catch (e1) {
+    // Attempt to repair truncated output: the response ran out of tokens
+    // mid-string. Close the current string, then close open objects/arrays.
+    const repaired = repairTruncatedJson(jsonStr);
+    try { return JSON.parse(repaired); } catch (e2) {
+      // Last resort: synthesize a minimal valid result so the caller can
+      // continue rather than blow up the whole batch.
+      const crit = {};
+      (rubric?.criteria || []).forEach(c => {
+        crit[c.id] = { score: c.autoGrant ? c.maxPoints : 0, justification: '(AI response was truncated or malformed; please regrade this student.)' };
+      });
+      console.error('parseGradeJson failed; returning placeholder.', e1.message);
+      return {
+        criteria: crit,
+        aiConfidence: 0,
+        aiSignals: [],
+        overallFeedback: '(AI response was truncated or invalid. Please re-run Grade with AI for this student.)',
+      };
+    }
+  }
+}
+
+// Best-effort truncation repair: closes an open string, then any open
+// brackets/braces in LIFO order. Good enough for max-tokens cutoffs.
+function repairTruncatedJson(s) {
+  let inString = false, escape = false;
+  const stack = [];
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (escape) { escape = false; continue; }
+    if (ch === '\\' && inString) { escape = true; continue; }
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (ch === '{' || ch === '[') stack.push(ch);
+    else if (ch === '}' && stack[stack.length - 1] === '{') stack.pop();
+    else if (ch === ']' && stack[stack.length - 1] === '[') stack.pop();
+  }
+  let out = s;
+  // Drop any trailing comma before we append closers (otherwise invalid JSON).
+  if (inString) out += '"';
+  out = out.replace(/,\s*$/, '');
+  while (stack.length) {
+    const open = stack.pop();
+    out += open === '{' ? '}' : ']';
+  }
+  return out;
 }
 
 // ── Generate rubric ───────────────────────────────────────────────────────────
