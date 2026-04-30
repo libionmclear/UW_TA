@@ -6778,21 +6778,21 @@ function _renderTrenonneUI(root) {
         <div class="rompi-podium-name">${second ? esc(second.name.split(' ')[0]) : '—'}</div>
         <div class="rompi-podium-votes">${second ? second.votes : 0}</div>
         <div class="rompi-pedestal rompi-pedestal-2">2nd</div>
-        <div class="rompi-prize">📦💥</div>
+        <div class="rompi-prize">🤧🤥</div>
       </div>
       <div class="rompi-podium-spot rompi-1st">
         <div class="rompi-podium-photo">${first ? studentAvatar(first, 60) : ''}</div>
         <div class="rompi-podium-name">${first ? esc(first.name.split(' ')[0]) : '—'}</div>
         <div class="rompi-podium-votes">${first ? first.votes : 0}</div>
         <div class="rompi-pedestal rompi-pedestal-1">1st</div>
-        <div class="rompi-prize">🥎🏆🥎</div>
+        <div class="rompi-prize">🤒🩼🤥</div>
       </div>
       <div class="rompi-podium-spot rompi-3rd">
         <div class="rompi-podium-photo">${third ? studentAvatar(third, 45) : ''}</div>
         <div class="rompi-podium-name">${third ? esc(third.name.split(' ')[0]) : '—'}</div>
         <div class="rompi-podium-votes">${third ? third.votes : 0}</div>
         <div class="rompi-pedestal rompi-pedestal-3">3rd</div>
-        <div class="rompi-prize">🥱😴</div>
+        <div class="rompi-prize">😷🛌</div>
       </div>
     </div>`;
 
