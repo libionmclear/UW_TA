@@ -683,6 +683,7 @@ function showView(name) {
     case 'peereval':     renderPeerEvalView(root); break;
     case 'manual':       renderManualView(root); break;
     case 'rompipalle':   renderRompipalleView(root); break;
+    case 'trenonne':     renderTrenonneView(root); break;
     case 'caseparticipation': renderCaseParticipationView(root); break;
     case 'simparticipation': renderSimParticipationView(root); break;
     case 'classpresence': renderClassPresenceView(root); break;
@@ -6750,6 +6751,138 @@ async function rompiReset() {
   await PUT('/api/rompipalle', _rompiData);
   _renderRompiUI();
   toast('All votes reset.', 'success');
+}
+
+/* ── Tre Nonne (same UI as Rompipalle, no "pts" label) ─────────────────────── */
+let _trenonneData = {};
+
+async function renderTrenonneView(root) {
+  root = root || document.getElementById('view-root');
+  try { _trenonneData = await GET('/api/trenonne'); } catch { _trenonneData = {}; }
+  _renderTrenonneUI(root);
+}
+
+function _renderTrenonneUI(root) {
+  root = root || document.getElementById('view-root');
+  const students = S.allStudentsList.length ? S.allStudentsList : allStudents();
+
+  const ranked = students.map(st => ({ ...st, votes: _trenonneData[st.id] || 0 })).sort((a, b) => b.votes - a.votes);
+  const first = ranked[0];
+  const second = ranked[1];
+  const third = ranked[2];
+
+  const podiumHtml = `
+    <div class="rompi-podium">
+      <div class="rompi-podium-spot rompi-2nd">
+        <div class="rompi-podium-photo">${second ? studentAvatar(second, 50) : ''}</div>
+        <div class="rompi-podium-name">${second ? esc(second.name.split(' ')[0]) : '—'}</div>
+        <div class="rompi-podium-votes">${second ? second.votes : 0}</div>
+        <div class="rompi-pedestal rompi-pedestal-2">2nd</div>
+        <div class="rompi-prize">📦💥</div>
+      </div>
+      <div class="rompi-podium-spot rompi-1st">
+        <div class="rompi-podium-photo">${first ? studentAvatar(first, 60) : ''}</div>
+        <div class="rompi-podium-name">${first ? esc(first.name.split(' ')[0]) : '—'}</div>
+        <div class="rompi-podium-votes">${first ? first.votes : 0}</div>
+        <div class="rompi-pedestal rompi-pedestal-1">1st</div>
+        <div class="rompi-prize">🥎🏆🥎</div>
+      </div>
+      <div class="rompi-podium-spot rompi-3rd">
+        <div class="rompi-podium-photo">${third ? studentAvatar(third, 45) : ''}</div>
+        <div class="rompi-podium-name">${third ? esc(third.name.split(' ')[0]) : '—'}</div>
+        <div class="rompi-podium-votes">${third ? third.votes : 0}</div>
+        <div class="rompi-pedestal rompi-pedestal-3">3rd</div>
+        <div class="rompi-prize">🥱😴</div>
+      </div>
+    </div>`;
+
+  const rosterHtml = ranked.map(st => `
+    <div class="rompi-student">
+      <div class="rompi-student-photo">${studentAvatar(st, 56)}</div>
+      <div class="rompi-student-name">${esc(st.name.split(' ')[0])}<br>${esc(st.name.split(' ').slice(1).join(' '))}</div>
+      <div class="rompi-student-votes">${st.votes}</div>
+      <div class="rompi-btns">
+        <button class="rompi-btn rompi-btn-minus" onclick="event.stopPropagation();trenonneVote('${esc(st.id)}',-1)">−</button>
+        <button class="rompi-btn rompi-btn-plus" onclick="event.stopPropagation();trenonneVote('${esc(st.id)}',1)">+</button>
+      </div>
+    </div>`).join('');
+
+  const laurelBadge = `<div class="rompi-ad-honorem">
+    <svg viewBox="0 0 200 200" width="160" height="160" style="display:block">
+      <g fill="#166534" opacity="0.85">
+        <ellipse cx="50" cy="140" rx="8" ry="18" transform="rotate(-30 50 140)"/>
+        <ellipse cx="40" cy="118" rx="7" ry="16" transform="rotate(-20 40 118)"/>
+        <ellipse cx="35" cy="95" rx="7" ry="15" transform="rotate(-10 35 95)"/>
+        <ellipse cx="38" cy="72" rx="6" ry="14" transform="rotate(0 38 72)"/>
+        <ellipse cx="45" cy="52" rx="6" ry="13" transform="rotate(10 45 52)"/>
+        <ellipse cx="58" cy="38" rx="5" ry="12" transform="rotate(25 58 38)"/>
+        <ellipse cx="150" cy="140" rx="8" ry="18" transform="rotate(30 150 140)"/>
+        <ellipse cx="160" cy="118" rx="7" ry="16" transform="rotate(20 160 118)"/>
+        <ellipse cx="165" cy="95" rx="7" ry="15" transform="rotate(10 165 95)"/>
+        <ellipse cx="162" cy="72" rx="6" ry="14" transform="rotate(0 162 72)"/>
+        <ellipse cx="155" cy="52" rx="6" ry="13" transform="rotate(-10 155 52)"/>
+        <ellipse cx="142" cy="38" rx="5" ry="12" transform="rotate(-25 142 38)"/>
+      </g>
+      <path d="M100 170 Q60 130 45 50" fill="none" stroke="#166534" stroke-width="2.5" opacity="0.6"/>
+      <path d="M100 170 Q140 130 155 50" fill="none" stroke="#166534" stroke-width="2.5" opacity="0.6"/>
+      <circle cx="100" cy="95" r="40" fill="#f5f3ff" stroke="var(--uw-purple)" stroke-width="2"/>
+    </svg>
+    <div class="rompi-honor-photo" id="trenonne-honor-photo">
+      ${_trenonneData._honorPhoto ? `<img src="${_trenonneData._honorPhoto}" style="width:70px;height:70px;border-radius:50%;object-fit:cover" />` : (first && first.votes > 0 ? studentAvatar(first, 70) : '<span style="font-size:28px">👵</span>')}
+    </div>
+    <div class="rompi-honor-label">AD HONOREM</div>
+    <div class="rompi-honor-upload">
+      <label class="btn btn-ghost" style="font-size:10px;padding:2px 8px;cursor:pointer">
+        + Photo
+        <input type="file" accept="image/*" style="display:none" onchange="uploadTrenonnePhoto(this.files[0])" />
+      </label>
+    </div>
+  </div>`;
+
+  root.innerHTML = `
+    <div class="page-title">👵 Tre Nonne
+      <div class="page-actions">
+        <button class="btn btn-ghost" onclick="renderTrenonneView()">⟳ Refresh</button>
+        <button class="btn btn-ghost btn-danger" onclick="trenonneReset()">Reset All</button>
+      </div>
+    </div>
+    <div style="display:flex;gap:20px;align-items:flex-start">
+      <div style="flex:1">${podiumHtml}</div>
+      ${laurelBadge}
+    </div>
+    <div class="card">
+      <div class="card-title">Roster — Click + or − to adjust</div>
+      <div class="rompi-roster">${rosterHtml}</div>
+    </div>`;
+}
+
+async function trenonneVote(studentId, delta = 1) {
+  if (!_trenonneData[studentId]) _trenonneData[studentId] = 0;
+  _trenonneData[studentId] = Math.max(0, _trenonneData[studentId] + delta);
+  await PUT('/api/trenonne', _trenonneData);
+  _renderTrenonneUI();
+  toast(delta > 0 ? '+1' : '−1', delta > 0 ? 'success' : 'warn');
+}
+
+async function uploadTrenonnePhoto(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function() {
+    const el = document.getElementById('trenonne-honor-photo');
+    if (el) el.innerHTML = `<img src="${reader.result}" style="width:70px;height:70px;border-radius:50%;object-fit:cover" />`;
+    _trenonneData._honorPhoto = reader.result;
+    PUT('/api/trenonne', _trenonneData).catch(() => {});
+    toast('Ad Honorem photo updated!', 'success');
+  };
+  reader.readAsDataURL(file);
+}
+
+async function trenonneReset() {
+  if (!confirm('Reset all Tre Nonne to zero?')) return;
+  _trenonneData = {};
+  await PUT('/api/trenonne', _trenonneData);
+  _renderTrenonneUI();
+  toast('All reset.', 'success');
 }
 
 /* ── Canvas Grade Sync ───────────────────────────────────────────────────────── */

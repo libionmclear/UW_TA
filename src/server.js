@@ -1264,6 +1264,14 @@ app.put('/api/rompipalle', requireAuth, (req, res) => {
   ok(res, store.rompipalle);
 });
 
+if (!store.trenonne) store.trenonne = {};
+app.get('/api/trenonne', requireAuth, (_req, res) => ok(res, store.trenonne));
+app.put('/api/trenonne', requireAuth, (req, res) => {
+  store.trenonne = req.body;
+  save();
+  ok(res, store.trenonne);
+});
+
 // ── Data Backup/Restore ──────────────────────────────────────────────────────
 app.get('/api/backup', requireAuth, (_req, res) => {
   res.setHeader('Content-Type', 'application/json');
