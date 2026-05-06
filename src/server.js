@@ -1272,6 +1272,14 @@ app.put('/api/trenonne', requireAuth, (req, res) => {
   ok(res, store.trenonne);
 });
 
+if (!store.bravissimo) store.bravissimo = {};
+app.get('/api/bravissimo', requireAuth, (_req, res) => ok(res, store.bravissimo));
+app.put('/api/bravissimo', requireAuth, (req, res) => {
+  store.bravissimo = req.body;
+  save();
+  ok(res, store.bravissimo);
+});
+
 // ── Data Backup/Restore ──────────────────────────────────────────────────────
 app.get('/api/backup', requireAuth, (_req, res) => {
   res.setHeader('Content-Type', 'application/json');
