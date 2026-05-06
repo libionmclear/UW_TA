@@ -4802,7 +4802,8 @@ function renderQuizView(root) {
   const qs = S.quizBank?.questions || [];
 
   // Get all chapters in the bank
-  const chapters = [...new Set(qs.map(q => (typeof q === 'object' && q.chapter) ? q.chapter : 'Uncategorized'))].sort();
+  const chapters = [...new Set(qs.map(q => (typeof q === 'object' && q.chapter) ? q.chapter : 'Uncategorized'))]
+    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
 
   // Render bank grouped by chapter
   const bankByChapter = {};
