@@ -87,7 +87,7 @@ const DEFAULT_TEAM_META = {
   '4': { name: 'Samsung Wearables', memberNames: ['Alfredo Alamdar','Dylan Brand','Aaron Gaceta','Yejun Noh','Iman Salhi'] },
   '5': { name: 'Peloton',           memberNames: ['Jade Ellis','Marlen Makramalla','Gabe Moreno','Paul Soper','Yordanos Abebaw Tsegaye'] },
   '6': { name: 'Sony',              memberNames: ['Isabelle Berariu','Sanjana Bonagiri','Devon Dang','Tammy Huynh','Laura Summers','Mark Trofimchik'] },
-  '7': { name: '',                  memberNames: ['Nikita Dubitski','Lance Kimerer','Kamron Korrell','Francis Stellano Neri','David Semaan'] },
+  '7': { name: 'Nike AI',           memberNames: ['Nikita Dubitski','Lance Kimerer','Kamron Korrell','Francis Stellano Neri','David Semaan'] },
   '8': { name: 'GoPro',             memberNames: ['Makylie Bean','Kha-vy Bui','Caden Chiong','Noah Graetzer','Hailey Granvold'] },
 };
 
@@ -1302,10 +1302,13 @@ function getTeamsForSignup() {
   const cids = Object.keys(store.teamMeta || {});
   if (cids.length) {
     const tm = store.teamMeta[cids[0]] || {};
-    const list = Object.entries(tm).map(([num, t]) => ({ id: String(num), name: t.name || `Team ${num}` }));
+    const list = Object.entries(tm).map(([num, t]) => ({
+      id: String(num),
+      name: t.name || (DEFAULT_TEAM_META[num] && DEFAULT_TEAM_META[num].name) || `Team ${num}`,
+    }));
     if (list.length) return list;
   }
-  return Object.entries(DEFAULT_TEAM_META).map(([num, t]) => ({ id: String(num), name: t.name }));
+  return Object.entries(DEFAULT_TEAM_META).map(([num, t]) => ({ id: String(num), name: t.name || `Team ${num}` }));
 }
 
 // Public — used by /team-signup.html (no auth)
