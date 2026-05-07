@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Team Sign-Up — UW TA Companion</title>
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    body { background: var(--bg); padding: 20px; }
+    .ts-page { max-width: 720px; margin: 0 auto; }
+    .ts-header { background: var(--uw-purple); color: #fff; padding: 18px 22px; border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
+    .ts-header h2 { margin: 0; font-size: 22px; }
+    .ts-header p { opacity: .85; margin: 6px 0 0; font-size: 13px; }
+    .ts-body { background: var(--surface); padding: 22px; border-radius: 0 0 var(--radius-lg) var(--radius-lg); box-shadow: var(--shadow-lg); }
+    .ts-step-label { font-weight: 700; font-size: 12px; color: var(--uw-purple); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 6px; }
+    .ts-field { margin-bottom: 16px; }
+    .ts-field label { display: block; font-weight: 600; font-size: 13px; margin-bottom: 4px; }
+    .ts-slot-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; margin-top: 6px; }
+    .ts-slot {
+      padding: 14px 12px; border: 2px solid var(--border); border-radius: var(--radius);
+      background: #fff; cursor: pointer; text-align: center; transition: all .15s;
+      font-weight: 600;
+    }
+    .ts-slot:hover:not(.taken):not(.selected) { border-color: var(--uw-purple); background: #faf5ff; }
+    .ts-slot.selected { border-color: var(--uw-purple); background: var(--uw-purple); color: #fff; }
+    .ts-slot.taken { background: #f3f4f6; color: #9ca3af; cursor: not-allowed; border-color: #e5e7eb; }
+    .ts-slot-time { font-size: 15px; }
+    .ts-slot-end { font-size: 11px; opacity: .7; margin-top: 2px; }
+    .ts-slot-taken-by { font-size: 11px; margin-top: 4px; font-weight: 500; opacity: .7; }
+    .ts-success { text-align: center; padding: 40px 20px; }
+    .ts-success-icon { font-size: 48px; }
+    .ts-success-msg { font-size: 18px; font-weight: 700; color: var(--success); margin: 12px 0 4px; }
+    .ts-success-sub { color: var(--text-muted); font-size: 14px; }
+    .ts-error { background: #fee2e2; color: #991b1b; padding: 10px 14px; border-radius: var(--radius); margin-bottom: 12px; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div class="ts-page" id="ts-root">
+    <div class="ts-header">
+      <h2>Team Sign-Up</h2>
+      <p>Loading…</p>
+    </div>
+    <div class="ts-body"><p class="muted">Loading available slots…</p></div>
+  </div>
+  <script>
+    let _data = null;
+    let _selectedSlot = null;
+    let _selectedTeamId = '';
+
+    function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+    async function load() {
+      try {
+        const resp = await fetch('/api/team-signup-info');
+        if (!resp.ok) throw new Error('Could not load schedule');
+        _data = await resp.json();
+        render();
+      } catch (e) {
+        document.getElementById('ts-root').innerHTML = `
+          <div class="ts-header"><h2>Error</h2></div>
+          <div class="ts-body"><p style="color:#dc2626">${esc(e.message)}</p></div>`;
+      }
+    }
+
+    function teamClaimedSlotIdx(teamId) {
+      const claims = _data.claims || {};
+      const entry = Object.entries(claims).find(([, c]) => String(c.teamId) === String(teamId));
+      return entry ? Number(entry[0]) : null;
+    }
+
+    function render() {
+      const { config, teams, claims } = _data;
+      const teamOpts = ['<option value="">— pick your team —</option>']
+        .concat(teams.map(t => `<option value="${esc(t.id)}">${esc(t.name)}</option>`))
+        .join('');
+
+      const slotsHtml = config.slots.map(s => {
+        const claim = claims[s.idx];
+        const taken = !!claim;
+        let cls = 'ts-slot';
+        if (taken) cls += ' taken';
+        if (_selectedSlot === s.idx && !taken) cls += ' selected';
+        const teamName = taken ? (teams.find(t => String(t.id) === String(claim.teamId)) || {}).name || `Team ${claim.teamId}` : '';
+        return `
+          <div class="${cls}" ${taken ? '' : `onclick="pickSlot(${s.idx})"`}>
+            <div class="ts-slot-time">${esc(s.time)}</div>
+            <div class="ts-slot-end">to ${esc(s.end)}</div>
+            ${taken ? `<div class="ts-slot-taken-by">✓ ${esc(teamName)}</div>` : ''}
+          </div>`;
+      }).join('');
+
+      const teamAlreadyClaimedIdx = _selectedTeamId ? teamClaimedSlotIdx(_selectedTeamId) : null;
+      const teamAlreadyMsg = teamAlreadyClaimedIdx != null
+        ? `<div class="ts-error">Your team already claimed <strong>${esc(config.slots[teamAlreadyClaimedIdx].time)}</strong>. Contact your instructor to change.</div>`
+        : '';
+
+      document.getElementById('ts-root').innerHTML = `
+        <div class="ts-header">
+          <h2>Team Sign-Up</h2>
+          <p>${esc(config.dateLabel)} • Pick a 10-minute slot for your team to meet with the instructor.</p>
+        </div>
+        <div class="ts-body">
+          ${teamAlreadyMsg}
+          <div class="ts-field">
+            <div class="ts-step-label">Step 1</div>
+            <label>Your team</label>
+            <select id="ts-team" class="input" onchange="onTeamChange(this.value)">${teamOpts}</select>
+          </div>
+          <div class="ts-field">
+            <div class="ts-step-label">Step 2</div>
+            <label>Your name (the person signing up on behalf of the team)</label>
+            <input id="ts-name" class="input" type="text" placeholder="First Last" />
+          </div>
+          <div class="ts-field">
+            <div class="ts-step-label">Step 3</div>
+            <label>Pick a time slot</label>
+            <div class="ts-slot-grid">${slotsHtml}</div>
+          </div>
+          <button class="btn btn-primary" style="width:100%;padding:12px;font-size:15px;font-weight:700"
+            onclick="submitClaim()" ${teamAlreadyClaimedIdx != null ? 'disabled' : ''}>
+            Claim Slot
+          </button>
+        </div>`;
+
+      const sel = document.getElementById('ts-team');
+      if (sel && _selectedTeamId) sel.value = _selectedTeamId;
+    }
+
+    function onTeamChange(val) {
+      _selectedTeamId = val;
+      _selectedSlot = null;
+      render();
+    }
+
+    function pickSlot(idx) {
+      _selectedSlot = idx;
+      render();
+    }
+
+    async function submitClaim() {
+      const teamId = document.getElementById('ts-team').value;
+      const name = document.getElementById('ts-name').value.trim();
+      if (!teamId) return alert('Please pick your team.');
+      if (!name) return alert('Please enter your name.');
+      if (_selectedSlot == null) return alert('Please pick a time slot.');
+
+      try {
+        const resp = await fetch('/api/team-signup-claim', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ slotIdx: _selectedSlot, teamId, claimedBy: name }),
+        });
+        const json = await resp.json();
+        if (!resp.ok) throw new Error(json.error || 'Could not claim slot');
+        showSuccess(json);
+      } catch (e) {
+        alert(e.message);
+        load();
+      }
+    }
+
+    function showSuccess(result) {
+      const slot = _data.config.slots[result.slotIdx];
+      const team = (_data.teams.find(t => String(t.id) === String(result.claim.teamId)) || {}).name || `Team ${result.claim.teamId}`;
+      document.getElementById('ts-root').innerHTML = `
+        <div class="ts-header">
+          <h2>Team Sign-Up</h2>
+          <p>${esc(_data.config.dateLabel)}</p>
+        </div>
+        <div class="ts-body">
+          <div class="ts-success">
+            <div class="ts-success-icon">✅</div>
+            <div class="ts-success-msg">Your team is signed up!</div>
+            <div class="ts-success-sub">
+              <strong>${esc(team)}</strong> — ${esc(slot.time)} to ${esc(slot.end)}<br>
+              Claimed by ${esc(result.claim.claimedBy)}
+            </div>
+          </div>
+        </div>`;
+    }
+
+    load();
+  </script>
+</body>
+</html>

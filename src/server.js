@@ -68,7 +68,7 @@ function requireAuth(req, res, next) {
 }
 
 app.use((req, res, next) => {
-  if (req.path === '/login.html' || req.path === '/panel.html' || req.path === '/peer-eval.html' || req.path === '/survey.html' || req.path.startsWith('/auth/') || req.path.startsWith('/api/panel-grade/') || req.path.startsWith('/api/peer-eval-submit/') || req.path.startsWith('/api/survey-submit/')) return next();
+  if (req.path === '/login.html' || req.path === '/panel.html' || req.path === '/peer-eval.html' || req.path === '/survey.html' || req.path === '/team-signup.html' || req.path.startsWith('/auth/') || req.path.startsWith('/api/panel-grade/') || req.path.startsWith('/api/peer-eval-submit/') || req.path.startsWith('/api/survey-submit/') || req.path === '/api/team-signup-info' || req.path === '/api/team-signup-claim') return next();
   requireAuth(req, res, next);
 });
 
@@ -1278,6 +1278,84 @@ app.put('/api/bravissimo', requireAuth, (req, res) => {
   store.bravissimo = req.body;
   save();
   ok(res, store.bravissimo);
+});
+
+// ── Team Sign-Up (Mon May 11, 5:45 PM, 8 × 10-min slots) ──────────────────────
+const TEAM_SIGNUP_CONFIG = {
+  date: '2026-05-11',
+  dateLabel: 'Monday, May 11, 2026',
+  slots: [
+    { idx: 0, time: '5:45 PM', end: '5:55 PM' },
+    { idx: 1, time: '5:55 PM', end: '6:05 PM' },
+    { idx: 2, time: '6:05 PM', end: '6:15 PM' },
+    { idx: 3, time: '6:15 PM', end: '6:25 PM' },
+    { idx: 4, time: '6:25 PM', end: '6:35 PM' },
+    { idx: 5, time: '6:35 PM', end: '6:45 PM' },
+    { idx: 6, time: '6:45 PM', end: '6:55 PM' },
+    { idx: 7, time: '6:55 PM', end: '7:05 PM' },
+  ],
+};
+
+if (!store.teamSignup) store.teamSignup = { claims: {} };
+
+function getTeamsForSignup() {
+  const cids = Object.keys(store.teamMeta || {});
+  if (cids.length) {
+    const tm = store.teamMeta[cids[0]] || {};
+    const list = Object.entries(tm).map(([num, t]) => ({ id: String(num), name: t.name || `Team ${num}` }));
+    if (list.length) return list;
+  }
+  return Object.entries(DEFAULT_TEAM_META).map(([num, t]) => ({ id: String(num), name: t.name }));
+}
+
+// Public — used by /team-signup.html (no auth)
+app.get('/api/team-signup-info', (_req, res) => {
+  ok(res, {
+    config: TEAM_SIGNUP_CONFIG,
+    teams: getTeamsForSignup(),
+    claims: store.teamSignup.claims || {},
+  });
+});
+
+app.post('/api/team-signup-claim', (req, res) => {
+  const { slotIdx, teamId, claimedBy } = req.body || {};
+  const idx = Number(slotIdx);
+  const tid = teamId != null ? String(teamId) : '';
+  const name = String(claimedBy || '').trim();
+  if (!Number.isInteger(idx) || idx < 0 || idx >= TEAM_SIGNUP_CONFIG.slots.length) {
+    return fail(res, { message: 'Invalid time slot.' }, 400);
+  }
+  if (!tid || !name) {
+    return fail(res, { message: 'Team and your name are required.' }, 400);
+  }
+  store.teamSignup.claims = store.teamSignup.claims || {};
+  if (store.teamSignup.claims[idx]) {
+    return fail(res, { message: 'That slot was just taken — please refresh and pick another.' }, 409);
+  }
+  const teamHasSlot = Object.entries(store.teamSignup.claims).find(([, c]) => c.teamId === tid);
+  if (teamHasSlot) {
+    const [otherIdx] = teamHasSlot;
+    const slot = TEAM_SIGNUP_CONFIG.slots[Number(otherIdx)];
+    return fail(res, { message: `Your team already claimed ${slot ? slot.time : 'a slot'}.` }, 409);
+  }
+  store.teamSignup.claims[idx] = { teamId: tid, claimedBy: name, claimedAt: new Date().toISOString() };
+  save();
+  ok(res, { claim: store.teamSignup.claims[idx], slotIdx: idx });
+});
+
+// Auth — used by instructor view
+app.get('/api/team-signup', requireAuth, (_req, res) => {
+  ok(res, {
+    config: TEAM_SIGNUP_CONFIG,
+    teams: getTeamsForSignup(),
+    claims: store.teamSignup.claims || {},
+  });
+});
+
+app.put('/api/team-signup', requireAuth, (req, res) => {
+  store.teamSignup = { claims: (req.body && req.body.claims) || {} };
+  save();
+  ok(res, store.teamSignup);
 });
 
 // ── Data Backup/Restore ──────────────────────────────────────────────────────

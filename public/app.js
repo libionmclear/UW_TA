@@ -685,6 +685,7 @@ function showView(name) {
     case 'rompipalle':   renderRompipalleView(root); break;
     case 'trenonne':     renderTrenonneView(root); break;
     case 'bravissimo':   renderBravissimoView(root); break;
+    case 'teamsignup':   renderTeamSignupView(root); break;
     case 'caseparticipation': renderCaseParticipationView(root); break;
     case 'simparticipation': renderSimParticipationView(root); break;
     case 'classpresence': renderClassPresenceView(root); break;
@@ -7017,6 +7018,146 @@ async function bravissimoReset() {
   await PUT('/api/bravissimo', _bravissimoData);
   _renderBravissimoUI();
   toast('All reset.', 'success');
+}
+
+/* ── Team Sign-Up (Mon May 11) ───────────────────────────────────────────────── */
+let _teamSignupData = null;
+
+async function renderTeamSignupView(root) {
+  root = root || document.getElementById('view-root');
+  try { _teamSignupData = await GET('/api/team-signup'); }
+  catch { _teamSignupData = { config: { dateLabel: '?', slots: [] }, teams: [], claims: {} }; }
+  _renderTeamSignupUI(root);
+}
+
+function _renderTeamSignupUI(root) {
+  root = root || document.getElementById('view-root');
+  const { config, teams, claims } = _teamSignupData;
+  const claimsObj = claims || {};
+
+  const teamById = Object.fromEntries(teams.map(t => [String(t.id), t]));
+  const teamOpts = ['<option value="">— unassigned —</option>']
+    .concat(teams.map(t => `<option value="${esc(t.id)}">${esc(t.name)}</option>`))
+    .join('');
+
+  const claimedTeamIds = new Set(Object.values(claimsObj).map(c => String(c.teamId)));
+  const unclaimedTeams = teams.filter(t => !claimedTeamIds.has(String(t.id)));
+
+  const slotRows = config.slots.map(s => {
+    const c = claimsObj[s.idx];
+    const teamSel = `<select class="input" style="max-width:200px" onchange="teamSignupAssign(${s.idx}, this.value)">
+      ${['<option value="">— unassigned —</option>']
+        .concat(teams.map(t => {
+          const disabled = claimedTeamIds.has(String(t.id)) && (!c || String(c.teamId) !== String(t.id));
+          const selected = c && String(c.teamId) === String(t.id);
+          return `<option value="${esc(t.id)}" ${selected ? 'selected' : ''} ${disabled ? 'disabled' : ''}>${esc(t.name)}${disabled ? ' (taken)' : ''}</option>`;
+        })).join('')}
+    </select>`;
+    const claimedBy = c ? esc(c.claimedBy) : '<span class="muted">—</span>';
+    const when = c && c.claimedAt ? `<span class="muted" style="font-size:11px">${new Date(c.claimedAt).toLocaleString()}</span>` : '';
+    return `
+      <tr>
+        <td style="padding:8px 6px;font-weight:700">${esc(s.time)} – ${esc(s.end)}</td>
+        <td style="padding:8px 6px">${teamSel}</td>
+        <td style="padding:8px 6px">${claimedBy}</td>
+        <td style="padding:8px 6px">${when}</td>
+        <td style="padding:8px 6px;text-align:right">
+          ${c ? `<button class="btn btn-ghost btn-danger" style="font-size:11px;padding:3px 8px" onclick="teamSignupAssign(${s.idx}, '')">Clear</button>` : ''}
+        </td>
+      </tr>`;
+  }).join('');
+
+  const signupUrl = `${window.location.origin}/team-signup.html`;
+  const slotListText = config.slots.map(s => `  • ${s.time} – ${s.end}`).join('\n');
+  const emailBody = `Hi team,
+
+I'd like to meet 1:1 with each team for 10 minutes on ${config.dateLabel}, starting at 5:45 PM.
+
+Please coordinate within your team and have ONE member sign up for your team's slot at this link:
+
+${signupUrl}
+
+Available slots (10 minutes each):
+${slotListText}
+
+First-come, first-served — once a slot is taken, it's gone. Each team can claim only one slot.
+
+Thanks!`;
+
+  const claimsCount = Object.keys(claimsObj).length;
+
+  root.innerHTML = `
+    <div class="page-title">📅 Team Sign-Up
+      <div class="page-actions">
+        <button class="btn btn-ghost" onclick="renderTeamSignupView()">⟳ Refresh</button>
+        <button class="btn btn-ghost btn-danger" onclick="teamSignupReset()">Reset All</button>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-title">${esc(config.dateLabel)} — ${claimsCount}/${config.slots.length} slots claimed</div>
+      <div style="margin-top:8px;font-size:13px">
+        Public sign-up link:
+        <a href="${signupUrl}" target="_blank" style="color:var(--uw-purple);font-weight:600">${signupUrl}</a>
+        <button class="btn btn-ghost" style="font-size:11px;padding:3px 8px;margin-left:8px"
+          onclick="navigator.clipboard.writeText('${signupUrl}').then(() => toast('Link copied','success'))">Copy</button>
+      </div>
+      ${unclaimedTeams.length ? `<div class="muted" style="margin-top:6px;font-size:12px">Teams not yet signed up: ${unclaimedTeams.map(t => esc(t.name)).join(', ')}</div>` : '<div style="margin-top:6px;font-size:12px;color:var(--success);font-weight:600">✓ All teams signed up</div>'}
+    </div>
+
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-title">Schedule</div>
+      <table style="width:100%;border-collapse:collapse;font-size:13px;margin-top:8px">
+        <thead>
+          <tr style="border-bottom:2px solid var(--border);text-align:left">
+            <th style="padding:8px 6px">Time</th>
+            <th style="padding:8px 6px">Team</th>
+            <th style="padding:8px 6px">Signed up by</th>
+            <th style="padding:8px 6px">When</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>${slotRows}</tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Email template — copy/paste into Canvas Inbox
+        <button class="btn btn-ghost" style="font-size:11px;padding:3px 8px;margin-left:8px"
+          onclick="navigator.clipboard.writeText(document.getElementById('ts-email-body').value).then(() => toast('Email copied','success'))">Copy</button>
+      </div>
+      <textarea id="ts-email-body" class="input" rows="14" style="font-family:ui-monospace,monospace;font-size:12px;margin-top:6px">${esc(emailBody)}</textarea>
+      <div class="muted" style="margin-top:6px;font-size:11px">Suggested subject: <strong>Sign up for a 1:1 team meeting — ${esc(config.dateLabel)}</strong></div>
+    </div>`;
+}
+
+async function teamSignupAssign(slotIdx, teamId) {
+  const claims = { ...(_teamSignupData.claims || {}) };
+  if (teamId) {
+    // Clear any other slot held by this team
+    for (const k of Object.keys(claims)) {
+      if (String(claims[k].teamId) === String(teamId) && Number(k) !== slotIdx) delete claims[k];
+    }
+    claims[slotIdx] = {
+      teamId: String(teamId),
+      claimedBy: (claims[slotIdx] && claims[slotIdx].claimedBy) || 'Instructor',
+      claimedAt: new Date().toISOString(),
+    };
+  } else {
+    delete claims[slotIdx];
+  }
+  _teamSignupData.claims = claims;
+  await PUT('/api/team-signup', { claims });
+  _renderTeamSignupUI();
+  toast('Updated.', 'success');
+}
+
+async function teamSignupReset() {
+  if (!confirm('Clear all team sign-up claims?')) return;
+  _teamSignupData.claims = {};
+  await PUT('/api/team-signup', { claims: {} });
+  _renderTeamSignupUI();
+  toast('All cleared.', 'success');
 }
 
 /* ── Canvas Grade Sync ───────────────────────────────────────────────────────── */
