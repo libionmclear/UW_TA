@@ -1,229 +1,743 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Peer Evaluation — UW TA Companion</title>
-  <link rel="stylesheet" href="style.css" />
-  <style>
-    body { background: var(--bg); padding: 20px; }
-    .pe-page { max-width: 600px; margin: 0 auto; }
-    .pe-header { background: var(--uw-purple); color: #fff; padding: 16px 20px; border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
-    .pe-body { background: var(--surface); padding: 20px; border-radius: 0 0 var(--radius-lg) var(--radius-lg); box-shadow: var(--shadow-lg); }
-    .pe-member { padding: 12px; border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 8px; }
-    .pe-member-name { font-weight: 700; font-size: 14px; color: var(--uw-purple); margin-bottom: 6px; }
-    .pe-rating { display: flex; gap: 6px; align-items: center; }
-    .pe-rating label { font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 3px; }
-    .pe-question { margin: 16px 0; padding: 12px; background: var(--bg); border-radius: var(--radius); }
-    .pe-q-title { font-weight: 700; font-size: 13px; color: var(--uw-purple); margin-bottom: 6px; }
-    .pe-q-hint { font-size: 11px; color: var(--text-muted); margin-bottom: 8px; font-style: italic; }
-    .pe-success { text-align: center; padding: 40px; color: var(--success); font-size: 18px; font-weight: 700; }
-    .pe-section-divider {
-      margin: 24px 0 12px; padding: 8px 12px; background: var(--uw-purple); color: #fff;
-      border-radius: var(--radius); font-weight: 700; font-size: 13px;
-    }
-    .pe-rating-1to5 { display: flex; gap: 6px; flex-wrap: wrap; }
-    .pe-rating-1to5 label {
-      display: flex; align-items: center; gap: 4px; font-size: 12px; cursor: pointer;
-      padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--radius);
-      background: #fff;
-    }
-    .pe-rating-1to5 input { margin: 0; }
-    .pe-rating-1to5 input:checked + span { color: var(--uw-purple); font-weight: 700; }
-    .pe-textarea { width: 100%; min-height: 60px; padding: 8px; font-family: inherit;
-      font-size: 13px; border: 1px solid var(--border); border-radius: var(--radius); resize: vertical; }
-    .pe-checkbox-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
-    .pe-checkbox-row label { font-size: 13px; cursor: pointer; }
-    .pe-q-required { color: #dc2626; font-weight: 700; }
-  </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>B BUS 464 — Peer Evaluation</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Encode+Sans:wght@300;400;500;600;700&family=Open+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Merriweather:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --husky-purple: #4B2E83;
+    --husky-purple-dk: #3b2467;
+    --husky-purple-lt: #ede9f3;
+    --husky-gold: #B7A57A;
+    --metallic-gold: #85754d;
+    --spirit-gold: #e8e3d3;
+    --ink: #222127;
+    --ink-soft: #4a4954;
+    --ink-muted: #6e6d78;
+    --paper: #ffffff;
+    --paper-warm: #f7f6f3;
+    --border: #d9d7d0;
+    --border-purple: #d3c9e3;
+    --shadow: rgba(75,46,131,0.10);
+    --success: #2e7d4f;
+    --success-light: #e6f3ec;
+    --error: #b3261e;
+    --error-light: #fbeceb;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Open Sans', system-ui, sans-serif;
+    background: var(--paper-warm);
+    color: var(--ink);
+    min-height: 100vh;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .site-header {
+    background: var(--husky-purple);
+    color: #fff;
+    border-bottom: 5px solid var(--husky-gold);
+  }
+  .header-inner {
+    max-width: 760px; margin: 0 auto; padding: 38px 24px 30px;
+  }
+  .uw-wordmark { display: flex; align-items: center; gap: 12px; margin-bottom: 22px; }
+  .uw-w {
+    font-family: 'Merriweather', Georgia, serif;
+    font-weight: 700; font-size: 30px; line-height: 1; color: #fff;
+    border: 2.5px solid var(--husky-gold); border-radius: 3px;
+    padding: 5px 9px 6px; letter-spacing: -1px;
+  }
+  .uw-wordmark-text {
+    font-family: 'Encode Sans', sans-serif;
+    font-weight: 600; font-size: 13px; letter-spacing: 0.5px; line-height: 1.3;
+    color: rgba(255,255,255,0.92); text-transform: uppercase;
+  }
+  .uw-wordmark-text span {
+    display: block; font-weight: 400; font-size: 11px;
+    color: var(--husky-gold); letter-spacing: 1px;
+  }
+  .course-tag {
+    font-family: 'Encode Sans', sans-serif;
+    font-size: 11px; font-weight: 600; letter-spacing: 1.5px;
+    text-transform: uppercase; color: var(--husky-gold);
+    display: block; margin-bottom: 10px;
+  }
+  .site-header h1 {
+    font-family: 'Encode Sans', sans-serif;
+    font-size: clamp(23px, 4vw, 33px);
+    font-weight: 700; line-height: 1.18; margin-bottom: 7px;
+    letter-spacing: -0.3px;
+  }
+  .site-header p { font-size: 14px; color: rgba(255,255,255,.7); font-weight: 400; }
+  .progress-bar {
+    height: 4px; background: rgba(255,255,255,.18);
+    margin-top: 22px; border-radius: 2px; overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%; background: var(--husky-gold);
+    border-radius: 2px; transition: width .5s ease;
+  }
+  .container { max-width: 760px; margin: 0 auto; padding: 0 24px 80px; }
+  .screen { display: none; }
+  .screen.active { display: block; }
+  .card {
+    background: var(--paper); border: 1px solid var(--border);
+    border-top: 3px solid var(--husky-purple);
+    border-radius: 5px; padding: 40px; margin-top: 26px;
+    box-shadow: 0 3px 16px var(--shadow);
+  }
+  .steps {
+    display: flex; align-items: flex-start; gap: 0;
+    background: var(--husky-purple); border-radius: 5px;
+    padding: 18px 24px; margin-top: 0;
+  }
+  .step-col { display: flex; flex-direction: column; align-items: center; }
+  .step-dot {
+    width: 30px; height: 30px; border-radius: 50%;
+    border: 2px solid rgba(255,255,255,.35); background: transparent;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 700; color: rgba(255,255,255,.6);
+    flex-shrink: 0; transition: all .3s; font-family: 'Encode Sans', sans-serif;
+  }
+  .step-dot.active { border-color: var(--husky-gold); background: var(--husky-gold); color: var(--husky-purple-dk); }
+  .step-dot.done { border-color: var(--husky-gold); background: transparent; color: var(--husky-gold); }
+  .step-lbl {
+    font-family: 'Encode Sans', sans-serif;
+    font-size: 10px; color: rgba(255,255,255,.7); font-weight: 500;
+    margin-top: 6px; white-space: nowrap; letter-spacing: .3px;
+  }
+  .step-line { flex: 1; height: 2px; background: rgba(255,255,255,.25); margin-top: 15px; transition: background .3s; }
+  .step-line.done { background: var(--husky-gold); }
+  .part-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--husky-purple-lt); border: 1px solid var(--border-purple);
+    border-radius: 3px; padding: 5px 12px;
+    font-family: 'Encode Sans', sans-serif;
+    font-size: 11px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 1px; color: var(--husky-purple); margin-bottom: 16px;
+  }
+  .section-title {
+    font-family: 'Encode Sans', sans-serif;
+    font-size: 22px; font-weight: 700; color: var(--husky-purple);
+    padding-bottom: 14px; border-bottom: 2px solid var(--husky-gold);
+    margin-bottom: 6px; letter-spacing: -0.3px;
+  }
+  .section-sub { font-size: 13.5px; color: var(--ink-muted); margin-bottom: 28px; margin-top: 8px; }
+  label {
+    display: block; font-family: 'Encode Sans', sans-serif;
+    font-size: 13px; font-weight: 600;
+    color: var(--ink-soft); margin-bottom: 7px; letter-spacing: .2px;
+  }
+  select, textarea, input[type="text"] {
+    width: 100%; padding: 11px 14px;
+    border: 1.5px solid var(--border); border-radius: 4px;
+    font-family: 'Open Sans', sans-serif; font-size: 14px;
+    color: var(--ink); background: var(--paper);
+    transition: border-color .2s, box-shadow .2s; appearance: none;
+  }
+  select:focus, textarea:focus {
+    outline: none; border-color: var(--husky-purple);
+    box-shadow: 0 0 0 3px rgba(75,46,131,.12); background: #fff;
+  }
+  select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%234B2E83' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 14px center; padding-right: 38px;
+  }
+  textarea { resize: vertical; min-height: 88px; }
+  .form-group { margin-bottom: 24px; }
+  .divider { border: none; border-top: 1px solid var(--border); margin: 28px 0; }
+  .rating-scale { display: flex; gap: 7px; flex-wrap: wrap; }
+  .r-opt { position: relative; }
+  .r-opt input { position: absolute; opacity: 0; width: 0; height: 0; }
+  .r-opt label {
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; width: 72px; padding: 11px 6px;
+    border: 1.5px solid var(--border); border-radius: 4px;
+    cursor: pointer; transition: all .15s;
+    font-family: 'Encode Sans', sans-serif;
+    font-size: 20px; font-weight: 700; color: var(--ink-muted);
+    background: var(--paper); text-align: center; margin: 0;
+  }
+  .r-opt label span { font-size: 9px; font-weight: 500; line-height: 1.2; margin-top: 4px; text-transform: uppercase; letter-spacing: .3px; }
+  .r-opt input:checked + label { border-color: var(--husky-purple); background: var(--husky-purple); color: #fff; }
+  .r-opt input:checked + label span { color: var(--husky-gold); }
+  .r-opt label:hover { border-color: var(--husky-purple); color: var(--husky-purple); background: var(--husky-purple-lt); }
+  .scale-hint {
+    background: var(--paper-warm); border-left: 3px solid var(--husky-gold);
+    border-radius: 0 3px 3px 0;
+    padding: 9px 14px; margin-bottom: 12px;
+    font-size: 12px; color: var(--ink-muted);
+  }
+  .tm-table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
+  .tm-table th {
+    text-align: left; font-family: 'Encode Sans', sans-serif;
+    font-size: 11px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 1px; color: var(--ink-muted);
+    padding: 0 12px 10px 0; border-bottom: 2px solid var(--border);
+  }
+  .tm-table td { padding: 14px 12px 14px 0; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  .tm-table tr:last-child td { border-bottom: none; }
+  .tm-name { font-weight: 600; font-size: 15px; color: var(--ink); }
+  .tm-table tr.missing-rating td { background: var(--error-light); }
+  .cb-wrap { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+  .cb-wrap input[type="checkbox"] { width: 17px; height: 17px; accent-color: var(--husky-purple); cursor: pointer; flex-shrink: 0; }
+  .cb-wrap label { margin: 0; font-family: 'Open Sans', sans-serif; font-size: 14px; font-weight: 400; color: var(--ink-soft); cursor: pointer; }
+  .incident-wrap.off textarea { opacity: .4; pointer-events: none; }
+  .incident-wrap textarea { margin-top: 10px; }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    gap: 8px; padding: 12px 28px; border-radius: 4px;
+    font-family: 'Encode Sans', sans-serif; font-size: 14px; font-weight: 600;
+    cursor: pointer; border: none; transition: all .2s; text-decoration: none;
+    letter-spacing: .3px;
+  }
+  .btn-primary { background: var(--husky-purple); color: #fff; }
+  .btn-primary:hover:not(:disabled) { background: var(--husky-purple-dk); transform: translateY(-1px); box-shadow: 0 4px 14px rgba(75,46,131,.3); }
+  .btn-secondary { background: transparent; color: var(--husky-purple); border: 1.5px solid var(--border-purple); }
+  .btn-secondary:hover { border-color: var(--husky-purple); background: var(--husky-purple-lt); }
+  .btn-success { background: var(--success); color: #fff; }
+  .btn-success:hover:not(:disabled) { background: #246340; transform: translateY(-1px); box-shadow: 0 4px 14px rgba(46,125,79,.3); }
+  .btn:disabled { opacity: .55; cursor: not-allowed; transform: none !important; }
+  .btn-row { display: flex; align-items: center; justify-content: space-between; margin-top: 28px; flex-wrap: wrap; gap: 12px; }
+  .err { color: var(--error); font-size: 12px; margin-top: 5px; display: none; }
+  .field-err .err { display: block; }
+  .field-err select, .field-err textarea { border-color: var(--error); }
+  .welcome-body { font-size: 15px; color: var(--ink-soft); line-height: 1.75; margin-bottom: 24px; }
+  .inst-list { list-style: none; display: flex; flex-direction: column; gap: 13px; margin-bottom: 28px; }
+  .inst-list li { display: flex; align-items: flex-start; gap: 13px; font-size: 14px; color: var(--ink-soft); }
+  .inst-num {
+    width: 25px; height: 25px; background: var(--husky-purple); color: #fff;
+    border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    font-family: 'Encode Sans', sans-serif;
+    font-size: 11px; font-weight: 700; flex-shrink: 0; margin-top: 1px;
+  }
+  .loading-overlay {
+    position: fixed; inset: 0; background: rgba(75,46,131,.45);
+    display: none; align-items: center; justify-content: center; z-index: 999;
+  }
+  .loading-overlay.show { display: flex; }
+  .loading-box {
+    background: #fff; border-radius: 6px; padding: 36px 48px;
+    text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,.25);
+    border-top: 4px solid var(--husky-gold);
+  }
+  .spinner {
+    width: 38px; height: 38px; border: 3px solid var(--husky-purple-lt);
+    border-top-color: var(--husky-purple); border-radius: 50%;
+    animation: spin .8s linear infinite; margin: 0 auto 16px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading-box p { font-size: 14px; color: var(--ink-soft); font-weight: 500; }
+  .success-icon {
+    width: 66px; height: 66px; background: var(--success-light);
+    border: 2px solid var(--success);
+    border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    font-size: 30px; color: var(--success); margin: 0 auto 24px;
+  }
+  .success-card { text-align: center; padding: 44px 40px; }
+  .success-card h2 { font-family: 'Encode Sans', sans-serif; font-size: 25px; font-weight: 700; color: var(--husky-purple); margin-bottom: 10px; }
+  .success-card p { color: var(--ink-muted); font-size: 14px; margin-bottom: 8px; }
+  .submission-id {
+    display: inline-block; background: var(--husky-purple-lt);
+    border: 1px solid var(--border-purple); border-radius: 4px;
+    padding: 8px 16px; font-size: 13px; font-family: 'Encode Sans', monospace;
+    color: var(--husky-purple); margin-top: 12px; font-weight: 500;
+  }
+  .error-banner {
+    background: var(--error-light); border: 1px solid #e8b4b0;
+    border-radius: 4px; padding: 14px 18px;
+    font-size: 14px; color: #842019; margin-top: 16px; display: none;
+  }
+  .error-banner.show { display: block; }
+  .review-box {
+    background: var(--paper-warm); border: 1px solid var(--border);
+    border-left: 3px solid var(--husky-purple);
+    border-radius: 0 4px 4px 0; padding: 20px;
+    font-size: 13px; line-height: 1.9; color: var(--ink-soft);
+  }
+  .review-box strong { color: var(--husky-purple); font-family: 'Encode Sans', sans-serif; }
+  .review-box .ratings-list { font-size: 12px; }
+  @media (max-width: 580px) {
+    .card { padding: 24px 18px; }
+    .r-opt label { width: 56px; font-size: 17px; }
+    .btn-row { flex-direction: column-reverse; }
+    .btn-row .btn { width: 100%; }
+    .uw-wordmark { flex-wrap: wrap; }
+  }
+</style>
 </head>
 <body>
-  <div class="pe-page" id="pe-root">
-    <div class="pe-header">
-      <h2 style="margin:0">Peer Evaluation</h2>
-      <p style="opacity:.7;margin:4px 0 0;font-size:13px">Loading...</p>
-    </div>
-    <div class="pe-body"><p class="muted">Loading evaluation form...</p></div>
+
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="loading-box">
+    <div class="spinner"></div>
+    <p id="loadingMsg">Loading…</p>
   </div>
-  <script>
-    const token = new URLSearchParams(location.search).get('token');
-    if (!token) { document.getElementById('pe-root').innerHTML = '<p style="padding:40px;text-align:center;color:#dc2626">No access token provided.</p>'; }
-    else loadPeerEval();
+</div>
 
-    let _peData = null;
+<header class="site-header">
+  <div class="header-inner">
+    <div class="uw-wordmark">
+      <div class="uw-w">W</div>
+      <div class="uw-wordmark-text">
+        University of Washington
+        <span>Michael G. Foster School of Business</span>
+      </div>
+    </div>
+    <span class="course-tag">B BUS 464 · Marketing</span>
+    <h1>Team Peer Evaluation Survey</h1>
+    <p>Confidential · Your responses save directly to the course database</p>
+    <div class="progress-bar"><div class="progress-fill" id="pBar" style="width:0%"></div></div>
+  </div>
+</header>
 
-    async function loadPeerEval() {
-      try {
-        const resp = await fetch(`/api/peer-eval-submit/${token}`);
-        if (!resp.ok) throw new Error('Invalid or expired link');
-        _peData = await resp.json();
-        if (_peData.existingResponse) renderAlreadySubmitted();
-        else renderForm();
-      } catch (e) {
-        document.getElementById('pe-root').innerHTML = `<div class="pe-header"><h2 style="margin:0">Access Error</h2></div><div class="pe-body"><p style="color:#dc2626">${e.message}</p></div>`;
-      }
-    }
+<div class="container" id="appRoot">
+  <!-- Screens render here -->
+  <div class="card"><p style="color:var(--ink-muted)">Loading evaluation…</p></div>
+</div>
 
-    function renderAlreadySubmitted() {
-      document.getElementById('pe-root').innerHTML = `
-        <div class="pe-header"><h2 style="margin:0">Peer Evaluation</h2><p style="opacity:.7;margin:4px 0 0;font-size:13px">${_peData.studentName} — Team ${_peData.teamNum}</p></div>
-        <div class="pe-body"><div class="pe-success">✓ You have already submitted your evaluation.<br><span style="font-size:13px;color:var(--text-muted)">Submitted at ${new Date(_peData.existingResponse.submittedAt).toLocaleString()}</span></div></div>`;
-    }
+<script>
+const token = new URLSearchParams(location.search).get('token');
+let _peData = null;
 
-    function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
 
-    function renderForm() {
-      const members = _peData.teamMembers || [];
+function setProgress(pct) { document.getElementById('pBar').style.width = pct + '%'; }
 
-      const memberRatings = members.map(m => `
-        <div class="pe-member">
-          <div class="pe-member-name">${esc(m.name)}</div>
-          <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">Rate this teammate's overall contribution (1=poor, 5=excellent):</div>
-          <div class="pe-rating">
-            ${[1,2,3,4,5].map(v => `<label><input type="radio" name="rate_${m.id}" value="${v}" /> ${v}</label>`).join('')}
+function stepsHtml(activeIdx) {
+  const labels = ['Identity', 'Team Eval', 'Class Insights', 'Submit'];
+  let html = '<div class="steps">';
+  labels.forEach((lbl, i) => {
+    let cls = '';
+    let content = String(i + 1);
+    if (i < activeIdx) { cls = 'done'; content = '✓'; }
+    else if (i === activeIdx) cls = 'active';
+    html += `<div class="step-col"><div class="step-dot ${cls}">${content}</div><div class="step-lbl">${lbl}</div></div>`;
+    if (i < 3) html += `<div class="step-line ${i < activeIdx ? 'done' : ''}"></div>`;
+  });
+  html += '</div>';
+  return html;
+}
+
+function ratingTiles(name, labels) {
+  return `<div class="rating-scale">${
+    [1,2,3,4,5].map((v, i) => `
+      <div class="r-opt">
+        <input type="radio" name="${name}" id="${name}_${v}" value="${v}">
+        <label for="${name}_${v}">${v}<span>${esc(labels[i])}</span></label>
+      </div>`).join('')
+  }</div>`;
+}
+
+if (!token) {
+  document.getElementById('appRoot').innerHTML = '<div class="card"><p style="color:var(--error)">No access token provided.</p></div>';
+} else {
+  loadPeerEval();
+}
+
+async function loadPeerEval() {
+  try {
+    const resp = await fetch(`/api/peer-eval-submit/${token}`);
+    if (!resp.ok) throw new Error('Invalid or expired link');
+    _peData = await resp.json();
+    if (_peData.existingResponse) renderAlreadySubmitted();
+    else renderWelcome();
+  } catch (e) {
+    document.getElementById('appRoot').innerHTML = `<div class="card"><div class="section-title">Access Error</div><p style="color:var(--error)">${esc(e.message)}</p></div>`;
+  }
+}
+
+function renderAlreadySubmitted() {
+  setProgress(100);
+  const when = new Date(_peData.existingResponse.submittedAt).toLocaleString('en-US', {
+    month:'short', day:'numeric', year:'numeric', hour:'2-digit', minute:'2-digit'
+  });
+  document.getElementById('appRoot').innerHTML = `
+    <div class="card success-card">
+      <div class="success-icon">✓</div>
+      <h2>Already Submitted</h2>
+      <p>Thank you, <strong>${esc(_peData.studentName)}</strong>. Your evaluation has been received.</p>
+      <p>Team ${esc(_peData.teamNum)} · Submitted ${esc(when)}</p>
+      <p style="margin-top:14px;font-size:13px">If you need to update your response, please contact the instructor.</p>
+    </div>`;
+}
+
+function renderWelcome() {
+  setProgress(10);
+  document.getElementById('appRoot').innerHTML = `
+    ${stepsHtml(0)}
+    <div class="card">
+      <div class="part-badge">Welcome</div>
+      <div class="section-title">Hi, ${esc(_peData.studentName)}</div>
+      <p class="welcome-body" style="margin-top:14px">
+        You're submitting an evaluation for <strong>Team ${esc(_peData.teamNum)}</strong>.
+        This takes about <strong>5–8 minutes</strong>. Your responses are confidential and save
+        directly to the instructor's database when you submit.
+      </p>
+      <ul class="inst-list">
+        <li><div class="inst-num">1</div><span>Complete Part 1 (Teammate Analysis) — rate your teammates and answer Q2–Q4.</span></li>
+        <li><div class="inst-num">2</div><span>Complete Part 2 (Class Insights) — Q5–Q9 about the course.</span></li>
+        <li><div class="inst-num">3</div><span>Review your answers, then hit Submit — your response is recorded instantly.</span></li>
+      </ul>
+      <div class="btn-row" style="justify-content:flex-end">
+        <button class="btn btn-primary" onclick="renderPart1()">Begin Evaluation →</button>
+      </div>
+    </div>`;
+}
+
+function renderPart1() {
+  setProgress(30);
+  const members = _peData.teamMembers || [];
+  const ratingLabels = ['Low','Below','Avg','Above','Top'];
+  const ratingTitles = ["Didn't contribute much",'Below average','Average','Above average','Outstanding'];
+
+  const ratingRows = members.map(m => {
+    const key = 'rate_' + m.id;
+    return `
+      <tr id="row_${esc(m.id)}">
+        <td><span class="tm-name">${esc(m.name)}</span></td>
+        <td>
+          <div class="rating-scale" style="flex-wrap:nowrap; gap:5px;">
+            ${[1,2,3,4,5].map(v => `
+              <div class="r-opt">
+                <input type="radio" name="${esc(key)}" id="${esc(key)}_${v}" value="${v}">
+                <label for="${esc(key)}_${v}" title="${v} — ${esc(ratingTitles[v-1])}">${v}<span>${esc(ratingLabels[v-1])}</span></label>
+              </div>`).join('')}
           </div>
-        </div>`).join('');
+        </td>
+      </tr>`;
+  }).join('');
 
-      const mostWorkOpts = members.map(m => `<option value="${m.id}">${esc(m.name)}</option>`).join('');
+  const teammateOpts = members.map(m => `<option value="${esc(m.id)}">${esc(m.name)}</option>`).join('');
 
-      const ratingScale = (name, labels) => `
-        <div class="pe-rating-1to5">
-          ${[1,2,3,4,5].map((v, i) =>
-            `<label><input type="radio" name="${name}" value="${v}" /> <span>${v} — ${esc(labels[i])}</span></label>`
-          ).join('')}
-        </div>`;
+  document.getElementById('appRoot').innerHTML = `
+    ${stepsHtml(1)}
+    <div class="card">
+      <div class="part-badge">Part 1 of 2</div>
+      <div class="section-title">Teammate Analysis</div>
+      <p class="section-sub">Rate each of your teammates. Your responses are confidential.</p>
 
-      document.getElementById('pe-root').innerHTML = `
-        <div class="pe-header">
-          <h2 style="margin:0">Peer Evaluation</h2>
-          <p style="opacity:.7;margin:4px 0 0;font-size:13px">${esc(_peData.studentName)} — Team ${_peData.teamNum}</p>
+      <div class="form-group">
+        <label style="font-size:15px; margin-bottom:12px;">Q1 — Rate each teammate's contribution</label>
+        <div class="scale-hint">
+          <strong style="color:var(--husky-purple);">Scale:</strong>&ensp;1 = Didn't contribute much · 2 = Below average · 3 = Average · 4 = Above average · 5 = Outstanding
         </div>
-        <div class="pe-body">
-          <p style="font-size:13px;margin-bottom:14px;line-height:1.5">Your responses are <strong>completely confidential</strong> and save directly to the instructor's database. Takes about 5–8 minutes.</p>
+        <table class="tm-table">
+          <thead><tr><th style="width:40%">Teammate</th><th>Rating</th></tr></thead>
+          <tbody>${ratingRows}</tbody>
+        </table>
+      </div>
 
-          <div class="pe-section-divider">PART 1 — TEAMMATE ANALYSIS</div>
+      <hr class="divider">
 
-          <h3 style="font-size:14px;color:var(--uw-purple);margin-top:8px">Q1: Rate each teammate (1-5) <span class="pe-q-required">*</span></h3>
-          <p class="pe-q-hint">1 = Didn't contribute much · 3 = Average · 5 = Outstanding</p>
-          ${memberRatings}
+      <div class="form-group" id="q2g">
+        <label for="mostWork">Q2 — Who did the most work on the team?</label>
+        <select id="mostWork" onchange="onMostWorkChange()"><option value="">— Select a teammate —</option>${teammateOpts}</select>
+        <div class="err">Please make a selection.</div>
+      </div>
 
-          <div class="pe-question">
-            <div class="pe-q-title">Q2: Who did the MOST work on the project? <span class="pe-q-required">*</span></div>
-            <select class="input" id="pe-most-work"><option value="">— Select —</option>${mostWorkOpts}</select>
-          </div>
+      <div class="form-group" id="q3g">
+        <label for="leastWork">Q3 — Who did the least work on the team?</label>
+        <select id="leastWork" onchange="onLeastWorkChange()"><option value="">— Select a teammate —</option>${teammateOpts}</select>
+        <div class="err">Please make a selection (cannot be the same as Q2).</div>
+      </div>
 
-          <div class="pe-question">
-            <div class="pe-q-title">Q3: Who did the LEAST work on the project? <span class="pe-q-required">*</span></div>
-            <select class="input" id="pe-least-work"><option value="">— Select —</option>${mostWorkOpts}</select>
-          </div>
+      <hr class="divider">
 
-          <div class="pe-question">
-            <div class="pe-q-title">Q4: Were there any specific circumstances or incidents we should know about?</div>
-            <div class="pe-checkbox-row">
-              <input type="checkbox" id="pe-no-issues" onchange="toggleIncidents()" />
-              <label for="pe-no-issues">No issues — our team worked well together</label>
-            </div>
-            <textarea class="pe-textarea" id="pe-incidents" placeholder="Describe any relevant circumstances, conflicts, or incidents…"></textarea>
-          </div>
+      <div class="form-group">
+        <label>Q4 — Were there any specific circumstances or incidents we should know about?</label>
+        <div class="cb-wrap">
+          <input type="checkbox" id="noIssues" onchange="toggleIncident()">
+          <label for="noIssues">No issues — our team worked well together</label>
+        </div>
+        <div class="incident-wrap" id="incidentWrap">
+          <textarea id="incidentText" placeholder="Describe any relevant circumstances, conflicts, or incidents…"></textarea>
+        </div>
+      </div>
 
-          <div class="pe-section-divider">PART 2 — CLASS INSIGHTS</div>
+      <div class="btn-row">
+        <button class="btn btn-secondary" onclick="renderWelcome()">← Back</button>
+        <button class="btn btn-primary" onclick="validatePart1AndContinue()">Continue to Part 2 →</button>
+      </div>
+    </div>`;
 
-          <div class="pe-question">
-            <div class="pe-q-title">Q5: Compared to other Business classes, how much applicable knowledge did you take away? <span class="pe-q-required">*</span></div>
-            <p class="pe-q-hint">1 = Much less than average · 3 = About average · 5 = Much more than average</p>
-            ${ratingScale('pe-q5', ['Much Less', 'Below Avg', 'Average', 'Above Avg', 'Much More'])}
-          </div>
+  // Restore answers if user navigated back
+  if (_answers) restorePart1Answers();
+}
 
-          <div class="pe-question">
-            <div class="pe-q-title">Q6: How much did you enjoy the recorded lectures outside-of-class format? <span class="pe-q-required">*</span></div>
-            <p class="pe-q-hint">1 = Did not enjoy it · 3 = Neutral · 5 = Really enjoyed it</p>
-            ${ratingScale('pe-q6', ['Not at All', 'Not Much', 'Neutral', 'Enjoyed', 'Loved It'])}
-          </div>
+function onMostWorkChange() {
+  document.getElementById('q2g').classList.remove('field-err');
+  const mw = document.getElementById('mostWork').value;
+  const lw = document.getElementById('leastWork');
+  Array.from(lw.options).forEach(o => {
+    if (!o.value) return;
+    o.disabled = (o.value === mw);
+    if (o.value === mw && lw.value === mw) lw.value = '';
+  });
+}
+function onLeastWorkChange() {
+  document.getElementById('q3g').classList.remove('field-err');
+}
+function toggleIncident() {
+  const checked = document.getElementById('noIssues').checked;
+  document.getElementById('incidentWrap').classList.toggle('off', checked);
+  if (checked) document.getElementById('incidentText').value = '';
+}
 
-          <div class="pe-question">
-            <div class="pe-q-title">Q7: Which cases or activities did you remember and enjoy most?</div>
-            <textarea class="pe-textarea" id="pe-cases" placeholder="e.g., the Nike case, the positioning workshop, the brand simulation…"></textarea>
-          </div>
+let _answers = null;
 
-          <div class="pe-question">
-            <div class="pe-q-title">Q8: We have recently added AI content pieces to this course. Do you enjoy the AI-specific modules, and did you find them useful? <span class="pe-q-required">*</span></div>
-            <p class="pe-q-hint">1 = Did not enjoy / not useful · 3 = Somewhat · 5 = Enjoyed and very useful</p>
-            ${ratingScale('pe-q8', ['Not at All', 'Slightly', 'Somewhat', 'Useful', 'Very Useful'])}
-          </div>
+function collectPart1() {
+  const members = _peData.teamMembers || [];
+  const ratings = {};
+  members.forEach(m => {
+    const checked = document.querySelector(`input[name="rate_${m.id}"]:checked`);
+    if (checked) ratings[m.id] = Number(checked.value);
+  });
+  return {
+    ratings,
+    mostWork: document.getElementById('mostWork').value,
+    leastWork: document.getElementById('leastWork').value,
+    noIssues: document.getElementById('noIssues').checked,
+    incidents: document.getElementById('noIssues').checked ? 'No issues' : document.getElementById('incidentText').value.trim(),
+  };
+}
 
-          <div class="pe-question">
-            <div class="pe-q-title">Q9: Any other comments or feedback?</div>
-            <textarea class="pe-textarea" id="pe-comments" placeholder="Optional — any additional thoughts or suggestions for the instructor…"></textarea>
-          </div>
+function restorePart1Answers() {
+  const a = _answers || {};
+  if (a.ratings) {
+    Object.entries(a.ratings).forEach(([id, val]) => {
+      const el = document.querySelector(`input[name="rate_${id}"][value="${val}"]`);
+      if (el) el.checked = true;
+    });
+  }
+  if (a.mostWork) { document.getElementById('mostWork').value = a.mostWork; onMostWorkChange(); }
+  if (a.leastWork) document.getElementById('leastWork').value = a.leastWork;
+  if (a.noIssues) {
+    document.getElementById('noIssues').checked = true;
+    toggleIncident();
+  } else if (a.incidents) {
+    document.getElementById('incidentText').value = a.incidents;
+  }
+}
 
-          <div style="margin-top:16px;display:flex;gap:8px;align-items:center">
-            <button class="btn btn-primary" style="font-size:14px;padding:10px 24px" onclick="submitPeerEval()">Submit Evaluation</button>
-            <span id="pe-status" class="muted" style="font-size:12px"></span>
-          </div>
-        </div>`;
+function validatePart1AndContinue() {
+  let ok = true;
+  const members = _peData.teamMembers || [];
+  members.forEach(m => {
+    const row = document.getElementById('row_' + m.id);
+    const checked = document.querySelector(`input[name="rate_${m.id}"]:checked`);
+    if (row) row.classList.toggle('missing-rating', !checked);
+    if (!checked) ok = false;
+  });
+  const mw = document.getElementById('mostWork').value;
+  const lw = document.getElementById('leastWork').value;
+  document.getElementById('q2g').classList.toggle('field-err', !mw);
+  document.getElementById('q3g').classList.toggle('field-err', !lw || lw === mw);
+  if (!mw || !lw || lw === mw) ok = false;
+
+  if (!ok) { alert('Please complete all required fields before continuing.'); return; }
+
+  _answers = Object.assign({}, _answers || {}, collectPart1());
+  renderPart2();
+}
+
+function renderPart2() {
+  setProgress(60);
+  document.getElementById('appRoot').innerHTML = `
+    ${stepsHtml(2)}
+    <div class="card">
+      <div class="part-badge">Part 2 of 2</div>
+      <div class="section-title">Class Insights</div>
+      <p class="section-sub">Your honest feedback helps improve the course for future students.</p>
+
+      <div class="form-group" id="q5g">
+        <label>Q5 — Compared to other Business classes, how much applicable knowledge did you take away?</label>
+        <div class="scale-hint">1 = Much less than average · 3 = About average · 5 = Much more than average</div>
+        ${ratingTiles('q5', ['Much Less','Below Avg','Average','Above Avg','Much More'])}
+        <div class="err">Please select a rating.</div>
+      </div>
+
+      <hr class="divider">
+
+      <div class="form-group" id="q6g">
+        <label>Q6 — How much did you enjoy the recorded lectures outside-of-class format?</label>
+        <div class="scale-hint">1 = Did not enjoy it · 3 = Neutral · 5 = Really enjoyed it</div>
+        ${ratingTiles('q6', ['Not at All','Not Much','Neutral','Enjoyed','Loved It'])}
+        <div class="err">Please select a rating.</div>
+      </div>
+
+      <hr class="divider">
+
+      <div class="form-group">
+        <label for="casesText">Q7 — Which cases or activities did you remember and enjoy most?</label>
+        <textarea id="casesText" placeholder="e.g., the Nike case, the positioning workshop, the brand simulation…"></textarea>
+      </div>
+
+      <hr class="divider">
+
+      <div class="form-group" id="q8g">
+        <label>Q8 — We have recently added AI content pieces to this course. Do you enjoy the AI-specific modules, and did you find them useful?</label>
+        <div class="scale-hint">1 = Did not enjoy / not useful · 3 = Somewhat · 5 = Enjoyed and very useful</div>
+        ${ratingTiles('q8', ['Not at All','Slightly','Somewhat','Useful','Very Useful'])}
+        <div class="err">Please select a rating.</div>
+      </div>
+
+      <hr class="divider">
+
+      <div class="form-group">
+        <label for="otherComments">Q9 — Any other comments or feedback?</label>
+        <textarea id="otherComments" placeholder="Optional — any additional thoughts or suggestions for the instructor…"></textarea>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-secondary" onclick="savePart2Draft();renderPart1()">← Back</button>
+        <button class="btn btn-primary" onclick="validatePart2AndReview()">Review & Submit →</button>
+      </div>
+    </div>`;
+
+  if (_answers) restorePart2Answers();
+}
+
+function collectPart2() {
+  return {
+    q5_knowledge: document.querySelector('input[name="q5"]:checked')?.value || '',
+    q6_lectures: document.querySelector('input[name="q6"]:checked')?.value || '',
+    q7_cases: document.getElementById('casesText').value.trim(),
+    q8_ai: document.querySelector('input[name="q8"]:checked')?.value || '',
+    q9_comments: document.getElementById('otherComments').value.trim(),
+  };
+}
+function savePart2Draft() {
+  _answers = Object.assign({}, _answers || {}, collectPart2());
+}
+function restorePart2Answers() {
+  const a = _answers || {};
+  ['q5','q6','q8'].forEach(name => {
+    const key = name + (name === 'q5' ? '_knowledge' : name === 'q6' ? '_lectures' : '_ai');
+    const val = a[key];
+    if (val) {
+      const el = document.querySelector(`input[name="${name}"][value="${val}"]`);
+      if (el) el.checked = true;
     }
+  });
+  if (a.q7_cases) document.getElementById('casesText').value = a.q7_cases;
+  if (a.q9_comments) document.getElementById('otherComments').value = a.q9_comments;
+}
 
-    function toggleIncidents() {
-      const cb = document.getElementById('pe-no-issues');
-      const ta = document.getElementById('pe-incidents');
-      if (cb.checked) { ta.value = ''; ta.disabled = true; ta.style.opacity = '0.4'; }
-      else { ta.disabled = false; ta.style.opacity = '1'; }
-    }
+function validatePart2AndReview() {
+  let ok = true;
+  [['q5','q5g'],['q6','q6g'],['q8','q8g']].forEach(([name, gid]) => {
+    const checked = document.querySelector(`input[name="${name}"]:checked`);
+    document.getElementById(gid).classList.toggle('field-err', !checked);
+    if (!checked) ok = false;
+  });
+  if (!ok) { alert('Please answer all required questions.'); return; }
+  _answers = Object.assign({}, _answers || {}, collectPart2());
+  renderReview();
+}
 
-    async function submitPeerEval() {
-      const status = document.getElementById('pe-status');
-      const members = _peData.teamMembers || [];
-      const ratings = {};
-      let allRated = true;
-      members.forEach(m => {
-        const checked = document.querySelector(`input[name="rate_${m.id}"]:checked`);
-        if (checked) ratings[m.id] = Number(checked.value);
-        else allRated = false;
-      });
+function renderReview() {
+  setProgress(85);
+  const a = _answers;
+  const members = _peData.teamMembers || [];
+  const memberById = Object.fromEntries(members.map(m => [m.id, m]));
+  const ratingsLine = Object.entries(a.ratings || {})
+    .map(([id, v]) => `${esc(memberById[id]?.name || id)} — <strong>${esc(v)}/5</strong>`)
+    .join(' &ensp;·&ensp; ');
 
-      if (!allRated) { status.textContent = 'Please rate all teammates (Q1).'; status.style.color = '#dc2626'; return; }
+  document.getElementById('appRoot').innerHTML = `
+    ${stepsHtml(3)}
+    <div class="card">
+      <div class="part-badge">Final Step</div>
+      <div class="section-title">Ready to Submit?</div>
+      <p class="section-sub">Your response will be saved directly to the instructor's database. This cannot be undone.</p>
 
-      const mostWork = document.getElementById('pe-most-work').value;
-      const leastWork = document.getElementById('pe-least-work').value;
-      if (!mostWork) { status.textContent = 'Please answer Q2 (most work).'; status.style.color = '#dc2626'; return; }
-      if (!leastWork) { status.textContent = 'Please answer Q3 (least work).'; status.style.color = '#dc2626'; return; }
+      <div class="review-box">
+        <div style="margin-bottom:12px"><strong>Submitting as:</strong> ${esc(_peData.studentName)} &ensp;·&ensp; Team ${esc(_peData.teamNum)}</div>
+        <div class="ratings-list" style="margin-bottom:10px"><strong>Q1 Ratings:</strong> ${ratingsLine || '<em>(none)</em>'}</div>
+        <div style="margin-bottom:4px"><strong>Most work:</strong> ${esc(memberById[a.mostWork]?.name || '—')}</div>
+        <div style="margin-bottom:4px"><strong>Least work:</strong> ${esc(memberById[a.leastWork]?.name || '—')}</div>
+        <div style="margin-bottom:4px"><strong>Incidents:</strong> ${esc(a.incidents || '(none provided)')}</div>
+        <div style="margin-bottom:4px"><strong>Q5 Knowledge:</strong> ${esc(a.q5_knowledge)}/5 &ensp;·&ensp; <strong>Q6 Lectures:</strong> ${esc(a.q6_lectures)}/5 &ensp;·&ensp; <strong>Q8 AI:</strong> ${esc(a.q8_ai)}/5</div>
+        ${a.q7_cases ? `<div style="margin-bottom:4px"><strong>Q7 Cases:</strong> ${esc(a.q7_cases)}</div>` : ''}
+        ${a.q9_comments ? `<div style="margin-bottom:4px"><strong>Q9 Comments:</strong> ${esc(a.q9_comments)}</div>` : ''}
+      </div>
 
-      const noIssues = document.getElementById('pe-no-issues').checked;
-      const incidents = noIssues ? 'No issues' : document.getElementById('pe-incidents').value.trim();
+      <div class="error-banner" id="submitErr"></div>
 
-      const q5 = document.querySelector('input[name="pe-q5"]:checked')?.value;
-      const q6 = document.querySelector('input[name="pe-q6"]:checked')?.value;
-      const q8 = document.querySelector('input[name="pe-q8"]:checked')?.value;
-      if (!q5) { status.textContent = 'Please answer Q5 (knowledge takeaway).'; status.style.color = '#dc2626'; return; }
-      if (!q6) { status.textContent = 'Please answer Q6 (recorded lectures).'; status.style.color = '#dc2626'; return; }
-      if (!q8) { status.textContent = 'Please answer Q8 (AI modules).'; status.style.color = '#dc2626'; return; }
+      <div class="btn-row">
+        <button class="btn btn-secondary" onclick="renderPart2()">← Back</button>
+        <button class="btn btn-success" id="submitBtn" onclick="doSubmit()">Submit Evaluation →</button>
+      </div>
+    </div>`;
+}
 
-      const q7_cases = document.getElementById('pe-cases').value.trim();
-      const q9_comments = document.getElementById('pe-comments').value.trim();
+async function doSubmit() {
+  const submitBtn = document.getElementById('submitBtn');
+  const errBanner = document.getElementById('submitErr');
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Saving…';
+  errBanner.classList.remove('show');
+  document.getElementById('loadingMsg').textContent = 'Saving your response to the course database…';
+  document.getElementById('loadingOverlay').classList.add('show');
 
-      const payload = {
-        ratings, mostWork, leastWork,
-        incidents,
-        q5_knowledge: Number(q5),
-        q6_lectures: Number(q6),
-        q7_cases,
-        q8_ai: Number(q8),
-        q9_comments,
-      };
+  const a = _answers;
+  const payload = {
+    ratings: a.ratings,
+    mostWork: a.mostWork,
+    leastWork: a.leastWork,
+    incidents: a.incidents,
+    q5_knowledge: Number(a.q5_knowledge),
+    q6_lectures: Number(a.q6_lectures),
+    q7_cases: a.q7_cases,
+    q8_ai: Number(a.q8_ai),
+    q9_comments: a.q9_comments,
+  };
 
-      try {
-        const resp = await fetch(`/api/peer-eval-submit/${token}`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-        if (!resp.ok) throw new Error('Submit failed');
-        document.getElementById('pe-root').innerHTML = `
-          <div class="pe-header"><h2 style="margin:0">Peer Evaluation</h2></div>
-          <div class="pe-body"><div class="pe-success">✓ Thank you! Your evaluation has been submitted.<br><span style="font-size:13px;color:var(--text-muted)">Your responses are confidential.</span></div></div>`;
-      } catch (e) {
-        if (status) { status.textContent = 'Error: ' + e.message; status.style.color = '#dc2626'; }
-      }
-    }
-  </script>
+  try {
+    const resp = await fetch(`/api/peer-eval-submit/${token}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!resp.ok) throw new Error(`Submit failed (${resp.status})`);
+    document.getElementById('loadingOverlay').classList.remove('show');
+    renderSuccess();
+  } catch (e) {
+    document.getElementById('loadingOverlay').classList.remove('show');
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Submit Evaluation →';
+    errBanner.textContent = '⚠ ' + e.message + ' — please try again.';
+    errBanner.classList.add('show');
+  }
+}
+
+function renderSuccess() {
+  setProgress(100);
+  const when = new Date().toLocaleString('en-US', {
+    month:'short', day:'numeric', year:'numeric', hour:'2-digit', minute:'2-digit'
+  });
+  document.getElementById('appRoot').innerHTML = `
+    <div class="card success-card">
+      <div class="success-icon">✓</div>
+      <h2>Evaluation Submitted</h2>
+      <p>Thank you, <strong>${esc(_peData.studentName)}</strong>. Your response has been recorded.</p>
+      <p>The instructor can now see your submission in the course database.</p>
+      <div class="submission-id">Submitted · ${esc(when)}</div>
+      <hr class="divider" style="margin:28px 0">
+      <p style="font-size:13px; color:var(--ink-muted);">
+        Responses are confidential and reviewed only by the course instructor.<br>
+        <strong style="color:var(--husky-purple); font-family:'Encode Sans',sans-serif;">B BUS 464 · Foster School of Business</strong>
+      </p>
+    </div>`;
+}
+</script>
 </body>
 </html>
