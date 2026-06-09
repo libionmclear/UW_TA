@@ -290,8 +290,8 @@
       </div>
     </div>
     <span class="course-tag">B BUS 464 · Marketing</span>
-    <h1>Team Peer Evaluation Survey</h1>
-    <p>Confidential · Your responses save directly to the course database</p>
+    <h1>Team Peer Evaluation Survey <span id="testBadge" style="display:none;font-size:13px;background:#d97706;color:#fff;padding:3px 10px;border-radius:6px;vertical-align:middle;margin-left:8px;letter-spacing:1px">TEST MODE</span></h1>
+    <p id="headerSub">Confidential · Your responses save directly to the course database</p>
     <div class="progress-bar"><div class="progress-fill" id="pBar" style="width:0%"></div></div>
   </div>
 </header>
@@ -348,6 +348,10 @@ async function loadPeerEval() {
     const resp = await fetch(`/api/peer-eval-submit/${token}`);
     if (!resp.ok) throw new Error('Invalid or expired link');
     _peData = await resp.json();
+    if (_peData.isTest) {
+      document.getElementById('testBadge').style.display = 'inline-block';
+      document.getElementById('headerSub').textContent = 'TEST MODE — submissions from this link are discarded';
+    }
     if (_peData.existingResponse) renderAlreadySubmitted();
     else renderWelcome();
   } catch (e) {

@@ -1118,25 +1118,65 @@ app.post('/api/peer-eval/send-links', requireAuth, async (req, res) => {
   ok(res, { sent, errors });
 });
 
+// Create/refresh a Test Student token (instructor only).
+// Test tokens never write responses and never appear in instructor stats.
+app.post('/api/peer-eval/test-link', requireAuth, (_req, res) => {
+  if (!store.peerEval) store.peerEval = { responses: {}, tokens: {} };
+  if (!store.peerEval.tokens) store.peerEval.tokens = {};
+
+  // Remove any prior test tokens
+  Object.keys(store.peerEval.tokens).forEach(k => {
+    if (store.peerEval.tokens[k]?.isTest) delete store.peerEval.tokens[k];
+  });
+
+  // Borrow Team 1's members (or the first team that has members) for a realistic preview
+  const cids = Object.keys(store.teamMeta || {});
+  const tm = cids.length ? (store.teamMeta[cids[0]] || {}) : DEFAULT_TEAM_META;
+  let teamNum = '1';
+  let teamMembers = (tm['1']?.memberNames || []).map((name, i) => ({ id: `test_member_${i + 1}`, name }));
+  if (!teamMembers.length) {
+    const firstWithMembers = Object.entries(tm).find(([, t]) => (t.memberNames || []).length);
+    if (firstWithMembers) {
+      teamNum = firstWithMembers[0];
+      teamMembers = firstWithMembers[1].memberNames.map((name, i) => ({ id: `test_member_${i + 1}`, name }));
+    }
+  }
+
+  const token = 'test_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  store.peerEval.tokens[token] = {
+    isTest: true,
+    studentId: 'test_student',
+    studentName: 'Test Student',
+    teamNum,
+    teamMembers,
+  };
+  save();
+  ok(res, { token, teamNum, teamMembers });
+});
+
 // External peer eval access
 app.get('/api/peer-eval-submit/:token', (req, res) => {
   const pe = store.peerEval;
   const tokenData = (pe.tokens || {})[req.params.token];
   if (!tokenData) return fail(res, { message: 'Invalid link' }, 404);
-  // Return this student's team members (excluding self) + any existing response
+  // Test tokens never report an existing response — form always opens fresh
+  const existingResponse = tokenData.isTest ? null : ((pe.responses || {})[tokenData.studentId] || null);
   const teamMembers = (tokenData.teamMembers || []).filter(m => m.id !== tokenData.studentId);
   ok(res, {
     studentName: tokenData.studentName,
     studentId: tokenData.studentId,
     teamNum: tokenData.teamNum,
     teamMembers,
-    existingResponse: (pe.responses || {})[tokenData.studentId] || null,
+    isTest: !!tokenData.isTest,
+    existingResponse,
   });
 });
 app.post('/api/peer-eval-submit/:token', (req, res) => {
   const pe = store.peerEval;
   const tokenData = (pe.tokens || {})[req.params.token];
   if (!tokenData) return fail(res, { message: 'Invalid link' }, 404);
+  // Test tokens: pretend to save but don't write anything
+  if (tokenData.isTest) return ok(res, { ok: true, isTest: true });
   if (!pe.responses) pe.responses = {};
   pe.responses[tokenData.studentId] = { ...req.body, submittedAt: new Date().toISOString() };
   save();

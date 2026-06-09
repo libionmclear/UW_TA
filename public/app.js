@@ -6597,6 +6597,15 @@ function _renderPeerUI(root) {
       <div class="asgn-stat-card" style="border-left-color:var(--danger)"><div class="asgn-stat-value">${totalStudents - responded}</div><div class="asgn-stat-label">Pending</div></div>
     </div>
 
+    <!-- Test Link -->
+    <div class="card" style="margin-bottom:14px;border-left:3px solid #d97706">
+      <div class="card-title">🧪 Test Student
+        <span class="card-title-hint">Preview the full student flow — submissions are discarded</span>
+        <button class="btn btn-ghost" style="font-size:11px;padding:3px 10px;margin-left:auto" onclick="createPeerEvalTestLink()">Create / Refresh Test Link</button>
+      </div>
+      <div id="peer-test-link-wrap" style="margin-top:6px"></div>
+    </div>
+
     <!-- Student Links -->
     <div class="card" style="margin-bottom:14px">
       <div class="card-title">Student Evaluation Links
@@ -6706,6 +6715,26 @@ function showAllPeerLinks() {
   }).join('\n');
   const w = window.open('', '_blank');
   w.document.write(`<pre style="font-size:12px;padding:20px">${esc(all)}</pre>`);
+}
+
+async function createPeerEvalTestLink() {
+  try {
+    const res = await POST('/api/peer-eval/test-link', {});
+    const link = `${location.origin}/peer-eval.html?token=${res.token}`;
+    const wrap = document.getElementById('peer-test-link-wrap');
+    if (wrap) {
+      wrap.innerHTML = `
+        <div style="display:flex;gap:6px;align-items:center;font-size:11px">
+          <strong style="min-width:100px">Test Student</strong>
+          <input class="input" style="font-size:10px;flex:1;padding:2px 4px" readonly value="${link}" onclick="this.select();navigator.clipboard.writeText(this.value);toast('Copied!','success')" />
+          <a class="btn btn-ghost" style="font-size:11px;padding:3px 10px" href="${link}" target="_blank">Open ↗</a>
+        </div>
+        <p class="muted" style="font-size:10px;margin-top:4px">Team ${esc(res.teamNum)} — ${res.teamMembers.length} teammates. Submissions from this link are discarded.</p>`;
+    }
+    toast('Test link ready!', 'success');
+  } catch (e) {
+    toast('Failed: ' + e.message, 'error');
+  }
 }
 
 async function sendPeerEvalViaCanvas() {
