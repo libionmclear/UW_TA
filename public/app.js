@@ -6465,6 +6465,7 @@ async function savePanelData() {
 
 /* ── Peer Evaluation (BETA) ────────────────────────────────────────────────── */
 let _peerData = null;
+let _peerTeamFilter = 'all'; // 'all' or a team number as a string
 
 async function renderPeerEvalView(root) {
   root = root || document.getElementById('view-root');
@@ -6472,17 +6473,27 @@ async function renderPeerEvalView(root) {
   _renderPeerUI(root);
 }
 
+function setPeerTeamFilter(val) {
+  _peerTeamFilter = val || 'all';
+  _renderPeerUI();
+}
+
 function _renderPeerUI(root) {
   root = root || document.getElementById('view-root');
-  const students = S.allStudentsList.length ? S.allStudentsList : allStudents();
+  const allStudentsArr = S.allStudentsList.length ? S.allStudentsList : allStudents();
   const teamNums = Object.keys(S.teamMeta).map(Number).sort((a, b) => a - b);
   const responses = _peerData.responses || {};
   const tokens = _peerData.tokens || {};
 
-  // Generate tokens if not exists
+  // Apply team filter
+  const students = _peerTeamFilter === 'all'
+    ? allStudentsArr
+    : allStudentsArr.filter(st => String(S.teams[st.id]?.team) === String(_peerTeamFilter));
+
+  // Generate tokens if not exists — always covers ALL students regardless of filter
   let needsSave = false;
   teamNums.forEach(tNum => {
-    const members = students.filter(st => S.teams[st.id]?.team === tNum);
+    const members = allStudentsArr.filter(st => S.teams[st.id]?.team === tNum);
     members.forEach(st => {
       if (!Object.values(tokens).find(t => t.studentId === st.id)) {
         const token = Date.now().toString(36) + Math.random().toString(36).slice(2, 8) + st.id;
@@ -6496,10 +6507,10 @@ function _renderPeerUI(root) {
   });
   if (needsSave) { _peerData.tokens = tokens; savePeerData(); }
 
-  // Results table
+  // Results table — score calc must use ALL teammates, not filtered
   const rows = students.map(st => {
     const teamNum = S.teams[st.id]?.team || 0;
-    const teamMembers = students.filter(m => S.teams[m.id]?.team === teamNum && m.id !== st.id);
+    const teamMembers = allStudentsArr.filter(m => S.teams[m.id]?.team === teamNum && m.id !== st.id);
     const groupSize = teamMembers.length + 1;
 
     // Gather ratings from teammates
@@ -6543,21 +6554,42 @@ function _renderPeerUI(root) {
     </tr>`;
   }).join('');
 
-  // Count responses
+  // Counts respect filter
+  const inScopeStudentIds = new Set(students.map(st => st.id));
   const totalStudents = students.length;
-  const responded = Object.keys(responses).length;
+  const responded = students.filter(st => responses[st.id]).length;
 
-  // Links list
-  const linksList = Object.entries(tokens).slice(0, 5).map(([token, t]) => {
+  // Team filter options
+  const filterOpts = ['<option value="all">All Teams</option>']
+    .concat(teamNums.map(tNum => {
+      const name = S.teamMeta[String(tNum)]?.name || '';
+      const label = name ? `Team ${tNum} — ${esc(name)}` : `Team ${tNum}`;
+      return `<option value="${tNum}" ${String(_peerTeamFilter) === String(tNum) ? 'selected' : ''}>${label}</option>`;
+    })).join('');
+
+  // Links list — filtered by team
+  const filteredTokens = Object.entries(tokens).filter(([, t]) => inScopeStudentIds.has(t.studentId));
+  const linksList = filteredTokens.slice(0, 5).map(([token, t]) => {
     const link = `${location.origin}/peer-eval.html?token=${token}`;
+    const responded = !!responses[t.studentId];
     return `<div style="display:flex;gap:6px;align-items:center;font-size:11px;margin-bottom:3px">
-      <span style="min-width:120px">${esc(t.studentName)}</span>
+      <span style="min-width:140px">${esc(t.studentName)} ${responded ? '<span style="color:var(--success);font-weight:700">✓</span>' : ''}</span>
       <input class="input" style="font-size:10px;flex:1;padding:2px 4px" readonly value="${link}" onclick="this.select();navigator.clipboard.writeText(this.value);toast('Copied!','success')" />
     </div>`;
   }).join('');
 
+  const filterLabel = _peerTeamFilter === 'all'
+    ? 'All Teams'
+    : `Team ${_peerTeamFilter}${S.teamMeta[String(_peerTeamFilter)]?.name ? ' — ' + esc(S.teamMeta[String(_peerTeamFilter)].name) : ''}`;
+
   root.innerHTML = `
     <div class="page-title">Peer Evaluation <span style="font-size:11px;background:#d97706;color:#fff;padding:2px 8px;border-radius:6px;margin-left:6px">BETA</span></div>
+
+    <div class="card" style="margin-bottom:14px;display:flex;gap:14px;align-items:center;flex-wrap:wrap">
+      <label style="font-weight:700;font-size:12px;color:var(--uw-purple)">Filter by team:</label>
+      <select class="input" style="max-width:280px" onchange="setPeerTeamFilter(this.value)">${filterOpts}</select>
+      <span class="muted" style="font-size:12px">Showing <strong>${filterLabel}</strong> — ${responded}/${totalStudents} submitted</span>
+    </div>
 
     <div class="asgn-stat-cards" style="margin-bottom:14px">
       <div class="asgn-stat-card" style="border-left-color:var(--uw-purple)"><div class="asgn-stat-value">${totalStudents}</div><div class="asgn-stat-label">Students</div></div>
@@ -6571,8 +6603,8 @@ function _renderPeerUI(root) {
         <span class="card-title-hint">Each student gets a unique link — click to copy</span>
         <button class="btn btn-surf" style="font-size:11px;padding:3px 10px;margin-left:auto" onclick="sendPeerEvalViaCanvas()">✉ Send All via Canvas</button>
       </div>
-      ${linksList}
-      ${Object.keys(tokens).length > 5 ? `<p class="muted" style="font-size:11px">…and ${Object.keys(tokens).length - 5} more. <button class="link-btn" onclick="showAllPeerLinks()">Show all</button></p>` : ''}
+      ${linksList || '<p class="muted" style="font-size:11px">No students in this team yet.</p>'}
+      ${filteredTokens.length > 5 ? `<p class="muted" style="font-size:11px">…and ${filteredTokens.length - 5} more. <button class="link-btn" onclick="showAllPeerLinks()">Show all</button></p>` : ''}
     </div>
 
     <!-- Results -->
@@ -6594,7 +6626,20 @@ function _renderPeerUI(root) {
 
 function _renderPeerClassInsights(students, responses) {
   const submitted = students.filter(st => responses[st.id]);
-  if (!submitted.length) return '';
+
+  if (!submitted.length) {
+    return `
+      <div class="card" style="margin-top:14px">
+        <div class="card-title">Class Insights <span class="card-title-hint">Q4–Q9 aggregated responses + comments will appear here</span></div>
+        <p class="muted" style="font-size:12px;padding:10px">No submissions yet${_peerTeamFilter !== 'all' ? ' from this team' : ''}. Once students submit, you'll see:</p>
+        <ul class="muted" style="font-size:12px;padding-left:24px;margin-bottom:10px">
+          <li>Q5 / Q6 / Q8 averages and 1–5 distribution</li>
+          <li>Q4 — incidents / circumstances (per student)</li>
+          <li>Q7 — memorable cases / activities (per student)</li>
+          <li>Q9 — other comments / feedback (per student)</li>
+        </ul>
+      </div>`;
+  }
 
   const avg = (arr) => arr.length ? (arr.reduce((a,b) => a + b, 0) / arr.length).toFixed(2) : '—';
   const q5Vals = submitted.map(st => Number(responses[st.id].q5_knowledge)).filter(v => v > 0);
@@ -6647,9 +6692,9 @@ function _renderPeerClassInsights(students, responses) {
         </tbody>
       </table></div>
 
-      <details style="margin-bottom:10px"><summary style="cursor:pointer;font-weight:700;color:var(--uw-purple);padding:6px 0">Q4 — Incidents / Circumstances</summary>${commentRow('incidents', 'incidents', true)}</details>
-      <details style="margin-bottom:10px"><summary style="cursor:pointer;font-weight:700;color:var(--uw-purple);padding:6px 0">Q7 — Memorable cases / activities</summary>${commentRow('cases', 'q7_cases', false)}</details>
-      <details><summary style="cursor:pointer;font-weight:700;color:var(--uw-purple);padding:6px 0">Q9 — Other comments / feedback</summary>${commentRow('comments', 'q9_comments', false)}</details>
+      <details style="margin-bottom:10px"><summary style="cursor:pointer;font-weight:700;color:var(--uw-purple);padding:6px 0">Q4 — Incidents / Circumstances (click to expand)</summary>${commentRow('incidents', 'incidents', true)}</details>
+      <details open style="margin-bottom:10px"><summary style="cursor:pointer;font-weight:700;color:var(--uw-purple);padding:6px 0">Q7 — Memorable cases / activities</summary>${commentRow('cases', 'q7_cases', false)}</details>
+      <details open><summary style="cursor:pointer;font-weight:700;color:var(--uw-purple);padding:6px 0">Q9 — Other comments / feedback</summary>${commentRow('comments', 'q9_comments', false)}</details>
     </div>`;
 }
 
