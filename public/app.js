@@ -6583,7 +6583,7 @@ function _renderPeerUI(root) {
     : `Team ${_peerTeamFilter}${S.teamMeta[String(_peerTeamFilter)]?.name ? ' — ' + esc(S.teamMeta[String(_peerTeamFilter)].name) : ''}`;
 
   root.innerHTML = `
-    <div class="page-title">Peer Evaluation <span style="font-size:11px;background:#d97706;color:#fff;padding:2px 8px;border-radius:6px;margin-left:6px">BETA</span></div>
+    <div class="page-title">Peer Evaluation</div>
 
     <div class="card" style="margin-bottom:14px;display:flex;gap:14px;align-items:center;flex-wrap:wrap">
       <label style="font-weight:700;font-size:12px;color:var(--uw-purple)">Filter by team:</label>
