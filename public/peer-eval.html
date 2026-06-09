@@ -16,7 +16,25 @@
     .pe-rating label { font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 3px; }
     .pe-question { margin: 16px 0; padding: 12px; background: var(--bg); border-radius: var(--radius); }
     .pe-q-title { font-weight: 700; font-size: 13px; color: var(--uw-purple); margin-bottom: 6px; }
+    .pe-q-hint { font-size: 11px; color: var(--text-muted); margin-bottom: 8px; font-style: italic; }
     .pe-success { text-align: center; padding: 40px; color: var(--success); font-size: 18px; font-weight: 700; }
+    .pe-section-divider {
+      margin: 24px 0 12px; padding: 8px 12px; background: var(--uw-purple); color: #fff;
+      border-radius: var(--radius); font-weight: 700; font-size: 13px;
+    }
+    .pe-rating-1to5 { display: flex; gap: 6px; flex-wrap: wrap; }
+    .pe-rating-1to5 label {
+      display: flex; align-items: center; gap: 4px; font-size: 12px; cursor: pointer;
+      padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--radius);
+      background: #fff;
+    }
+    .pe-rating-1to5 input { margin: 0; }
+    .pe-rating-1to5 input:checked + span { color: var(--uw-purple); font-weight: 700; }
+    .pe-textarea { width: 100%; min-height: 60px; padding: 8px; font-family: inherit;
+      font-size: 13px; border: 1px solid var(--border); border-radius: var(--radius); resize: vertical; }
+    .pe-checkbox-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .pe-checkbox-row label { font-size: 13px; cursor: pointer; }
+    .pe-q-required { color: #dc2626; font-weight: 700; }
   </style>
 </head>
 <body>
@@ -68,25 +86,74 @@
 
       const mostWorkOpts = members.map(m => `<option value="${m.id}">${esc(m.name)}</option>`).join('');
 
+      const ratingScale = (name, labels) => `
+        <div class="pe-rating-1to5">
+          ${[1,2,3,4,5].map((v, i) =>
+            `<label><input type="radio" name="${name}" value="${v}" /> <span>${v} — ${esc(labels[i])}</span></label>`
+          ).join('')}
+        </div>`;
+
       document.getElementById('pe-root').innerHTML = `
         <div class="pe-header">
           <h2 style="margin:0">Peer Evaluation</h2>
           <p style="opacity:.7;margin:4px 0 0;font-size:13px">${esc(_peData.studentName)} — Team ${_peData.teamNum}</p>
         </div>
         <div class="pe-body">
-          <p style="font-size:13px;margin-bottom:14px;line-height:1.5">Rate each of your teammates on their contribution to the group project. Your responses are <strong>completely confidential</strong> — no one will see your individual ratings.</p>
+          <p style="font-size:13px;margin-bottom:14px;line-height:1.5">Your responses are <strong>completely confidential</strong> and save directly to the instructor's database. Takes about 5–8 minutes.</p>
 
-          <h3 style="font-size:14px;color:var(--uw-purple)">Q1: Rate each teammate (1-5)</h3>
+          <div class="pe-section-divider">PART 1 — TEAMMATE ANALYSIS</div>
+
+          <h3 style="font-size:14px;color:var(--uw-purple);margin-top:8px">Q1: Rate each teammate (1-5) <span class="pe-q-required">*</span></h3>
+          <p class="pe-q-hint">1 = Didn't contribute much · 3 = Average · 5 = Outstanding</p>
           ${memberRatings}
 
           <div class="pe-question">
-            <div class="pe-q-title">Q2: Who did the MOST work on the project?</div>
+            <div class="pe-q-title">Q2: Who did the MOST work on the project? <span class="pe-q-required">*</span></div>
             <select class="input" id="pe-most-work"><option value="">— Select —</option>${mostWorkOpts}</select>
           </div>
 
           <div class="pe-question">
-            <div class="pe-q-title">Q3: Who did the LEAST work on the project?</div>
+            <div class="pe-q-title">Q3: Who did the LEAST work on the project? <span class="pe-q-required">*</span></div>
             <select class="input" id="pe-least-work"><option value="">— Select —</option>${mostWorkOpts}</select>
+          </div>
+
+          <div class="pe-question">
+            <div class="pe-q-title">Q4: Were there any specific circumstances or incidents we should know about?</div>
+            <div class="pe-checkbox-row">
+              <input type="checkbox" id="pe-no-issues" onchange="toggleIncidents()" />
+              <label for="pe-no-issues">No issues — our team worked well together</label>
+            </div>
+            <textarea class="pe-textarea" id="pe-incidents" placeholder="Describe any relevant circumstances, conflicts, or incidents…"></textarea>
+          </div>
+
+          <div class="pe-section-divider">PART 2 — CLASS INSIGHTS</div>
+
+          <div class="pe-question">
+            <div class="pe-q-title">Q5: Compared to other Business classes, how much applicable knowledge did you take away? <span class="pe-q-required">*</span></div>
+            <p class="pe-q-hint">1 = Much less than average · 3 = About average · 5 = Much more than average</p>
+            ${ratingScale('pe-q5', ['Much Less', 'Below Avg', 'Average', 'Above Avg', 'Much More'])}
+          </div>
+
+          <div class="pe-question">
+            <div class="pe-q-title">Q6: How much did you enjoy the recorded lectures outside-of-class format? <span class="pe-q-required">*</span></div>
+            <p class="pe-q-hint">1 = Did not enjoy it · 3 = Neutral · 5 = Really enjoyed it</p>
+            ${ratingScale('pe-q6', ['Not at All', 'Not Much', 'Neutral', 'Enjoyed', 'Loved It'])}
+          </div>
+
+          <div class="pe-question">
+            <div class="pe-q-title">Q7: Which cases or activities did you remember and enjoy most?</div>
+            <textarea class="pe-textarea" id="pe-cases" placeholder="e.g., the Nike case, the positioning workshop, the brand simulation…"></textarea>
+          </div>
+
+          <div class="pe-question">
+            <div class="pe-q-title">Q8: We have recently added AI content pieces to this course. Do you enjoy the AI-specific modules, and did you find them useful? <span class="pe-q-required">*</span></div>
+            <p class="pe-q-hint">1 = Did not enjoy / not useful · 3 = Somewhat · 5 = Enjoyed and very useful</p>
+            ${ratingScale('pe-q8', ['Not at All', 'Slightly', 'Somewhat', 'Useful', 'Very Useful'])}
+          </div>
+
+          <div class="pe-question">
+            <div class="pe-q-title">Q9: Any other comments or feedback?</div>
+            <textarea class="pe-textarea" id="pe-comments" placeholder="Optional — any additional thoughts or suggestions for the instructor…"></textarea>
           </div>
 
           <div style="margin-top:16px;display:flex;gap:8px;align-items:center">
@@ -96,7 +163,15 @@
         </div>`;
     }
 
+    function toggleIncidents() {
+      const cb = document.getElementById('pe-no-issues');
+      const ta = document.getElementById('pe-incidents');
+      if (cb.checked) { ta.value = ''; ta.disabled = true; ta.style.opacity = '0.4'; }
+      else { ta.disabled = false; ta.style.opacity = '1'; }
+    }
+
     async function submitPeerEval() {
+      const status = document.getElementById('pe-status');
       const members = _peData.teamMembers || [];
       const ratings = {};
       let allRated = true;
@@ -106,16 +181,40 @@
         else allRated = false;
       });
 
-      if (!allRated) { document.getElementById('pe-status').textContent = 'Please rate all teammates.'; return; }
+      if (!allRated) { status.textContent = 'Please rate all teammates (Q1).'; status.style.color = '#dc2626'; return; }
 
       const mostWork = document.getElementById('pe-most-work').value;
       const leastWork = document.getElementById('pe-least-work').value;
+      if (!mostWork) { status.textContent = 'Please answer Q2 (most work).'; status.style.color = '#dc2626'; return; }
+      if (!leastWork) { status.textContent = 'Please answer Q3 (least work).'; status.style.color = '#dc2626'; return; }
 
-      const status = document.getElementById('pe-status');
+      const noIssues = document.getElementById('pe-no-issues').checked;
+      const incidents = noIssues ? 'No issues' : document.getElementById('pe-incidents').value.trim();
+
+      const q5 = document.querySelector('input[name="pe-q5"]:checked')?.value;
+      const q6 = document.querySelector('input[name="pe-q6"]:checked')?.value;
+      const q8 = document.querySelector('input[name="pe-q8"]:checked')?.value;
+      if (!q5) { status.textContent = 'Please answer Q5 (knowledge takeaway).'; status.style.color = '#dc2626'; return; }
+      if (!q6) { status.textContent = 'Please answer Q6 (recorded lectures).'; status.style.color = '#dc2626'; return; }
+      if (!q8) { status.textContent = 'Please answer Q8 (AI modules).'; status.style.color = '#dc2626'; return; }
+
+      const q7_cases = document.getElementById('pe-cases').value.trim();
+      const q9_comments = document.getElementById('pe-comments').value.trim();
+
+      const payload = {
+        ratings, mostWork, leastWork,
+        incidents,
+        q5_knowledge: Number(q5),
+        q6_lectures: Number(q6),
+        q7_cases,
+        q8_ai: Number(q8),
+        q9_comments,
+      };
+
       try {
         const resp = await fetch(`/api/peer-eval-submit/${token}`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ratings, mostWork, leastWork }),
+          body: JSON.stringify(payload),
         });
         if (!resp.ok) throw new Error('Submit failed');
         document.getElementById('pe-root').innerHTML = `

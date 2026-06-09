@@ -6587,6 +6587,69 @@ function _renderPeerUI(root) {
         </tr></thead>
         <tbody>${rows}</tbody>
       </table></div>
+    </div>
+
+    ${_renderPeerClassInsights(students, responses)}`;
+}
+
+function _renderPeerClassInsights(students, responses) {
+  const submitted = students.filter(st => responses[st.id]);
+  if (!submitted.length) return '';
+
+  const avg = (arr) => arr.length ? (arr.reduce((a,b) => a + b, 0) / arr.length).toFixed(2) : '—';
+  const q5Vals = submitted.map(st => Number(responses[st.id].q5_knowledge)).filter(v => v > 0);
+  const q6Vals = submitted.map(st => Number(responses[st.id].q6_lectures)).filter(v => v > 0);
+  const q8Vals = submitted.map(st => Number(responses[st.id].q8_ai)).filter(v => v > 0);
+
+  const distRow = (vals) => [1,2,3,4,5].map(v => {
+    const count = vals.filter(x => x === v).length;
+    const pct = vals.length ? Math.round(count / vals.length * 100) : 0;
+    return `<td style="text-align:center">${count}<br><span class="muted" style="font-size:10px">${pct}%</span></td>`;
+  }).join('');
+
+  const commentRow = (label, field, isIncident) => {
+    const items = submitted.map(st => {
+      const r = responses[st.id];
+      let text = (r[field] || '').trim();
+      if (isIncident && (!text || text === 'No issues')) return null;
+      if (!text) return null;
+      return `<tr><td style="vertical-align:top;padding:6px;border-bottom:1px solid var(--border);width:140px"><strong>${esc(st.name)}</strong><br><span class="muted" style="font-size:10px">Team ${S.teams[st.id]?.team || '—'}</span></td><td style="vertical-align:top;padding:6px;border-bottom:1px solid var(--border);font-size:12px;white-space:pre-wrap">${esc(text)}</td></tr>`;
+    }).filter(Boolean).join('');
+    if (!items) return `<p class="muted" style="font-size:11px;padding:8px">No ${label.toLowerCase()} comments yet.</p>`;
+    return `<table style="width:100%;font-size:12px;margin-top:6px"><tbody>${items}</tbody></table>`;
+  };
+
+  return `
+    <div class="card" style="margin-top:14px">
+      <div class="card-title">Class Insights <span class="card-title-hint">Aggregated Q5–Q9 responses (${submitted.length}/${students.length} submitted)</span></div>
+
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px">
+        <div class="asgn-stat-card" style="border-left-color:var(--uw-purple)">
+          <div class="asgn-stat-value">${avg(q5Vals)}</div>
+          <div class="asgn-stat-label">Q5 — Knowledge Takeaway (avg / 5)</div>
+        </div>
+        <div class="asgn-stat-card" style="border-left-color:var(--uw-purple)">
+          <div class="asgn-stat-value">${avg(q6Vals)}</div>
+          <div class="asgn-stat-label">Q6 — Recorded Lectures (avg / 5)</div>
+        </div>
+        <div class="asgn-stat-card" style="border-left-color:var(--uw-purple)">
+          <div class="asgn-stat-value">${avg(q8Vals)}</div>
+          <div class="asgn-stat-label">Q8 — AI Modules (avg / 5)</div>
+        </div>
+      </div>
+
+      <div class="table-wrap" style="margin-bottom:14px"><table style="font-size:11px">
+        <thead><tr><th>Question</th><th style="text-align:center">1</th><th style="text-align:center">2</th><th style="text-align:center">3</th><th style="text-align:center">4</th><th style="text-align:center">5</th><th style="text-align:center">N</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Q5</strong> Knowledge takeaway</td>${distRow(q5Vals)}<td style="text-align:center">${q5Vals.length}</td></tr>
+          <tr><td><strong>Q6</strong> Recorded lectures format</td>${distRow(q6Vals)}<td style="text-align:center">${q6Vals.length}</td></tr>
+          <tr><td><strong>Q8</strong> AI modules</td>${distRow(q8Vals)}<td style="text-align:center">${q8Vals.length}</td></tr>
+        </tbody>
+      </table></div>
+
+      <details style="margin-bottom:10px"><summary style="cursor:pointer;font-weight:700;color:var(--uw-purple);padding:6px 0">Q4 — Incidents / Circumstances</summary>${commentRow('incidents', 'incidents', true)}</details>
+      <details style="margin-bottom:10px"><summary style="cursor:pointer;font-weight:700;color:var(--uw-purple);padding:6px 0">Q7 — Memorable cases / activities</summary>${commentRow('cases', 'q7_cases', false)}</details>
+      <details><summary style="cursor:pointer;font-weight:700;color:var(--uw-purple);padding:6px 0">Q9 — Other comments / feedback</summary>${commentRow('comments', 'q9_comments', false)}</details>
     </div>`;
 }
 
