@@ -458,20 +458,21 @@ function renderSidebar() {
     </div>`;
   }
 
-  wrap.innerHTML = allKeys.map(renderGroup).join('');
+  // Milestone 7 button lives at the bottom of Assignment Grading (not Other Assignments)
+  const m7Assignment = (S.assignments || []).find(isMilestone7WrittenReport);
+  const isM7Active = S.currentAssignment && m7Assignment && String(S.currentAssignment.id) === String(m7Assignment.id);
+  const m7Btn = m7Assignment ? `<button class="nav-btn nav-btn-milestone7 ${isM7Active ? 'active' : ''}" onclick="selectAssignment('${esc(m7Assignment.id)}')" style="font-size:12px;margin-top:8px" title="${esc(m7Assignment.name)}">
+    <span class="nav-icon">●</span> Milestone 7
+  </button>` : '';
+  wrap.innerHTML = allKeys.map(renderGroup).join('') + m7Btn;
 
-  // Other Assignments box — plus custom views (Final Participation, Milestone 7)
+  // Other Assignments box — plus Final Participation custom view
   if (otherWrap && otherBox) {
     otherBox.style.display = '';
     const finalPartBtn = `<button class="nav-btn nav-btn-finalpart ${currentView === 'finalparticipation' ? 'active' : ''}" onclick="showView('finalparticipation')" style="font-size:12px">
       <span class="nav-icon">●</span> Final Participation
     </button>`;
-    const m7Assignment = (S.assignments || []).find(isMilestone7WrittenReport);
-    const isM7Active = S.currentAssignment && m7Assignment && String(S.currentAssignment.id) === String(m7Assignment.id);
-    const m7Btn = m7Assignment ? `<button class="nav-btn nav-btn-milestone7 ${isM7Active ? 'active' : ''}" onclick="selectAssignment('${esc(m7Assignment.id)}')" style="font-size:12px" title="${esc(m7Assignment.name)}">
-      <span class="nav-icon">●</span> Milestone 7
-    </button>` : '';
-    otherWrap.innerHTML = otherKeys.map(renderGroup).join('') + finalPartBtn + m7Btn;
+    otherWrap.innerHTML = otherKeys.map(renderGroup).join('') + finalPartBtn;
   }
 }
 
@@ -2351,37 +2352,53 @@ function renderMilestone7View(root, a) {
   }).length;
   const totalScore = _m7CurrentTotal(rubric.criteria, ownerId);
 
-  // Criterion rows
+  // Compact rubric rows (no per-criterion justification — one table)
   const critRows = rubric.criteria.map(c => {
     const cd = g.criteria[c.id] || {};
     const aiScore = cd.aiScore;
     const finalScore = cd.finalScore != null ? cd.finalScore : (aiScore != null ? aiScore : '');
-    const justification = cd.finalJustification != null ? cd.finalJustification : (cd.aiJustification || '');
     return `
-      <div class="card" style="margin-bottom:10px;padding:14px">
-        <div style="display:flex;align-items:flex-start;gap:14px">
-          <div style="flex:1;min-width:0">
-            <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-              <strong style="color:var(--uw-purple);font-size:14px">${esc(c.name)}</strong>
-              <span class="muted" style="font-size:11px">/ ${c.maxPoints} pts</span>
-              ${aiScore != null ? `<span class="status-badge" style="background:#ede9fe;color:#5b21b6;font-size:10px">AI: ${aiScore}</span>` : ''}
-            </div>
-            <p class="muted" style="font-size:12px;margin-bottom:8px;font-style:italic">${esc(c.description)}</p>
-            <label style="font-size:11px;color:var(--text-muted);font-weight:600">Justification</label>
-            <textarea class="input" rows="2" style="font-size:12px;width:100%;margin-top:4px"
-              onchange="m7SetJustification('${esc(c.id)}', this.value)">${esc(justification)}</textarea>
-          </div>
-          <div style="display:flex;flex-direction:column;align-items:center;gap:4px;min-width:90px">
-            <label style="font-size:11px;color:var(--uw-purple);font-weight:700">Score</label>
-            <input type="number" class="input" min="0" max="${c.maxPoints}" step="0.5"
-              style="width:80px;text-align:center;font-weight:800;font-size:18px;padding:8px"
-              value="${finalScore}" placeholder="—"
-              onchange="m7SetScore('${esc(c.id)}', this.value, ${c.maxPoints})" />
-            <span class="muted" style="font-size:10px">of ${c.maxPoints}</span>
-          </div>
-        </div>
-      </div>`;
+      <tr>
+        <td style="padding:8px 10px;border-bottom:1px solid var(--border);vertical-align:top">
+          <div style="font-weight:700;color:var(--uw-purple);font-size:13px">${esc(c.name)}</div>
+          <div class="muted" style="font-size:11px;margin-top:2px;line-height:1.4">${esc(c.description)}</div>
+        </td>
+        <td style="padding:8px 8px;border-bottom:1px solid var(--border);text-align:center;width:80px;vertical-align:top">
+          ${aiScore != null ? `<span class="status-badge" style="background:#ede9fe;color:#5b21b6;font-size:11px">AI ${aiScore}</span>` : '<span class="muted" style="font-size:11px">—</span>'}
+        </td>
+        <td style="padding:8px 8px;border-bottom:1px solid var(--border);text-align:center;width:120px;vertical-align:top">
+          <input type="number" class="input" min="0" max="${c.maxPoints}" step="0.5"
+            style="width:70px;text-align:center;font-weight:800;font-size:15px;padding:6px"
+            value="${finalScore}" placeholder="—"
+            onchange="m7SetScore('${esc(c.id)}', this.value, ${c.maxPoints})" />
+          <span class="muted" style="font-size:10px;display:block;margin-top:2px">of ${c.maxPoints}</span>
+        </td>
+      </tr>`;
   }).join('');
+
+  const rubricBox = `
+    <div class="card" style="margin-bottom:14px;padding:10px 14px">
+      <div class="card-title" style="margin-bottom:6px">Rubric — grade each criterion
+        <span class="card-title-hint">Total auto-sums below</span>
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead>
+          <tr>
+            <th style="text-align:left;padding:6px 10px;border-bottom:2px solid var(--border);font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px">Criterion</th>
+            <th style="text-align:center;padding:6px 8px;border-bottom:2px solid var(--border);font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;width:80px">AI Score</th>
+            <th style="text-align:center;padding:6px 8px;border-bottom:2px solid var(--border);font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;width:120px">Final Score</th>
+          </tr>
+        </thead>
+        <tbody>${critRows}</tbody>
+        <tfoot>
+          <tr>
+            <td style="padding:10px;font-weight:800;color:var(--uw-purple);font-size:14px;text-align:right">Total</td>
+            <td></td>
+            <td style="padding:10px;text-align:center;font-weight:800;font-size:20px;color:var(--uw-purple)">${totalScore} <span class="muted" style="font-size:12px;font-weight:400">/ ${maxTotal}</span></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>`;
 
   // Submission block
   const submissionBlock = primarySub
@@ -2439,32 +2456,26 @@ function renderMilestone7View(root, a) {
     </div>
 
     <!-- Team header card -->
-    <div class="card" style="margin-bottom:14px">
+    <div class="card" style="margin-bottom:14px;padding:10px 14px">
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-        <strong style="font-size:16px;color:var(--uw-purple)">${esc(team.label)}</strong>
-        <span class="muted" style="font-size:12px">${team.members.length} members</span>
-        <span class="muted" style="font-size:11px">· ${esc(memberList)}</span>
-        <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
-          <span style="font-size:13px;color:var(--text-muted)">Total Score</span>
-          <span style="font-size:26px;font-weight:800;color:var(--uw-purple)">${totalScore}</span>
-          <span class="muted" style="font-size:13px">/ ${maxTotal}</span>
-        </div>
+        <strong style="font-size:15px;color:var(--uw-purple)">${esc(team.label)}</strong>
+        <span class="muted" style="font-size:11px">${team.members.length} members · ${esc(memberList)}</span>
       </div>
     </div>
 
     ${submissionBlock}
 
-    <!-- Per-criterion grading -->
-    <div style="margin-bottom:6px;font-weight:700;color:var(--uw-purple);font-size:13px">Rubric — grade each criterion</div>
-    ${critRows}
+    ${rubricBox}
 
     <!-- AI Feedback -->
     <div class="card" style="margin-top:14px">
       <div class="card-title">📝 AI Feedback
-        <span class="card-title-hint">Auto-filled by AI grading — editable</span>
+        <span class="card-title-hint">Constructive — explains why the score isn't a 50</span>
+        <button class="btn btn-ghost" style="font-size:11px;padding:3px 10px;margin-left:auto"
+          onclick="m7RegenerateFeedback()">🔄 Regenerate from current scores</button>
       </div>
-      <textarea id="m7-feedback" class="input" rows="5" style="font-size:13px;line-height:1.5;margin-top:6px"
-        placeholder="No feedback yet — click '🤖 AI Grade This Team' or type your own."
+      <textarea id="m7-feedback" class="input" rows="8" style="font-size:13px;line-height:1.6;margin-top:6px"
+        placeholder="No feedback yet — click '🤖 AI Grade This Team' or '🔄 Regenerate' to fill this in."
         onchange="m7SetFeedback(this.value)">${esc(overallFeedback)}</textarea>
     </div>`;
 }
@@ -2545,11 +2556,75 @@ function m7SetFeedback(text) {
   _m7SaveTeam(team);
 }
 
+async function _m7CriticalFeedbackForTeam(team) {
+  const rubric = S.rubric && S.rubric.criteria?.length ? S.rubric : MILESTONE_7_RUBRIC;
+  const primary = gpPrimarySubmission(team.members);
+  const ownerId = (primary?.member || team.members[0]).id;
+  const g = S.grades[ownerId];
+  if (!g?.criteria) return null;
+
+  const totalScore = _m7CurrentTotal(rubric.criteria, ownerId);
+  const totalPossible = rubric.criteria.reduce((s, c) => s + (c.maxPoints || 0), 0);
+
+  // Build per-criterion context: name, score / max, AI's per-criterion justification
+  const criteriaContext = rubric.criteria.map(c => {
+    const cd = g.criteria[c.id] || {};
+    const score = cd.finalScore != null ? cd.finalScore : (cd.aiScore != null ? cd.aiScore : 0);
+    const aiNote = cd.aiJustification ? ` — AI noted: "${cd.aiJustification}"` : '';
+    return `- ${c.name} (${score}/${c.maxPoints}): ${c.description}${aiNote}`;
+  }).join('\n');
+
+  const meta = S.teamMeta[String(team.tNum)] || {};
+  const teamLabel = meta.name ? `Team ${team.tNum} (${meta.name})` : `Team ${team.tNum}`;
+
+  const res = await POST('/api/grade/feedback', {
+    studentName: teamLabel,
+    assignmentName: S.currentAssignment?.name || 'Milestone 7 Written Report',
+    totalScore,
+    totalPossible,
+    criteriaContext,
+    overallFeedback: g.aiOverallFeedback || '',
+    gradingNotes: '',
+    style: 'critical',
+  });
+  return res?.feedback || null;
+}
+
 async function m7AiGradeCurrentTeam() {
   const team = _m7CurrentTeam();
   if (!team) return;
-  await gpAiGradeTeam(team.tNum); // reuses existing flow (fills criteria, feedback, total)
+  await gpAiGradeTeam(team.tNum); // fills per-criterion scores + initial feedback + total
+  toast('Generating substantive feedback…');
+  try {
+    const feedback = await _m7CriticalFeedbackForTeam(team);
+    if (feedback) {
+      _m7BroadcastToTeam(team, (g) => { g.overallFeedback = feedback; });
+      await _m7SaveTeam(team);
+      toast('AI grade + feedback ready.', 'success');
+    }
+  } catch (e) {
+    toast('Feedback generation failed: ' + e.message, 'error');
+  }
   renderAssignmentView();
+}
+
+async function m7RegenerateFeedback() {
+  const team = _m7CurrentTeam();
+  if (!team) return;
+  toast('Regenerating feedback from current scores…');
+  try {
+    const feedback = await _m7CriticalFeedbackForTeam(team);
+    if (feedback) {
+      _m7BroadcastToTeam(team, (g) => { g.overallFeedback = feedback; });
+      await _m7SaveTeam(team);
+      toast('Feedback updated.', 'success');
+      renderAssignmentView();
+    } else {
+      toast('No scores yet — run AI Grade first or enter scores manually.', 'warn');
+    }
+  } catch (e) {
+    toast('Failed: ' + e.message, 'error');
+  }
 }
 
 async function m7AiGradeAll() {
@@ -2559,8 +2634,17 @@ async function m7AiGradeAll() {
   toast(`Grading ${teams.length} teams…`);
   let ok = 0, fail = 0;
   for (const t of teams) {
-    try { await gpAiGradeTeam(t.tNum); ok++; }
-    catch { fail++; }
+    try {
+      await gpAiGradeTeam(t.tNum);
+      try {
+        const fb = await _m7CriticalFeedbackForTeam(t);
+        if (fb) {
+          _m7BroadcastToTeam(t, (g) => { g.overallFeedback = fb; });
+          await _m7SaveTeam(t);
+        }
+      } catch { /* feedback failure shouldn't kill the run */ }
+      ok++;
+    } catch { fail++; }
   }
   toast(`AI graded ${ok} team(s)${fail ? `, ${fail} failed` : ''}.`, fail ? 'error' : 'success');
   renderAssignmentView();

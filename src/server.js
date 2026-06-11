@@ -409,13 +409,40 @@ app.post('/api/ai-detect', requireAuth, (req, res) => {
 // ── AI Student Feedback Generation ───────────────────────────────────────────
 app.post('/api/grade/feedback', requireAuth, async (req, res) => {
   try {
-    const { studentName, assignmentName, totalScore, totalPossible, criteriaContext, overallFeedback, gradingNotes } = req.body;
+    const { studentName, assignmentName, totalScore, totalPossible, criteriaContext, overallFeedback, gradingNotes, style } = req.body;
     const Anthropic = require('@anthropic-ai/sdk');
     const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-    const resp = await client.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 300,
-      messages: [{ role: 'user', content: `Write ONE paragraph (3-5 sentences) of constructive student feedback for this graded assignment. Be encouraging but honest. Address what was done well and what could be improved. Write in second person ("You did well...").
+
+    const isCritical = style === 'critical';
+    const pct = totalPossible ? Math.round((totalScore / totalPossible) * 100) : null;
+    const lostPts = totalPossible != null && totalScore != null ? (totalPossible - totalScore) : null;
+
+    const criticalPrompt = `Write substantive, realistic feedback for this graded written report. You are addressing the team directly ("Your report…").
+
+The team scored ${totalScore} / ${totalPossible}${pct != null ? ` (${pct}%)` : ''}.${lostPts != null ? ` They lost ${lostPts} points overall.` : ''}
+
+Your job is to explain WHY the report didn't earn a perfect score, going section by section through the rubric breakdown below. Focus on what was missing, weak, unclear, unsupported, or not credible. Be direct and constructive — this is a learning moment, not a pep talk.
+
+STRICT RULES:
+- DO NOT use words like "strong", "great", "excellent", "impressive", "good job", or "well done" unless a criterion scored 90%+ of its max points — and even then, be specific about exactly what worked.
+- DO NOT open with generic praise. DO NOT add a closing pep-talk sentence.
+- A score of 39/50 (or similar) is mediocre, not "strong work". Treat it that way.
+- For each criterion that lost points, name the criterion and explain the specific gap (the rubric description tells you what was expected).
+- If a criterion got full marks, you may briefly acknowledge it — one short sentence, no superlatives unless deserved.
+- Aim for 6–10 sentences total. Cover every criterion that lost points. End on a clear, concrete next step (no platitudes).
+
+Team: ${studentName}
+Assignment: ${assignmentName}
+
+Per-criterion breakdown:
+${criteriaContext}
+
+${overallFeedback ? `Initial AI grading notes (use as raw material — your output should be more direct and structured): ${overallFeedback}\n` : ''}
+${gradingNotes ? `INSTRUCTOR NOTES (always override the AI tone with these):\n${gradingNotes}\n` : ''}
+
+Write ONLY the feedback, no preamble, no markdown headers, no bullet points — flowing prose only:`;
+
+    const standardPrompt = `Write ONE paragraph (3-5 sentences) of constructive student feedback for this graded assignment. Be encouraging but honest. Address what was done well and what could be improved. Write in second person ("You did well...").
 
 Student: ${studentName}
 Assignment: ${assignmentName}
@@ -427,7 +454,12 @@ ${criteriaContext}
 ${overallFeedback ? `AI grading notes: ${overallFeedback}` : ''}
 ${gradingNotes ? `\nINSTRUCTOR GRADING NOTES (use these to guide your tone, focus, and specific points):\n${gradingNotes}` : ''}
 
-Write ONLY the feedback paragraph, no preamble:` }],
+Write ONLY the feedback paragraph, no preamble:`;
+
+    const resp = await client.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: isCritical ? 700 : 300,
+      messages: [{ role: 'user', content: isCritical ? criticalPrompt : standardPrompt }],
     });
     const feedback = resp.content[0].text.trim();
     ok(res, { feedback });
