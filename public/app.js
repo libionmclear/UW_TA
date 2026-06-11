@@ -569,7 +569,10 @@ async function loadAssignmentData(assignmentId) {
     S.grades = grades;
     S.aiInstructions = settings.aiInstructions || '';
     S.assignmentText = settings.assignmentText || '';
-    if (savedRubric) S.rubric = savedRubric;
+    // Auto-apply Milestone 7 rubric if the assignment matches and nothing
+    // M7-shaped is already saved — persists via /api/assignment-rubric.
+    const resolvedRubric = await autoApplyMilestone7RubricIfNeeded(savedRubric);
+    if (resolvedRubric) S.rubric = resolvedRubric;
     else S.rubric = defaultRubricForAssignment(S.currentAssignment);
 
     // Merge Canvas scores: if a submission has a score and our grade lacks a finalScore, import it
@@ -2265,11 +2268,38 @@ const MILESTONE_7_RUBRIC = {
       description: 'Key go/no-go milestones identified. Team articulates what success looks like at each gate and whether criteria have been met.' },
     { id: 'm7_exec_summary', name: 'Executive Summary', maxPoints: 3,
       description: 'Opens or closes with a sharp, self-contained summary of the concept, opportunity, and ask. Clear and concise.' },
-    { id: 'm7_paper_quality', name: 'Paper Quality', maxPoints: 5,
+    { id: 'm7_writeup_quality', name: 'Write-up Quality', maxPoints: 5,
       description: 'Concept communicated clearly within the allotted time. Professional confidence; structure flows logically from problem to solution to plan.' },
   ],
   name: 'Milestone 7 Written Report',
 };
+
+function isMilestone7WrittenReport(a) {
+  if (!a || !a.name) return false;
+  const n = a.name.toLowerCase();
+  const hasMilestone7 = /\bmilestone\s*0*7\b/.test(n) || n.includes('milestone 7');
+  const hasWritten = n.includes('written') || n.includes('write-up') || n.includes('writeup') || n.includes('report');
+  return hasMilestone7 && hasWritten;
+}
+
+async function autoApplyMilestone7RubricIfNeeded(savedRubric) {
+  const a = S.currentAssignment;
+  if (!a || !S.course) return savedRubric;
+  if (!isMilestone7WrittenReport(a)) return savedRubric;
+
+  // If a Milestone 7 rubric is already saved (by name or by first criterion id), keep it
+  if (savedRubric && savedRubric.criteria?.some(c => c.id?.startsWith('m7_'))) return savedRubric;
+
+  try {
+    const applied = { ...MILESTONE_7_RUBRIC };
+    await PUT(`/api/assignment-rubric/${S.course.id}/${a.id}`, applied);
+    toast('Milestone 7 rubric applied to this assignment.', 'success');
+    return applied;
+  } catch (e) {
+    console.error('Failed to auto-apply Milestone 7 rubric:', e);
+    return savedRubric || MILESTONE_7_RUBRIC; // fall back to in-memory if save fails
+  }
+}
 
 function renderGroupProjectView(root, a) {
   const students = allStudents();
