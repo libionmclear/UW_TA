@@ -460,13 +460,18 @@ function renderSidebar() {
 
   wrap.innerHTML = allKeys.map(renderGroup).join('');
 
-  // Other Assignments box — plus the Final Participation custom view
+  // Other Assignments box — plus custom views (Final Participation, Milestone 7)
   if (otherWrap && otherBox) {
     otherBox.style.display = '';
     const finalPartBtn = `<button class="nav-btn nav-btn-finalpart ${currentView === 'finalparticipation' ? 'active' : ''}" onclick="showView('finalparticipation')" style="font-size:12px">
       <span class="nav-icon">●</span> Final Participation
     </button>`;
-    otherWrap.innerHTML = otherKeys.map(renderGroup).join('') + finalPartBtn;
+    const m7Assignment = (S.assignments || []).find(isMilestone7WrittenReport);
+    const isM7Active = S.currentAssignment && m7Assignment && String(S.currentAssignment.id) === String(m7Assignment.id);
+    const m7Btn = m7Assignment ? `<button class="nav-btn nav-btn-milestone7 ${isM7Active ? 'active' : ''}" onclick="selectAssignment('${esc(m7Assignment.id)}')" style="font-size:12px" title="${esc(m7Assignment.name)}">
+      <span class="nav-icon">●</span> Milestone 7
+    </button>` : '';
+    otherWrap.innerHTML = otherKeys.map(renderGroup).join('') + finalPartBtn + m7Btn;
   }
 }
 
@@ -1913,6 +1918,9 @@ function renderAssignmentView(root) {
   // Product of the Week gets its own custom view
   if (/product of the week|potw|spotlight/i.test(a.name)) { renderPotwView(root, a); return; }
 
+  // Milestone 7 Written Report — standalone, one-team-at-a-time grading
+  if (isMilestone7WrittenReport(a)) { renderMilestone7View(root, a); return; }
+
   // Group Project gets team-based grading view
   if (group === 'Group Project') { renderGroupProjectView(root, a); return; }
 
@@ -2253,6 +2261,7 @@ function potwUpdateScore(studentId, value, max) {
 let _gpDrilldownIdx = null; // null = all-teams view, number = current team index in drilldown
 
 const MILESTONE_7_RUBRIC = {
+  totalPoints: 50,
   criteria: [
     { id: 'm7_customer_insight', name: 'Customer & Market Insight', maxPoints: 10,
       description: 'Clearly identifies the target customer, their unmet need, and why current market options fall short. Segmentation and opportunity are specific and credible.' },
@@ -2280,6 +2289,281 @@ function isMilestone7WrittenReport(a) {
   const hasMilestone7 = /\bmilestone\s*0*7\b/.test(n) || n.includes('milestone 7');
   const hasWritten = n.includes('written') || n.includes('write-up') || n.includes('writeup') || n.includes('report');
   return hasMilestone7 && hasWritten;
+}
+
+/* ── Milestone 7 standalone view: one team at a time, per-criterion grading ── */
+let _m7TeamIdx = 0;
+
+function _m7TeamRoster() {
+  const allStu = allStudents();
+  const tNums = Object.keys(S.teamMeta).map(Number).sort((a, b) => a - b);
+  const teams = tNums.map(tNum => {
+    const members = allStu.filter(st => S.teams[st.id]?.team === tNum);
+    if (!members.length) return null;
+    const meta = S.teamMeta[String(tNum)] || {};
+    const label = meta.name ? `Team ${tNum} — ${meta.name}` : `Team ${tNum}`;
+    return { tNum, label, members, meta };
+  }).filter(Boolean);
+  // Add unassigned bucket if any
+  const unassigned = allStu.filter(st => !S.teams[st.id]?.team);
+  if (unassigned.length) teams.push({ tNum: 0, label: 'Unassigned', members: unassigned, meta: {} });
+  return teams;
+}
+
+function _m7CurrentTotal(criteria, memberId) {
+  const g = S.grades[memberId];
+  if (!g?.criteria) return 0;
+  return criteria.reduce((sum, c) => {
+    const cd = g.criteria[c.id] || {};
+    const v = cd.finalScore != null ? cd.finalScore : (cd.aiScore != null ? cd.aiScore : 0);
+    return sum + (Number(v) || 0);
+  }, 0);
+}
+
+function renderMilestone7View(root, a) {
+  root = root || document.getElementById('view-root');
+  const teams = _m7TeamRoster();
+  if (!teams.length) {
+    root.innerHTML = `<div class="page-title">${esc(a.name)}</div><div class="card"><p class="muted padded">No teams found. Set up teams first.</p></div>`;
+    return;
+  }
+  _m7TeamIdx = Math.max(0, Math.min(_m7TeamIdx, teams.length - 1));
+  const team = teams[_m7TeamIdx];
+
+  const rubric = S.rubric && S.rubric.criteria?.length ? S.rubric : MILESTONE_7_RUBRIC;
+  const maxTotal = rubric.criteria.reduce((s, c) => s + (c.maxPoints || 0), 0);
+
+  const due = a.due_at ? new Date(a.due_at).toLocaleDateString() : 'No due date';
+  const primary = gpPrimarySubmission(team.members);
+  const primarySub = primary?.sub || null;
+  const primaryMember = primary?.member || team.members[0];
+  const ownerId = primaryMember.id;
+
+  if (!S.grades[ownerId]) S.grades[ownerId] = buildEmptyGrade(ownerId);
+  const g = S.grades[ownerId];
+  if (!g.criteria) g.criteria = {};
+
+  // Stat cards
+  const teamsGraded = teams.filter(t => {
+    const om = (gpPrimarySubmission(t.members) || {}).member || t.members[0];
+    const gg = om ? S.grades[om.id] : null;
+    return gg?.finalScore != null;
+  }).length;
+  const totalScore = _m7CurrentTotal(rubric.criteria, ownerId);
+
+  // Criterion rows
+  const critRows = rubric.criteria.map(c => {
+    const cd = g.criteria[c.id] || {};
+    const aiScore = cd.aiScore;
+    const finalScore = cd.finalScore != null ? cd.finalScore : (aiScore != null ? aiScore : '');
+    const justification = cd.finalJustification != null ? cd.finalJustification : (cd.aiJustification || '');
+    return `
+      <div class="card" style="margin-bottom:10px;padding:14px">
+        <div style="display:flex;align-items:flex-start;gap:14px">
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+              <strong style="color:var(--uw-purple);font-size:14px">${esc(c.name)}</strong>
+              <span class="muted" style="font-size:11px">/ ${c.maxPoints} pts</span>
+              ${aiScore != null ? `<span class="status-badge" style="background:#ede9fe;color:#5b21b6;font-size:10px">AI: ${aiScore}</span>` : ''}
+            </div>
+            <p class="muted" style="font-size:12px;margin-bottom:8px;font-style:italic">${esc(c.description)}</p>
+            <label style="font-size:11px;color:var(--text-muted);font-weight:600">Justification</label>
+            <textarea class="input" rows="2" style="font-size:12px;width:100%;margin-top:4px"
+              onchange="m7SetJustification('${esc(c.id)}', this.value)">${esc(justification)}</textarea>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:4px;min-width:90px">
+            <label style="font-size:11px;color:var(--uw-purple);font-weight:700">Score</label>
+            <input type="number" class="input" min="0" max="${c.maxPoints}" step="0.5"
+              style="width:80px;text-align:center;font-weight:800;font-size:18px;padding:8px"
+              value="${finalScore}" placeholder="—"
+              onchange="m7SetScore('${esc(c.id)}', this.value, ${c.maxPoints})" />
+            <span class="muted" style="font-size:10px">of ${c.maxPoints}</span>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+
+  // Submission block
+  const submissionBlock = primarySub
+    ? `<details class="card" style="margin-bottom:14px">
+        <summary style="cursor:pointer;font-weight:700;color:var(--uw-purple);padding:6px 0">
+          📄 Team submission preview <span class="muted" style="font-weight:400;font-size:11px;margin-left:8px">(from ${esc(primaryMember?.name || 'unknown')})</span>
+        </summary>
+        <div style="margin-top:10px;max-height:480px;overflow:auto;border:1px solid var(--border);padding:10px;border-radius:var(--radius);background:var(--bg)">
+          ${renderSubmissionContent(primarySub)}
+        </div>
+      </details>`
+    : `<div class="card" style="margin-bottom:14px;padding:14px"><span class="muted" style="font-size:12px">No submissions found for this team yet.</span></div>`;
+
+  const memberList = team.members.map(st => esc(st.name)).join(', ');
+  const overallFeedback = g.overallFeedback != null ? g.overallFeedback : (g.aiOverallFeedback || '');
+
+  root.innerHTML = `
+    <div class="page-title">
+      ${esc(a.name)}
+      <span class="type-badge" style="font-size:13px;background:#facc15;color:#422006">Milestone 7</span>
+      <div class="page-actions">
+        <button class="btn btn-ghost" onclick="selectAssignment('${esc(a.id)}')">⟳ Refresh</button>
+      </div>
+    </div>
+
+    <div class="asgn-stat-cards">
+      <div class="asgn-stat-card asgn-stat--due"><div class="asgn-stat-icon">📅</div><div class="asgn-stat-value">${esc(due)}</div><div class="asgn-stat-label">Due</div></div>
+      <div class="asgn-stat-card asgn-stat--points"><div class="asgn-stat-icon">⭐</div><div class="asgn-stat-value">${maxTotal}</div><div class="asgn-stat-label">Rubric Total</div></div>
+      <div class="asgn-stat-card asgn-stat--students"><div class="asgn-stat-icon">👥</div><div class="asgn-stat-value">${teams.length}</div><div class="asgn-stat-label">Teams</div></div>
+      <div class="asgn-stat-card asgn-stat--graded"><div class="asgn-stat-icon">✅</div><div class="asgn-stat-value">${teamsGraded}</div><div class="asgn-stat-label">Graded</div></div>
+    </div>
+
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+      <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-surf" style="padding:8px 16px" onclick="m7AiGradeAll()">🤖 AI Grade All Teams</button>
+        <button class="btn assign-tab--push" style="border-radius:var(--radius);padding:8px 16px" onclick="pushAllToCanvas()">⬆ Push Final Grades to Canvas</button>
+      </div>
+    </div>
+
+    <!-- Team picker (drilldown) -->
+    <div class="card" style="margin-bottom:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <strong style="font-size:12px;color:var(--uw-purple)">Grading:</strong>
+      <button class="btn btn-ghost" style="font-size:13px;padding:4px 12px" ${_m7TeamIdx === 0 ? 'disabled' : ''}
+        onclick="m7Step(-1)">◀ Prev</button>
+      <select class="input" style="max-width:300px" onchange="m7SetTeam(Number(this.value))">
+        ${teams.map((t, i) => `<option value="${i}" ${i === _m7TeamIdx ? 'selected' : ''}>${esc(t.label)}</option>`).join('')}
+      </select>
+      <span class="muted" style="font-size:12px">${_m7TeamIdx + 1} of ${teams.length}</span>
+      <button class="btn btn-ghost" style="font-size:13px;padding:4px 12px" ${_m7TeamIdx >= teams.length - 1 ? 'disabled' : ''}
+        onclick="m7Step(1)">Next ▶</button>
+      <div style="margin-left:auto;display:flex;gap:8px">
+        <button class="btn btn-primary" style="font-size:12px;padding:6px 14px;background:#facc15;color:#422006"
+          onclick="m7AiGradeCurrentTeam()">🤖 AI Grade This Team</button>
+      </div>
+    </div>
+
+    <!-- Team header card -->
+    <div class="card" style="margin-bottom:14px">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <strong style="font-size:16px;color:var(--uw-purple)">${esc(team.label)}</strong>
+        <span class="muted" style="font-size:12px">${team.members.length} members</span>
+        <span class="muted" style="font-size:11px">· ${esc(memberList)}</span>
+        <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
+          <span style="font-size:13px;color:var(--text-muted)">Total Score</span>
+          <span style="font-size:26px;font-weight:800;color:var(--uw-purple)">${totalScore}</span>
+          <span class="muted" style="font-size:13px">/ ${maxTotal}</span>
+        </div>
+      </div>
+    </div>
+
+    ${submissionBlock}
+
+    <!-- Per-criterion grading -->
+    <div style="margin-bottom:6px;font-weight:700;color:var(--uw-purple);font-size:13px">Rubric — grade each criterion</div>
+    ${critRows}
+
+    <!-- AI Feedback -->
+    <div class="card" style="margin-top:14px">
+      <div class="card-title">📝 AI Feedback
+        <span class="card-title-hint">Auto-filled by AI grading — editable</span>
+      </div>
+      <textarea id="m7-feedback" class="input" rows="5" style="font-size:13px;line-height:1.5;margin-top:6px"
+        placeholder="No feedback yet — click '🤖 AI Grade This Team' or type your own."
+        onchange="m7SetFeedback(this.value)">${esc(overallFeedback)}</textarea>
+    </div>`;
+}
+
+function _m7CurrentTeam() {
+  const teams = _m7TeamRoster();
+  return teams[Math.min(_m7TeamIdx, teams.length - 1)] || null;
+}
+
+function _m7BroadcastToTeam(team, mutator) {
+  team.members.forEach(st => {
+    if (!S.grades[st.id]) S.grades[st.id] = buildEmptyGrade(st.id);
+    mutator(S.grades[st.id], st);
+  });
+}
+
+function _m7Recalc(team) {
+  const rubric = S.rubric && S.rubric.criteria?.length ? S.rubric : MILESTONE_7_RUBRIC;
+  team.members.forEach(st => {
+    const g = S.grades[st.id];
+    if (!g?.criteria) return;
+    const total = rubric.criteria.reduce((s, c) => {
+      const cd = g.criteria[c.id] || {};
+      const v = cd.finalScore != null ? cd.finalScore : (cd.aiScore != null ? cd.aiScore : 0);
+      return s + (Number(v) || 0);
+    }, 0);
+    g.finalScore = +(total.toFixed(2));
+    g.status = g.status === 'pending' ? 'reviewed' : g.status;
+  });
+}
+
+async function _m7SaveTeam(team) {
+  const cid = S.course.id, aid = S.currentAssignment.id;
+  const saves = team.members.map(st => PUT(`/api/grades/${cid}/${aid}/${st.id}`, S.grades[st.id]).catch(() => {}));
+  await Promise.all(saves);
+}
+
+function m7Step(delta) {
+  const teams = _m7TeamRoster();
+  _m7TeamIdx = Math.max(0, Math.min(_m7TeamIdx + delta, teams.length - 1));
+  renderAssignmentView();
+}
+function m7SetTeam(idx) {
+  _m7TeamIdx = Number(idx) || 0;
+  renderAssignmentView();
+}
+
+function m7SetScore(criterionId, value, max) {
+  const team = _m7CurrentTeam();
+  if (!team) return;
+  let v = value === '' ? null : Number(value);
+  if (v !== null) v = Math.max(0, Math.min(max, v));
+  _m7BroadcastToTeam(team, (g) => {
+    if (!g.criteria) g.criteria = {};
+    if (!g.criteria[criterionId]) g.criteria[criterionId] = {};
+    g.criteria[criterionId].finalScore = v;
+  });
+  _m7Recalc(team);
+  _m7SaveTeam(team);
+  renderAssignmentView();
+}
+
+function m7SetJustification(criterionId, value) {
+  const team = _m7CurrentTeam();
+  if (!team) return;
+  _m7BroadcastToTeam(team, (g) => {
+    if (!g.criteria) g.criteria = {};
+    if (!g.criteria[criterionId]) g.criteria[criterionId] = {};
+    g.criteria[criterionId].finalJustification = value;
+  });
+  _m7SaveTeam(team);
+}
+
+function m7SetFeedback(text) {
+  const team = _m7CurrentTeam();
+  if (!team) return;
+  _m7BroadcastToTeam(team, (g) => { g.overallFeedback = text; });
+  _m7SaveTeam(team);
+}
+
+async function m7AiGradeCurrentTeam() {
+  const team = _m7CurrentTeam();
+  if (!team) return;
+  await gpAiGradeTeam(team.tNum); // reuses existing flow (fills criteria, feedback, total)
+  renderAssignmentView();
+}
+
+async function m7AiGradeAll() {
+  const teams = _m7TeamRoster();
+  if (!teams.length) return;
+  if (!confirm(`AI grade all ${teams.length} teams using the Milestone 7 rubric? This may take a few minutes.`)) return;
+  toast(`Grading ${teams.length} teams…`);
+  let ok = 0, fail = 0;
+  for (const t of teams) {
+    try { await gpAiGradeTeam(t.tNum); ok++; }
+    catch { fail++; }
+  }
+  toast(`AI graded ${ok} team(s)${fail ? `, ${fail} failed` : ''}.`, fail ? 'error' : 'success');
+  renderAssignmentView();
 }
 
 async function autoApplyMilestone7RubricIfNeeded(savedRubric) {
