@@ -2352,7 +2352,7 @@ function renderMilestone7View(root, a) {
   }).length;
   const totalScore = _m7CurrentTotal(rubric.criteria, ownerId);
 
-  // Compact rubric rows (no per-criterion justification — one table)
+  // Compact rubric rows (single Score column — AI fills it in, instructor overrides)
   const critRows = rubric.criteria.map(c => {
     const cd = g.criteria[c.id] || {};
     const aiScore = cd.aiScore;
@@ -2362,9 +2362,6 @@ function renderMilestone7View(root, a) {
         <td style="padding:8px 10px;border-bottom:1px solid var(--border);vertical-align:top">
           <div style="font-weight:700;color:var(--uw-purple);font-size:13px">${esc(c.name)}</div>
           <div class="muted" style="font-size:11px;margin-top:2px;line-height:1.4">${esc(c.description)}</div>
-        </td>
-        <td style="padding:8px 8px;border-bottom:1px solid var(--border);text-align:center;width:80px;vertical-align:top">
-          ${aiScore != null ? `<span class="status-badge" style="background:#ede9fe;color:#5b21b6;font-size:11px">AI ${aiScore}</span>` : '<span class="muted" style="font-size:11px">—</span>'}
         </td>
         <td style="padding:8px 8px;border-bottom:1px solid var(--border);text-align:center;width:120px;vertical-align:top">
           <input type="number" class="input" min="0" max="${c.maxPoints}" step="0.5"
@@ -2379,21 +2376,19 @@ function renderMilestone7View(root, a) {
   const rubricBox = `
     <div class="card" style="margin-bottom:14px;padding:10px 14px">
       <div class="card-title" style="margin-bottom:6px">Rubric — grade each criterion
-        <span class="card-title-hint">Total auto-sums below</span>
+        <span class="card-title-hint">AI fills the score; edit to override. Total auto-sums below.</span>
       </div>
       <table style="width:100%;border-collapse:collapse;font-size:12px">
         <thead>
           <tr>
             <th style="text-align:left;padding:6px 10px;border-bottom:2px solid var(--border);font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px">Criterion</th>
-            <th style="text-align:center;padding:6px 8px;border-bottom:2px solid var(--border);font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;width:80px">AI Score</th>
-            <th style="text-align:center;padding:6px 8px;border-bottom:2px solid var(--border);font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;width:120px">Final Score</th>
+            <th style="text-align:center;padding:6px 8px;border-bottom:2px solid var(--border);font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;width:120px">Score</th>
           </tr>
         </thead>
         <tbody>${critRows}</tbody>
         <tfoot>
           <tr>
             <td style="padding:10px;font-weight:800;color:var(--uw-purple);font-size:14px;text-align:right">Total</td>
-            <td></td>
             <td style="padding:10px;text-align:center;font-weight:800;font-size:20px;color:var(--uw-purple)">${totalScore} <span class="muted" style="font-size:12px;font-weight:400">/ ${maxTotal}</span></td>
           </tr>
         </tfoot>
