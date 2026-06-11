@@ -2243,6 +2243,30 @@ function potwUpdateScore(studentId, value, max) {
 }
 
 /* ── Group Project View — Team-based grading ──────────────────────────────── */
+let _gpDrilldownIdx = null; // null = all-teams view, number = current team index in drilldown
+
+const MILESTONE_7_RUBRIC = {
+  criteria: [
+    { id: 'm7_customer_insight', name: 'Customer & Market Insight', maxPoints: 10,
+      description: 'Clearly identifies the target customer, their unmet need, and why current market options fall short. Segmentation and opportunity are specific and credible.' },
+    { id: 'm7_launch_strategy', name: 'Launch Strategy', maxPoints: 10,
+      description: 'Presents a coherent go-to-market approach — positioning, channels, and timing — appropriate for the product and competitive landscape.' },
+    { id: 'm7_promo_plan', name: 'Promotional Plan', maxPoints: 10,
+      description: 'Promotional mix (messaging, media, tactics) is well-matched to the target audience, available resources, and overall strategy.' },
+    { id: 'm7_ideation', name: 'Idea Generation & Product Rationale', maxPoints: 4,
+      description: 'Demonstrates a structured ideation process that resulted in a product addressing a validated market need.' },
+    { id: 'm7_financials', name: 'Financial Projections', maxPoints: 4,
+      description: 'Revenue and cost assumptions are grounded and internally consistent. Projections reflect a realistic understanding of the market and product economics.' },
+    { id: 'm7_stage_gate', name: 'Stage-Gate & Success Metrics', maxPoints: 4,
+      description: 'Key go/no-go milestones identified. Team articulates what success looks like at each gate and whether criteria have been met.' },
+    { id: 'm7_exec_summary', name: 'Executive Summary', maxPoints: 3,
+      description: 'Opens or closes with a sharp, self-contained summary of the concept, opportunity, and ask. Clear and concise.' },
+    { id: 'm7_paper_quality', name: 'Paper Quality', maxPoints: 5,
+      description: 'Concept communicated clearly within the allotted time. Professional confidence; structure flows logically from problem to solution to plan.' },
+  ],
+  name: 'Milestone 7 Written Report',
+};
+
 function renderGroupProjectView(root, a) {
   const students = allStudents();
   const due = a.due_at ? new Date(a.due_at).toLocaleDateString() : 'No due date';
@@ -2278,10 +2302,10 @@ function renderGroupProjectView(root, a) {
   // Add unassigned group if any
   if (teamStudents[0]?.length) teamNums.push(0);
 
-  const teamCards = teamNums.map(tNum => {
+  const teamCardData = teamNums.map(tNum => {
     const meta = S.teamMeta[String(tNum)] || {};
     const members = teamStudents[tNum] || [];
-    if (!members.length) return '';
+    if (!members.length) return null;
     const label = tNum === 0 ? 'Unassigned Students' : (meta.name ? `Team ${tNum} — ${meta.name}` : `Team ${tNum}`);
 
     // Current team grade (from first member who has one, or empty)
@@ -2292,6 +2316,8 @@ function renderGroupProjectView(root, a) {
     const primary = gpPrimarySubmission(members);
     const primarySub = primary?.sub || null;
     const primaryMember = primary?.member || null;
+    const feedbackOwnerId = primaryMember?.id || members[0]?.id;
+    const teamFeedback = feedbackOwnerId ? (S.grades[feedbackOwnerId]?.teamFeedback || '') : '';
 
     const memberList = members.map(st => {
       const g = S.grades[st.id];
@@ -2328,7 +2354,22 @@ function renderGroupProjectView(root, a) {
           <span class="muted" style="font-size:12px">No submissions found for any team member.</span>
         </div>`;
 
-    return `<div class="card gp-team-card">
+    const feedbackBlock = `
+      <div class="gp-feedback-block" style="margin-top:10px;padding:10px;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg)">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <strong style="font-size:12px;color:var(--uw-purple)">📝 AI Feedback</strong>
+          <span class="muted" style="font-size:11px">Editable — saves to ${esc(primaryMember?.name || (members[0] && members[0].name) || 'team submitter')}</span>
+          <div style="margin-left:auto;display:flex;gap:6px">
+            <button class="btn btn-surf" style="font-size:11px;padding:4px 12px"
+              onclick="gpGenerateAIFeedback(${tNum})">🤖 Generate AI Feedback</button>
+          </div>
+        </div>
+        <textarea id="gp-feedback-${tNum}" class="input" rows="4" style="font-size:13px;line-height:1.5"
+          placeholder="No feedback yet — click 'Generate AI Feedback' or type your own."
+          onchange="gpSaveTeamFeedback(${tNum}, this.value)">${esc(teamFeedback)}</textarea>
+      </div>`;
+
+    const cardHtml = `<div class="card gp-team-card">
       <div class="gp-team-header">
         <span class="tm-num">${tNum === 0 ? '?' : 'Team ' + tNum}</span>
         <span class="gp-team-name">${esc(tNum === 0 ? '' : (meta.name || ''))}</span>
@@ -2343,8 +2384,10 @@ function renderGroupProjectView(root, a) {
       </div>
       <div class="gp-members">${memberList}</div>
       ${submissionBlock}
+      ${feedbackBlock}
     </div>`;
-  }).join('');
+    return { tNum, label, html: cardHtml };
+  }).filter(Boolean);
 
   root.innerHTML = `
     <div class="page-title">
@@ -2387,7 +2430,11 @@ function renderGroupProjectView(root, a) {
     <!-- Sync badge + Push -->
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap">
       ${syncBadge}
-      <div style="margin-left:auto;display:flex;gap:8px">
+      <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-ghost" style="padding:8px 16px;border:1px dashed var(--uw-purple);color:var(--uw-purple)"
+          onclick="gpApplyMilestone7Rubric()" title="Set the 8-criteria 50-pt rubric for Milestone 7 Written Report. Existing grades stay intact.">
+          📋 Use Milestone 7 Rubric
+        </button>
         <button class="btn btn-surf" style="padding:8px 16px" onclick="gpExtractAllTeamText()">📄 Extract All Team Text</button>
         <button class="btn btn-surf" style="padding:8px 16px" onclick="gpAiGradeAllTeams()">🤖 AI Grade All Teams</button>
         <button class="btn assign-tab--push" style="border-radius:var(--radius);padding:8px 16px" onclick="pushAllToCanvas()">⬆ Push Final Grades to Canvas</button>
@@ -2403,11 +2450,124 @@ function renderGroupProjectView(root, a) {
       <div id="atab-instructions" style="margin-top:12px">${renderInstructionsTab()}</div>
     </details>
 
+    <!-- View toggle + team selector (drilldown nav) -->
+    <div class="card" style="margin-bottom:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <strong style="font-size:12px;color:var(--uw-purple)">View:</strong>
+      <button class="btn ${_gpDrilldownIdx === null ? 'btn-primary' : 'btn-ghost'}" style="font-size:12px;padding:5px 12px"
+        onclick="gpSetDrilldown(null)">All Teams</button>
+      <button class="btn ${_gpDrilldownIdx !== null ? 'btn-primary' : 'btn-ghost'}" style="font-size:12px;padding:5px 12px"
+        onclick="gpSetDrilldown(0)">One Team at a Time</button>
+      ${_gpDrilldownIdx !== null ? `
+        <span style="margin-left:auto;display:flex;gap:8px;align-items:center">
+          <button class="btn btn-ghost" style="font-size:13px;padding:4px 12px" ${_gpDrilldownIdx === 0 ? 'disabled' : ''}
+            onclick="gpDrilldownStep(-1)">◀ Prev</button>
+          <select class="input" style="max-width:280px" onchange="gpSetDrilldown(Number(this.value))">
+            ${teamCardData.map((c, i) => `<option value="${i}" ${i === _gpDrilldownIdx ? 'selected' : ''}>${esc(c.label)}</option>`).join('')}
+          </select>
+          <span class="muted" style="font-size:12px">${_gpDrilldownIdx + 1} of ${teamCardData.length}</span>
+          <button class="btn btn-ghost" style="font-size:13px;padding:4px 12px" ${_gpDrilldownIdx >= teamCardData.length - 1 ? 'disabled' : ''}
+            onclick="gpDrilldownStep(1)">Next ▶</button>
+        </span>
+      ` : ''}
+    </div>
+
     <!-- Team grading cards -->
     <div class="gp-info" style="margin-bottom:10px">
       <span class="muted" style="font-size:12px">Enter a grade per team (or use AI) — it will be applied to all team members automatically.</span>
     </div>
-    ${teamCards}`;
+    ${
+      _gpDrilldownIdx !== null
+        ? (teamCardData[Math.min(_gpDrilldownIdx, teamCardData.length - 1)]?.html || '<p class="muted" style="padding:20px">No teams.</p>')
+        : teamCardData.map(c => c.html).join('')
+    }`;
+}
+
+/* ── Group Project: drilldown + AI feedback + Milestone 7 rubric helpers ─── */
+function gpSetDrilldown(idx) {
+  _gpDrilldownIdx = idx;
+  if (S.currentAssignment) selectAssignment(S.currentAssignment.id);
+}
+function gpDrilldownStep(delta) {
+  if (_gpDrilldownIdx === null) return;
+  _gpDrilldownIdx = Math.max(0, _gpDrilldownIdx + delta);
+  if (S.currentAssignment) selectAssignment(S.currentAssignment.id);
+}
+
+async function gpGenerateAIFeedback(teamNum) {
+  const students = allStudents();
+  const members = students.filter(st => (teamNum === 0 ? !S.teams[st.id]?.team : S.teams[st.id]?.team === teamNum));
+  if (!members.length) return toast('No team members found.', 'warn');
+
+  const primary = gpPrimarySubmission(members);
+  const primaryMember = primary?.member || members[0];
+  const meta = S.teamMeta[String(teamNum)] || {};
+  const teamLabel = teamNum === 0 ? 'Unassigned' : (meta.name ? `Team ${teamNum} — ${meta.name}` : `Team ${teamNum}`);
+
+  const firstGraded = members.find(st => S.grades[st.id]?.finalScore != null);
+  const totalScore = firstGraded ? S.grades[firstGraded.id].finalScore : 0;
+  const totalPossible = S.currentAssignment?.points_possible ?? 10;
+
+  // Build criteria context from per-criterion scores if available
+  let criteriaContext = '(no per-criterion breakdown yet)';
+  if (firstGraded) {
+    const g = S.grades[firstGraded.id];
+    const critScores = g.criteria || g.criteriaScores || {};
+    const entries = Object.entries(critScores);
+    if (entries.length) {
+      criteriaContext = entries.map(([k, v]) =>
+        `- ${k}: ${v?.score ?? v?.points ?? v} pts${v?.justification ? ' — ' + v.justification : ''}`
+      ).join('\n');
+    }
+  }
+
+  toast('Generating AI feedback…');
+  try {
+    const res = await POST('/api/grade/feedback', {
+      studentName: teamLabel,
+      assignmentName: S.currentAssignment?.name || 'Group Project',
+      totalScore, totalPossible,
+      criteriaContext,
+      overallFeedback: firstGraded ? (S.grades[firstGraded.id].overallFeedback || '') : '',
+      gradingNotes: '',
+    });
+    const text = res.feedback || res.text || '';
+    if (!text) throw new Error('Empty response');
+    const ta = document.getElementById(`gp-feedback-${teamNum}`);
+    if (ta) ta.value = text;
+    gpSaveTeamFeedback(teamNum, text);
+    toast('AI feedback ready!', 'success');
+  } catch (e) {
+    toast('Feedback failed: ' + e.message, 'error');
+  }
+}
+
+async function gpSaveTeamFeedback(teamNum, text) {
+  const students = allStudents();
+  const members = students.filter(st => (teamNum === 0 ? !S.teams[st.id]?.team : S.teams[st.id]?.team === teamNum));
+  if (!members.length) return;
+  const primary = gpPrimarySubmission(members);
+  const ownerId = primary?.member?.id || members[0].id;
+  if (!S.grades[ownerId]) S.grades[ownerId] = buildEmptyGrade(ownerId);
+  S.grades[ownerId].teamFeedback = text;
+  try { await PUT(`/api/grades/${S.course.id}/${S.currentAssignment.id}/${ownerId}`, S.grades[ownerId]); }
+  catch (e) { toast('Save failed: ' + e.message, 'error'); }
+}
+
+async function gpApplyMilestone7Rubric() {
+  if (!S.currentAssignment) return toast('Open a group project assignment first.', 'warn');
+  const total = MILESTONE_7_RUBRIC.criteria.reduce((s, c) => s + c.maxPoints, 0);
+  if (!confirm(`Apply the Milestone 7 rubric to "${S.currentAssignment.name}"?\n\n` +
+    `8 criteria totaling ${total} points. Existing AI scores and grades stay intact.`)) return;
+  try {
+    await PUT(`/api/assignment-rubric/${S.course.id}/${S.currentAssignment.id}`, {
+      criteria: MILESTONE_7_RUBRIC.criteria,
+      name: MILESTONE_7_RUBRIC.name,
+    });
+    toast(`Milestone 7 rubric applied (${total} pts).`, 'success');
+    selectAssignment(S.currentAssignment.id);
+  } catch (e) {
+    toast('Failed to apply rubric: ' + e.message, 'error');
+  }
 }
 
 async function gpSetTeamGrade(teamNum, value, max) {
