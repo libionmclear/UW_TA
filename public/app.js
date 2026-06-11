@@ -6039,8 +6039,45 @@ function _findClassParticipation40Assignment() {
   }) || S.assignments.find(a => (a.name || '').toLowerCase().includes('class participation'));
 }
 
+// Mirror of the Class Participation view's Score /40 column: prefer a saved
+// finalScore on the CP assignment; otherwise compute it from case % / sim % /
+// presence % (the same three columns shown on that page).
+function _computeClassParticipationScore40(studentId, cpAid) {
+  const cpGrades = (S.allGrades && S.allGrades[cpAid]) || {};
+  const saved = cpGrades[studentId];
+  if (saved?.finalScore != null) return saved.finalScore;
+
+  const caseAssignments = (S.assignments || []).filter(x => classifyAssignment(x) === 'Cases');
+  const actAssignments  = (S.assignments || []).filter(x => classifyAssignment(x) === 'Activities');
+
+  let casePts = 0, caseMax = 0;
+  caseAssignments.forEach(ca => {
+    const cg = (S.allGrades[String(ca.id)] || {})[studentId];
+    if (cg?.participation != null) { casePts += cg.participation; caseMax += 3; }
+  });
+  const casePct = caseMax ? Math.round((casePts / caseMax) * 100) : null;
+
+  let simPts = 0, simMax = 0;
+  actAssignments.forEach(aa => {
+    const ag = (S.allGrades[String(aa.id)] || {})[studentId];
+    if (ag?.simParticipation != null) { simPts += ag.simParticipation; simMax += 3; }
+  });
+  const simPct = simMax ? Math.round((simPts / simMax) * 100) : null;
+
+  const presPct = (typeof getPresencePct === 'function') ? getPresencePct(studentId) : null;
+
+  const pcts = [casePct, simPct, presPct].filter(p => p != null);
+  if (!pcts.length) return null;
+  const avgPct = pcts.reduce((a, b) => a + b, 0) / pcts.length;
+  return Math.round(avgPct / 100 * 40);
+}
+
 async function renderFinalParticipationView(root) {
   root = root || document.getElementById('view-root');
+  // Load presence data so Score /40 picks up the Class Presence % component
+  if (S.course?.id) {
+    try { _presenceData = await GET(`/api/presence/${S.course.id}`); } catch { /* leave existing */ }
+  }
   try { _finalPartData = await GET('/api/final-participation'); } catch { _finalPartData = {}; }
   _renderFinalParticipationUI(root);
 }
@@ -6063,13 +6100,10 @@ function _renderFinalParticipationUI(root) {
   }
 
   const cpAid = String(cpAssignment.id);
-  const cpGrades = (S.allGrades && S.allGrades[cpAid]) || {};
 
-  const getCP = (sid) => {
-    const g = cpGrades[sid];
-    if (!g) return null;
-    return g.finalScore != null ? g.finalScore : (g.canvasScore != null ? g.canvasScore : null);
-  };
+  // Mirror Class Participation view's Score /40 column (saved finalScore OR
+  // computed from case % / sim % / presence %).
+  const getCP = (sid) => _computeClassParticipationScore40(sid, cpAid);
   const getMarco = (sid) => _finalPartData[sid]?.marco;
   const getMarlowe = (sid) => _finalPartData[sid]?.marlowe;
   const num = (v) => (v == null || v === '' || !Number.isFinite(Number(v))) ? null : Number(v);
