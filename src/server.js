@@ -1132,6 +1132,29 @@ app.put('/api/peer-eval', requireAuth, (req, res) => {
   save();
   ok(res, store.peerEval);
 });
+// Push computed peer-eval scores to a Canvas assignment (e.g. Milestone 8 Peer Review)
+// Does not touch /api/grades — same pattern as final-participation push.
+app.post('/api/peer-eval/push-canvas', requireAuth, async (req, res) => {
+  try {
+    const { cid, aid, scores } = req.body || {};
+    if (!cid || !aid || !scores || typeof scores !== 'object') {
+      return fail(res, { message: 'cid, aid, and scores are required.' }, 400);
+    }
+    const gradeData = {};
+    let count = 0;
+    Object.entries(scores).forEach(([studentId, score]) => {
+      const n = Number(score);
+      if (Number.isFinite(n)) {
+        gradeData[studentId] = { posted_grade: String(n) };
+        count++;
+      }
+    });
+    if (!count) return fail(res, { message: 'No valid scores to push.' }, 400);
+    const result = await canvas.pushGradesBulk(cid, aid, gradeData);
+    ok(res, { pushed: count, result });
+  } catch (e) { fail(res, e); }
+});
+
 // Send peer eval links via Canvas
 app.post('/api/peer-eval/send-links', requireAuth, async (req, res) => {
   const pe = store.peerEval;

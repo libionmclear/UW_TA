@@ -7371,7 +7371,10 @@ function _renderPeerUI(root) {
     <div class="card" style="margin-bottom:14px">
       <div class="card-title">Student Evaluation Links
         <span class="card-title-hint">Each student gets a unique link — click to copy</span>
-        <button class="btn btn-surf" style="font-size:11px;padding:3px 10px;margin-left:auto" onclick="sendPeerEvalViaCanvas()">✉ Send All via Canvas</button>
+        <div style="margin-left:auto;display:flex;gap:6px">
+          <button class="btn btn-surf" style="font-size:11px;padding:3px 10px" onclick="sendPeerEvalViaCanvas()">✉ Send All via Canvas</button>
+          <button class="btn assign-tab--push" style="font-size:11px;padding:3px 10px;border-radius:var(--radius)" onclick="pushPeerEvalToCanvas()">⬆ Push to Canvas Milestone 8 Peer Review</button>
+        </div>
       </div>
       ${linksList || '<p class="muted" style="font-size:11px">No students in this team yet.</p>'}
       ${filteredTokens.length > 5 ? `<p class="muted" style="font-size:11px">…and ${filteredTokens.length - 5} more. <button class="link-btn" onclick="showAllPeerLinks()">Show all</button></p>` : ''}
@@ -7495,6 +7498,104 @@ async function createPeerEvalTestLink() {
     toast('Test link ready!', 'success');
   } catch (e) {
     toast('Failed: ' + e.message, 'error');
+  }
+}
+
+function _findMilestone8PeerReviewAssignment() {
+  if (!S.assignments?.length) return null;
+  // Prefer "milestone 8" + "peer" + "review"
+  const lc = (s) => (s || '').toLowerCase();
+  return S.assignments.find(a => {
+    const n = lc(a.name);
+    return n.includes('milestone 8') && n.includes('peer') && n.includes('review');
+  })
+  || S.assignments.find(a => {
+    const n = lc(a.name);
+    return (n.includes('milestone 8') || n.includes('milestone8')) && n.includes('peer');
+  })
+  || S.assignments.find(a => lc(a.name).includes('peer review'))
+  || null;
+}
+
+// Compute the per-student peer-eval finalScore (0..10) using the same formula
+// as the on-page results table. Returns { studentId: { finalScore, hasData } }.
+function _computePeerEvalFinalScores() {
+  const allStudentsArr = S.allStudentsList.length ? S.allStudentsList : allStudents();
+  const responses = _peerData?.responses || {};
+  const out = {};
+
+  allStudentsArr.forEach(st => {
+    const teamNum = S.teams[st.id]?.team || 0;
+    const teamMembers = allStudentsArr.filter(m => S.teams[m.id]?.team === teamNum && m.id !== st.id);
+    const groupSize = teamMembers.length + 1;
+
+    const ratings = [];
+    let mostWorkVotes = 0, leastWorkVotes = 0;
+    teamMembers.forEach(tm => {
+      const r = responses[tm.id];
+      if (!r) return;
+      const rating = r.ratings?.[st.id];
+      if (rating != null) ratings.push(rating);
+      if (r.mostWork === st.id) mostWorkVotes++;
+      if (r.leastWork === st.id) leastWorkVotes++;
+    });
+    const avgRating = ratings.length ? (ratings.reduce((a, b) => a + b, 0) / ratings.length) : null;
+    const submitted = !!responses[st.id];
+
+    // Only push a score if there's at least some peer data (ratings) or a submission record
+    const hasData = ratings.length > 0 || submitted;
+    if (!hasData) return;
+
+    const basePts = 2;
+    const ratingComponent = avgRating != null ? ((avgRating - 1) / 4) * 6 : 0;
+    const mostWorkBonus = groupSize > 1 ? (mostWorkVotes / (groupSize - 1)) * 2 : 0;
+    const leastWorkPenalty = (leastWorkVotes >= 2 && groupSize > 1) ? -((leastWorkVotes / (groupSize - 1)) * 2) : 0;
+    const submissionPenalty = submitted ? 0 : -1;
+    const rawScore = basePts + ratingComponent + mostWorkBonus + leastWorkPenalty + submissionPenalty;
+    const finalScore = Math.max(0, Math.min(10, rawScore));
+    out[st.id] = { finalScore, hasData: true };
+  });
+
+  return out;
+}
+
+async function pushPeerEvalToCanvas() {
+  const a = _findMilestone8PeerReviewAssignment();
+  if (!a) {
+    toast('No "Milestone 8 Peer Review" assignment found in this course.', 'error');
+    return;
+  }
+  if (!S.course?.id) { toast('No course loaded.', 'error'); return; }
+
+  const max = Number.isFinite(a.points_possible) ? a.points_possible : 20;
+  const computed = _computePeerEvalFinalScores();
+
+  // Scale finalScore (out of 10) to the assignment's points_possible
+  const scores = {};
+  Object.entries(computed).forEach(([sid, { finalScore }]) => {
+    scores[sid] = +(finalScore / 10 * max).toFixed(2);
+  });
+  const count = Object.keys(scores).length;
+  if (!count) { toast('No peer-eval data yet to push.', 'warn'); return; }
+
+  if (!confirm(
+    `Push peer evaluation scores to Canvas?\n\n` +
+    `Target: "${a.name}" (${max} pts)\n` +
+    `Students with scores: ${count}\n` +
+    `Each student's score = (peer-eval Raw /10) × ${max} / 10\n\n` +
+    `This will overwrite their current grade on this Canvas assignment.`
+  )) return;
+
+  toast('Pushing to Canvas…');
+  try {
+    const res = await POST('/api/peer-eval/push-canvas', {
+      cid: S.course.id,
+      aid: String(a.id),
+      scores,
+    });
+    toast(`Pushed ${res.pushed} grades to "${a.name}".`, 'success');
+  } catch (e) {
+    toast('Push failed: ' + e.message, 'error');
   }
 }
 
