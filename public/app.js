@@ -460,10 +460,13 @@ function renderSidebar() {
 
   wrap.innerHTML = allKeys.map(renderGroup).join('');
 
-  // Other Assignments box
+  // Other Assignments box — plus the Final Participation custom view
   if (otherWrap && otherBox) {
     otherBox.style.display = '';
-    otherWrap.innerHTML = otherKeys.map(renderGroup).join('');
+    const finalPartBtn = `<button class="nav-btn nav-btn-finalpart ${currentView === 'finalparticipation' ? 'active' : ''}" onclick="showView('finalparticipation')" style="font-size:12px">
+      <span class="nav-icon">●</span> Final Participation
+    </button>`;
+    otherWrap.innerHTML = otherKeys.map(renderGroup).join('') + finalPartBtn;
   }
 }
 
@@ -689,6 +692,7 @@ function showView(name) {
     case 'caseparticipation': renderCaseParticipationView(root); break;
     case 'simparticipation': renderSimParticipationView(root); break;
     case 'classpresence': renderClassPresenceView(root); break;
+    case 'finalparticipation': renderFinalParticipationView(root); break;
     case 'messages':      renderMessagesView(root); break;
     case 'notifications': renderNotificationsView(root); break;
     default:            renderOverview(root);
@@ -5992,6 +5996,171 @@ function renderCaseParticipationView(root) {
         <tbody>${rows}</tbody>
       </table>
     </div>`;
+}
+
+/* ── Final Participation View (Class Participation + Marco + Marlowe avg) ──── */
+let _finalPartData = {};
+
+function _findClassParticipation40Assignment() {
+  if (!S.assignments?.length) return null;
+  return S.assignments.find(a => {
+    const name = (a.name || '').toLowerCase();
+    return a.points_possible === 40 && name.includes('class participation');
+  }) || S.assignments.find(a => (a.name || '').toLowerCase().includes('class participation'));
+}
+
+async function renderFinalParticipationView(root) {
+  root = root || document.getElementById('view-root');
+  try { _finalPartData = await GET('/api/final-participation'); } catch { _finalPartData = {}; }
+  _renderFinalParticipationUI(root);
+}
+
+function _renderFinalParticipationUI(root) {
+  root = root || document.getElementById('view-root');
+  const students = (S.allStudentsList.length ? S.allStudentsList : allStudents())
+    .slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
+  const cpAssignment = _findClassParticipation40Assignment();
+
+  if (!cpAssignment) {
+    root.innerHTML = `
+      <div class="page-title">Final Participation</div>
+      <div class="card" style="padding:20px">
+        <p style="color:var(--danger);font-weight:700;margin-bottom:6px">No "Class Participation" assignment found.</p>
+        <p class="muted" style="font-size:12px">Looking for a Canvas assignment with 40 points possible and "Class Participation" in the name. Check that the assignment exists in the current course.</p>
+      </div>`;
+    return;
+  }
+
+  const cpAid = String(cpAssignment.id);
+  const cpGrades = (S.allGrades && S.allGrades[cpAid]) || {};
+
+  const getCP = (sid) => {
+    const g = cpGrades[sid];
+    if (!g) return null;
+    return g.finalScore != null ? g.finalScore : (g.canvasScore != null ? g.canvasScore : null);
+  };
+  const getMarco = (sid) => _finalPartData[sid]?.marco;
+  const getMarlowe = (sid) => _finalPartData[sid]?.marlowe;
+  const num = (v) => (v == null || v === '' || !Number.isFinite(Number(v))) ? null : Number(v);
+
+  const rows = students.map(st => {
+    const cp = num(getCP(st.id));
+    const marco = num(getMarco(st.id));
+    const marlowe = num(getMarlowe(st.id));
+    const vals = [cp, marco, marlowe].filter(v => v != null);
+    const final = vals.length ? +(vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1) : null;
+    const finalColor = final == null ? 'var(--text-muted)' : (final < 24 ? 'var(--danger)' : final < 32 ? 'var(--warn)' : 'var(--success)');
+
+    return `<tr>
+      <td class="ldg-name"><span class="stu-avatar-wrap">${studentAvatar(st, 22)}${esc(st.name)}</span></td>
+      <td style="text-align:center;font-weight:700;color:${cp == null ? 'var(--text-muted)' : 'var(--uw-purple)'}">${cp != null ? cp : '—'}<span style="font-size:9px;font-weight:400;color:var(--text-muted)">/40</span></td>
+      <td style="text-align:center">
+        <input type="number" class="input" min="0" max="40" step="0.5" style="width:80px;text-align:center;padding:4px 6px;font-weight:700"
+          value="${marco != null ? marco : ''}" placeholder="—"
+          onchange="finalPartSetScore('${esc(st.id)}','marco',this.value)" />
+      </td>
+      <td style="text-align:center">
+        <input type="number" class="input" min="0" max="40" step="0.5" style="width:80px;text-align:center;padding:4px 6px;font-weight:700"
+          value="${marlowe != null ? marlowe : ''}" placeholder="—"
+          onchange="finalPartSetScore('${esc(st.id)}','marlowe',this.value)" />
+      </td>
+      <td style="text-align:center;font-weight:800;font-size:15px;color:${finalColor}">${final != null ? final : '—'}<span style="font-size:9px;font-weight:400;color:var(--text-muted)">/40</span></td>
+    </tr>`;
+  }).join('');
+
+  const allCount = students.length;
+  const finalCount = students.filter(st => {
+    const vals = [num(getCP(st.id)), num(getMarco(st.id)), num(getMarlowe(st.id))].filter(v => v != null);
+    return vals.length > 0;
+  }).length;
+
+  root.innerHTML = `
+    <div class="page-title">Final Participation
+      <span class="muted" style="font-size:13px;font-weight:400">— averages Class Participation, Marco, Marlowe</span>
+      <div class="page-actions">
+        <button class="btn btn-ghost" onclick="renderFinalParticipationView()">⟳ Refresh</button>
+        <button class="btn btn-primary" style="font-size:13px" onclick="finalPartPushCanvas()">⬆ Push Final to Canvas</button>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:14px;display:flex;gap:14px;align-items:center;flex-wrap:wrap">
+      <div>
+        <strong style="font-size:12px;color:var(--uw-purple)">Target assignment:</strong>
+        <span style="font-size:13px;font-weight:700">${esc(cpAssignment.name)}</span>
+        <span class="muted" style="font-size:11px">(${cpAssignment.points_possible} pts · ID ${esc(cpAid)})</span>
+      </div>
+      <span class="muted" style="font-size:12px;margin-left:auto">${finalCount}/${allCount} students with at least one score · Final = average of the columns with values</span>
+    </div>
+
+    <div class="ldg-wrap">
+      <table class="ldg-table">
+        <thead>
+          <tr>
+            <th class="ldg-name-hdr">Student</th>
+            <th style="text-align:center;background:var(--uw-purple);color:#fff;min-width:90px">Class Part.<br><span style="font-size:9px;font-weight:400">from Canvas</span></th>
+            <th style="text-align:center;background:#0ea5e9;color:#fff;min-width:90px">Marco</th>
+            <th style="text-align:center;background:#0ea5e9;color:#fff;min-width:90px">Marlowe</th>
+            <th style="text-align:center;background:#15803d;color:#fff;min-width:90px">Final<br><span style="font-size:9px;font-weight:400">avg → push</span></th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+}
+
+async function finalPartSetScore(studentId, who, value) {
+  const v = value === '' ? null : Number(value);
+  if (value !== '' && !Number.isFinite(v)) return;
+  if (!_finalPartData[studentId]) _finalPartData[studentId] = {};
+  if (v == null) delete _finalPartData[studentId][who];
+  else _finalPartData[studentId][who] = Math.max(0, Math.min(40, v));
+  _finalPartData[studentId].updatedAt = new Date().toISOString();
+  try { await PUT('/api/final-participation', _finalPartData); }
+  catch (e) { toast('Save failed: ' + e.message, 'error'); return; }
+  _renderFinalParticipationUI();
+}
+
+async function finalPartPushCanvas() {
+  const cpAssignment = _findClassParticipation40Assignment();
+  if (!cpAssignment) return toast('No Class Participation assignment found.', 'error');
+
+  const students = S.allStudentsList.length ? S.allStudentsList : allStudents();
+  const cpAid = String(cpAssignment.id);
+  const cpGrades = (S.allGrades && S.allGrades[cpAid]) || {};
+
+  const getCP = (sid) => {
+    const g = cpGrades[sid];
+    if (!g) return null;
+    return g.finalScore != null ? g.finalScore : (g.canvasScore != null ? g.canvasScore : null);
+  };
+  const num = (v) => (v == null || v === '' || !Number.isFinite(Number(v))) ? null : Number(v);
+
+  const scores = {};
+  students.forEach(st => {
+    const cp = num(getCP(st.id));
+    const marco = num(_finalPartData[st.id]?.marco);
+    const marlowe = num(_finalPartData[st.id]?.marlowe);
+    const vals = [cp, marco, marlowe].filter(v => v != null);
+    if (vals.length) scores[st.id] = +(vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1);
+  });
+
+  const count = Object.keys(scores).length;
+  if (!count) return toast('No final scores to push — fill in at least one column per student.', 'warn');
+
+  if (!confirm(`Push final participation scores for ${count} students to Canvas?\nTarget: "${cpAssignment.name}" (${cpAssignment.points_possible} pts)\n\nThis will overwrite their current Class Participation score in Canvas.`)) return;
+
+  toast('Pushing to Canvas…');
+  try {
+    const res = await POST('/api/final-participation/push-canvas', {
+      cid: S.course.id,
+      aid: cpAid,
+      scores,
+    });
+    toast(`Pushed ${res.pushed} grades to Canvas!`, 'success');
+  } catch (e) {
+    toast('Push failed: ' + e.message, 'error');
+  }
 }
 
 /* ── Survey Creator (BETA) ──────────────────────────────────────────────────── */

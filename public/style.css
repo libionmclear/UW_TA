@@ -1049,6 +1049,15 @@ tbody td { padding: 7px 10px; vertical-align: middle; }
 .sidebar-box-body .nav-btn-peereval.active { background: #15803d !important; color: #fff !important; box-shadow: 0 2px 8px rgba(21,128,61,.5); }
 .sidebar-box-body .nav-btn-peereval .nav-icon { color: #fff !important; }
 
+.sidebar-box-body .nav-btn-finalpart {
+  background: #38bdf8 !important; color: #fff !important; font-weight: 800 !important;
+  border-radius: var(--radius); margin: 2px 0;
+  box-shadow: 0 0 10px rgba(56,189,248,.55);
+}
+.sidebar-box-body .nav-btn-finalpart:hover { background: #0ea5e9 !important; color: #fff !important; box-shadow: 0 0 12px rgba(14,165,233,.65); }
+.sidebar-box-body .nav-btn-finalpart.active { background: #0284c7 !important; color: #fff !important; box-shadow: 0 2px 10px rgba(2,132,199,.55); }
+.sidebar-box-body .nav-btn-finalpart .nav-icon { color: #fff !important; }
+
 /* ── Participation nav buttons in sidebar ───────────────────────────────────── */
 .nav-btn-participation { font-weight: 700 !important; }
 .nav-btn-participation:hover { background: rgba(255,107,0,.12) !important; color: #ea580c !important; }

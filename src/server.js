@@ -1320,6 +1320,38 @@ app.put('/api/bravissimo', requireAuth, (req, res) => {
   ok(res, store.bravissimo);
 });
 
+// ── Final Participation (Class Participation + Marco + Marlowe averaged) ──────
+if (!store.finalParticipation) store.finalParticipation = {};
+app.get('/api/final-participation', requireAuth, (_req, res) => ok(res, store.finalParticipation));
+app.put('/api/final-participation', requireAuth, (req, res) => {
+  store.finalParticipation = req.body || {};
+  save();
+  ok(res, store.finalParticipation);
+});
+
+// Push Final Participation averages to Canvas without touching the local
+// Class Participation grade store (which is one of the inputs we average).
+app.post('/api/final-participation/push-canvas', requireAuth, async (req, res) => {
+  try {
+    const { cid, aid, scores } = req.body || {};
+    if (!cid || !aid || !scores || typeof scores !== 'object') {
+      return fail(res, { message: 'cid, aid, and scores are required.' }, 400);
+    }
+    const gradeData = {};
+    let count = 0;
+    Object.entries(scores).forEach(([studentId, score]) => {
+      const n = Number(score);
+      if (Number.isFinite(n)) {
+        gradeData[studentId] = { posted_grade: String(n) };
+        count++;
+      }
+    });
+    if (!count) return fail(res, { message: 'No valid scores to push.' }, 400);
+    const result = await canvas.pushGradesBulk(cid, aid, gradeData);
+    ok(res, { pushed: count, result });
+  } catch (e) { fail(res, e); }
+});
+
 // ── Team Sign-Up (Mon May 11, 5:45 PM, 8 × 10-min slots) ──────────────────────
 const TEAM_SIGNUP_CONFIG = {
   date: '2026-05-11',
