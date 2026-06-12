@@ -6475,7 +6475,8 @@ function _renderFinalParticipationUI(root) {
     const cp = num(getCP(st.id));
     const marco = num(getMarco(st.id));
     const marlowe = num(getMarlowe(st.id));
-    const vals = [cp, marco, marlowe].filter(v => v != null);
+    // Final = average of Marco and Marlowe ONLY (Class Part. is shown for reference)
+    const vals = [marco, marlowe].filter(v => v != null);
     const final = vals.length ? +(vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1) : null;
     const finalColor = final == null ? 'var(--text-muted)' : (final < 24 ? 'var(--danger)' : final < 32 ? 'var(--warn)' : 'var(--success)');
 
@@ -6498,13 +6499,13 @@ function _renderFinalParticipationUI(root) {
 
   const allCount = students.length;
   const finalCount = students.filter(st => {
-    const vals = [num(getCP(st.id)), num(getMarco(st.id)), num(getMarlowe(st.id))].filter(v => v != null);
+    const vals = [num(getMarco(st.id)), num(getMarlowe(st.id))].filter(v => v != null);
     return vals.length > 0;
   }).length;
 
   root.innerHTML = `
     <div class="page-title">Final Participation
-      <span class="muted" style="font-size:13px;font-weight:400">— averages Class Participation, Marco, Marlowe</span>
+      <span class="muted" style="font-size:13px;font-weight:400">— average of Marco &amp; Marlowe</span>
       <div class="page-actions">
         <button class="btn btn-ghost" onclick="renderFinalParticipationView()">⟳ Refresh</button>
         <button class="btn btn-primary" style="font-size:13px" onclick="finalPartPushCanvas()">⬆ Push Final to Canvas</button>
@@ -6517,7 +6518,7 @@ function _renderFinalParticipationUI(root) {
         <span style="font-size:13px;font-weight:700">${esc(cpAssignment.name)}</span>
         <span class="muted" style="font-size:11px">(${cpAssignment.points_possible} pts · ID ${esc(cpAid)})</span>
       </div>
-      <span class="muted" style="font-size:12px;margin-left:auto">${finalCount}/${allCount} students with at least one score · Final = average of the columns with values</span>
+      <span class="muted" style="font-size:12px;margin-left:auto">${finalCount}/${allCount} students with at least one Marco/Marlowe score · Final = average of Marco and Marlowe (Class Part. shown for reference only)</span>
     </div>
 
     <div class="ldg-wrap">
@@ -6565,10 +6566,9 @@ async function finalPartPushCanvas() {
 
   const scores = {};
   students.forEach(st => {
-    const cp = num(getCP(st.id));
     const marco = num(_finalPartData[st.id]?.marco);
     const marlowe = num(_finalPartData[st.id]?.marlowe);
-    const vals = [cp, marco, marlowe].filter(v => v != null);
+    const vals = [marco, marlowe].filter(v => v != null);
     if (vals.length) scores[st.id] = +(vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1);
   });
 
